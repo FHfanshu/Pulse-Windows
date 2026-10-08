@@ -6,12 +6,18 @@ pub mod profile;
 pub mod amp;
 pub mod augment;
 pub mod claude_code;
+pub mod deepseek;
 pub mod factory;
 pub mod gemini;
+pub mod grok;
+pub mod kimi_code;
+pub mod minimax;
 pub mod moonshot;
 pub mod openai_platform;
+pub mod opencode_go;
 pub mod warp;
 pub mod windsurf;
+pub mod zai;
 
 use std::sync::Arc;
 
