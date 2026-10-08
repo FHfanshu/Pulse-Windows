@@ -64,7 +64,7 @@ function fixedPane(id: PaneId, settings: AppSettings, providers: ProviderInfo[])
     case "appearance": return <AppearancePane settings={settings} />;
     case "rings": return <RingsPane settings={settings} />;
     case "placement": return <PlacementPane settings={settings} providers={providers} />;
-    case "spend": return <TokenSpendPane />;
+    case "spend": return <TokenSpendPane settings={settings} />;
     case "general": return <GeneralPane settings={settings} />;
     case "notifications": return <NotificationsPane settings={settings} />;
     case "network": return <NetworkPane settings={settings} />;

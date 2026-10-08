@@ -41,7 +41,7 @@ function fixed(id: FixedPane): SidebarItem {
     case "placement":
       return { id, title: t("Position and behavior"), icon: { glyph: "placement" }, terms: ["Show floating panel", "Hide in full screen", "Hide until pointed at", "Position", "Follow the active display", "Order"].map((k) => t(k)) };
     case "spend":
-      return { id, title: t("Token spend"), icon: { glyph: "spend" }, terms: [] };
+      return { id, title: t("Token spend"), icon: { glyph: "spend" }, terms: ["Read local usage records", "Span", "Token activity"].map((k) => t(k)) };
     case "general":
       return { id, title: t("General"), icon: { glyph: "general" }, terms: ["Open at login", "Hide menu bar icon", "Interface language"].map((k) => t(k)) };
     case "notifications":
