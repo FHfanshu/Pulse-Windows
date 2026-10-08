@@ -16,14 +16,16 @@ interface RowProps {
   /** Renders the subtitle in the error colour. */
   invalid?: boolean;
   icon?: ReactNode;
+  /** Lets the control drop under the label when both do not fit side by side. */
+  wrap?: boolean;
   disabled?: boolean;
   children?: ReactNode;
 }
 
 /** Title and one-line grey subtitle on the left, control on the right (upstream `SettingsRow`). */
-export function Row({ title, subtitle, invalid, icon, disabled, children }: RowProps) {
+export function Row({ title, subtitle, invalid, icon, wrap, disabled, children }: RowProps) {
   return (
-    <div className="row" data-disabled={disabled ? "true" : undefined}>
+    <div className={wrap ? "row row-wrap" : "row"} data-disabled={disabled ? "true" : undefined}>
       <div className="row-label">
         {icon && <span className="glyph">{icon}</span>}
         <div>
