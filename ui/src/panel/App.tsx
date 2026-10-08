@@ -3,13 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { accountId, headlineWindow, isSpent, percentText, secondWindow, type ProviderUsage } from "../shared/model";
+import { setLanguage } from "../shared/i18n";
+import { accountId, elapsedFraction, headlineWindow, isSpent, percentText, secondWindow } from "../shared/model";
+import { useSettings, useUsage } from "../shared/settings";
 import { Card } from "./Card";
 import { providerNames } from "./Icon";
-import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, type Edge, type PanelMetrics } from "./layout";
+import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelSizeScale, RailSpacingScale, type Edge, type PanelMetrics } from "./layout";
 import { Ring } from "./Ring";
 import { berthPath } from "./shapes";
-import { DEFAULT_WARNING_THRESHOLD, PulseColor, spring, usageColor } from "./tint";
+import { PulseColor, spring, usageColor } from "./tint";
 
 interface Rect { x: number; y: number; w: number; h: number }
 interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean }
@@ -19,20 +21,34 @@ const SLACK = 8;
 const contains = (r: Rect, x: number, y: number) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 
 export function App() {
-  const [usages, setUsages] = useState<ProviderUsage[]>([]);
+  const { usages, refreshing: refreshingIds } = useUsage();
+  const stored = useSettings();
   const [layout, setLayout] = useState<PanelLayout | null>(null);
   const [pointer, setPointer] = useState<[number, number] | null>(null);
   const [dragging, setDragging] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [cardHeight, setCardHeight] = useState<number | null>(null);
-  const [refreshing, setRefreshing] = useState<Set<string>>(new Set());
+  const refreshing = useMemo(() => new Set(refreshingIds), [refreshingIds]);
   const hoveredItem = useRef<string | null>(null);
+  const usagesRef = useRef(usages);
+  usagesRef.current = usages;
 
-  // Settings arrive in phase 1b; upstream defaults until then.
-  const settings = { showsRemaining: false, warningAt: DEFAULT_WARNING_THRESHOLD, usesGlass: false, autoCollapse: false, dockShowsAlertColor: true };
+  const settings = {
+    showsRemaining: stored?.showsRemaining ?? false,
+    warningAt: (stored?.warningThreshold ?? 75) / 100,
+    usesGlass: stored?.usesGlass ?? false,
+    autoCollapse: stored?.autoCollapse ?? false,
+    dockShowsAlertColor: stored?.dockShowsAlertColor ?? true,
+    showsSecondRing: stored?.showsSecondRing ?? false,
+    showsWindowClock: stored?.showsWindowClock ?? false,
+    clockRemaining: stored?.windowClockDirection === "remaining",
+    animatesActivity: stored?.animatesRingActivity ?? true,
+    pinned: stored?.pinnedWindows ?? {},
+    tints: stored?.ringTints ?? {},
+  };
+  if (stored) setLanguage(stored.language);
 
   useEffect(() => {
-    invoke<ProviderUsage[]>("get_snapshot").then(setUsages);
     const un = [
       listen<PanelLayout>("panel-layout", (e) => setLayout(e.payload)),
       listen<PointerEvent>("pointer", (e) => {
@@ -45,7 +61,23 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const metrics: PanelMetrics = useMemo(() => ({ ...defaultMetrics, railCapacity: Math.max(usages.length, 1) }), [usages.length]);
+  const metrics: PanelMetrics = useMemo(
+    () => ({
+      ...defaultMetrics,
+      scale: PanelSizeScale[stored?.panelSize ?? "standard"],
+      spacing: RailSpacingScale[stored?.railSpacing ?? "standard"],
+      topRailShowsPercentages: stored?.topRailShowsPercentages ?? false,
+      sideRailShowsPercentages: stored?.sideRailShowsPercentages ?? true,
+      labelAboveRing: stored?.labelAboveRing ?? false,
+      freeAcrossFiguresBeside: stored?.freeAcrossFiguresBeside ?? false,
+      usesRoundEnds: stored?.usesRoundEnds ?? false,
+      showsWindowClock: stored?.showsWindowClock ?? false,
+      showsForecast: stored?.showsForecast ?? false,
+      showsDetailedCard: (stored?.detailedCards.length ?? 0) > 0,
+      railCapacity: Math.max(usages.length, 1),
+    }),
+    [stored, usages.length],
+  );
   const D = dockLayout(metrics);
   const C = detailCardLayout(metrics);
 
@@ -73,7 +105,11 @@ export function App() {
   const vertical = axis === "vertical";
   const rail = layout?.rail ?? { x: 0, y: 0, w: 0, h: 0 };
 
-  const entries = usages.map((u) => ({ id: accountId(u.account), usage: u, title: providerNames[u.account.provider] ?? u.account.provider, headline: headlineWindow(u) }));
+  const entries = usages.map((u) => {
+    const id = accountId(u.account);
+    const pin = settings.pinned[id];
+    return { id, usage: u, title: providerNames[u.account.provider] ?? u.account.provider, headline: headlineWindow(u, pin), second: settings.showsSecondRing ? secondWindow(u, pin) : null };
+  });
   const selectedIndex = entries.findIndex((e) => e.id === selected);
   const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] : null;
 
@@ -151,7 +187,8 @@ export function App() {
     setLayout((current) => {
       if (!current) return current;
       // Ring hit test: within 1.08 × radius of a ring centre (upstream PanelHitArea.slot).
-      setUsages((list) => {
+      {
+        const list = usagesRef.current;
         const ax = axisOf(current.edge);
         const radius = (D.ringDiameter / 2) * 1.08;
         const across = D.ringCentreAcross(ax, current.docked);
@@ -160,13 +197,10 @@ export function App() {
           const cx = current.rail.x + (ax === "vertical" ? across : along);
           const cy = current.rail.y + (ax === "vertical" ? along : across);
           if ((x - cx) ** 2 + (y - cy) ** 2 <= radius * radius) {
-            const id = accountId(u.account);
-            setRefreshing((s) => new Set(s).add(id));
-            setTimeout(() => setRefreshing((s) => { const n = new Set(s); n.delete(id); return n; }), 1200);
+            invoke("refresh", { account: accountId(u.account) });
           }
         });
-        return list;
-      });
+      }
       return current;
     });
   }, [D]);
@@ -230,7 +264,8 @@ export function App() {
           }}
         >
           {entries.map((e) => {
-            const second = null as ReturnType<typeof secondWindow>; // showsSecondRing off by default
+            const second = e.second;
+            const clock = settings.showsWindowClock && e.headline ? elapsedFraction(e.headline) : null;
             const isSel = selected === e.id;
             const label = D.showsPercentages(axis) ? (
               <div
@@ -268,6 +303,9 @@ export function App() {
                     lineWidth={D.ringLineWidth}
                     scale={metrics.scale}
                     isRefreshing={refreshing.has(e.id)}
+                    animatesActivity={settings.animatesActivity}
+                    chosenTint={settings.tints[e.id] ?? null}
+                    windowClockFraction={clock == null ? null : settings.clockRemaining ? 1 - clock : clock}
                     highlight={isSel}
                     secondFraction={second?.usedFraction ?? null}
                     secondIsSpent={isSpent(second)}
