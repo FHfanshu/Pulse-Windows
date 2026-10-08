@@ -21,7 +21,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn load(app: &AppHandle) -> Self {
+    pub fn load() -> Self {
         let dir = pulse_core::paths::data_dir();
         let _ = std::fs::create_dir_all(&dir);
         let settings: AppSettings = std::fs::read(dir.join("settings.json"))

@@ -186,7 +186,7 @@ fn main() {
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
-            let state = AppState::load(&handle);
+            let state = AppState::load();
             let needs_choice = state.settings().needs_provider_selection() && !state.mock;
             app.manage(state);
 
