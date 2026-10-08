@@ -3,3 +3,4 @@ dist/
 target/
 *.log
 .claude/worktrees/
+src-tauri/gen/
