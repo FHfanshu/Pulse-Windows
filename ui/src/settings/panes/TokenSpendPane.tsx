@@ -1,5 +1,6 @@
 // Ported from upstream Settings/TokenSpendPane.swift and SpendPaneModel.swift: the pane whose subject is
 // every agent's spending added up. The switch turns reading on; nothing is read while it is off.
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { t } from "../../shared/i18n";
 import { spendOverview, type SpendAgent, type SpendOverview } from "../../shared/spend";
@@ -76,10 +77,9 @@ export function TokenSpendPane({ settings }: { settings: AppSettings }) {
           onChange={(readsTokenSpend) => updateSettings({ readsTokenSpend })}
         />
         {enabled && (
-          // TODO(recap): the Recap window is built elsewhere; these open it on the default month and year.
           <Row title={t("Monthly and Yearly Recap")} subtitle={t("Shareable cards for a month or a year, from this Mac's records.")}>
-            <Button disabled onClick={() => {}}>{t("Monthly Recap")}</Button>
-            <Button disabled onClick={() => {}}>{t("Yearly Recap")}</Button>
+            <Button onClick={() => invoke("open_recap", { period: "month" })}>{t("Monthly Recap")}</Button>
+            <Button onClick={() => invoke("open_recap", { period: "year" })}>{t("Yearly Recap")}</Button>
           </Row>
         )}
       </Group>

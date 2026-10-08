@@ -105,7 +105,15 @@ pub async fn recap_report(state: State<'_, AppState>, period: Option<String>) ->
 pub fn open_recap(app: AppHandle, period: Option<String>) {
     // Shown again means read again.
     forget();
-    let period = period.filter(|key| Period::from_key(key).is_some());
+    // "month" / "year" ask for the default period of that kind (upstream default_month / default_year).
+    let today = chrono::Local::now().date_naive();
+    let period = period
+        .map(|key| match key.as_str() {
+            "month" => periods::default_month(None, today).key(),
+            "year" => periods::default_year(None, today).key(),
+            _ => key,
+        })
+        .filter(|key| Period::from_key(key).is_some());
     if let Some(window) = app.get_webview_window(LABEL) {
         let _ = window.unminimize();
         let _ = window.show();
