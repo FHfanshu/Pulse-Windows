@@ -13,6 +13,7 @@ pub mod refresh;
 pub mod secrets;
 pub mod service;
 pub mod settings;
+pub mod spend;
 pub mod statusline;
 pub mod store;
 pub mod tray;
