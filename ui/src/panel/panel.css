@@ -1,0 +1,33 @@
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: #fff;
+  font-family: var(--font-rounded);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+}
+.panel { position: relative; width: 100%; height: 100%; }
+.rail { position: absolute; }
+.berth { position: absolute; left: 0; top: 0; overflow: visible; }
+.rings { position: absolute; inset: 0; display: flex; align-items: center; }
+.item { display: flex; align-items: center; justify-content: flex-start; flex: none; }
+.ring { position: relative; flex: none; }
+.ring-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; }
+.ring-icon svg { display: block; }
+.percent { font-weight: 500; white-space: nowrap; text-align: center; transition: opacity 0.2s ease-out; }
+.card { position: relative; }
+.card-surface { position: absolute; left: 0; top: 0; overflow: visible; }
+.card-content { display: flex; flex-direction: column; align-items: stretch; }
+.card-header { position: relative; display: flex; align-items: center; }
+.card-header-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.card-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.metric-row { display: flex; flex-direction: column; }
+.metric-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.value-row { display: flex; justify-content: space-between; gap: 8px; }
+.bar { position: relative; border-radius: 999px; background: rgba(255, 255, 255, 0.17); overflow: hidden; }
+.bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+.ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

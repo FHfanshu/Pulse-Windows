@@ -1,0 +1,314 @@
+// Ported from upstream Panel/FloatingUsagePanelContent.swift and UsageDockView.swift.
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { accountId, headlineWindow, isSpent, percentText, secondWindow, type ProviderUsage } from "../shared/model";
+import { Card } from "./Card";
+import { providerNames } from "./Icon";
+import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, type Edge, type PanelMetrics } from "./layout";
+import { Ring } from "./Ring";
+import { berthPath } from "./shapes";
+import { DEFAULT_WARNING_THRESHOLD, PulseColor, spring, usageColor } from "./tint";
+
+interface Rect { x: number; y: number; w: number; h: number }
+interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean }
+interface PointerEvent { point: [number, number] | null; pressed: boolean; dragging: boolean }
+
+const SLACK = 8;
+const contains = (r: Rect, x: number, y: number) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+
+export function App() {
+  const [usages, setUsages] = useState<ProviderUsage[]>([]);
+  const [layout, setLayout] = useState<PanelLayout | null>(null);
+  const [pointer, setPointer] = useState<[number, number] | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [cardHeight, setCardHeight] = useState<number | null>(null);
+  const [refreshing, setRefreshing] = useState<Set<string>>(new Set());
+  const hoveredItem = useRef<string | null>(null);
+
+  // Settings arrive in phase 1b; upstream defaults until then.
+  const settings = { showsRemaining: false, warningAt: DEFAULT_WARNING_THRESHOLD, usesGlass: false, autoCollapse: false, dockShowsAlertColor: true };
+
+  useEffect(() => {
+    invoke<ProviderUsage[]>("get_snapshot").then(setUsages);
+    const un = [
+      listen<PanelLayout>("panel-layout", (e) => setLayout(e.payload)),
+      listen<PointerEvent>("pointer", (e) => {
+        setPointer(e.payload.point);
+        setDragging(e.payload.dragging);
+      }),
+      listen<[number, number]>("rail-click", (e) => clickAt(e.payload[0], e.payload[1])),
+    ];
+    return () => un.forEach((p) => p.then((f) => f()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const metrics: PanelMetrics = useMemo(() => ({ ...defaultMetrics, railCapacity: Math.max(usages.length, 1) }), [usages.length]);
+  const D = dockLayout(metrics);
+  const C = detailCardLayout(metrics);
+
+  // Hand Rust the sizes for every axis/docking so it can place and drag the window.
+  useEffect(() => {
+    if (!usages.length) return;
+    const shapes = (edge: Edge, docked: boolean) => {
+      const panel = panelSize(metrics, edge, docked);
+      const rail = D.size(usages.length, axisOf(edge), docked);
+      return { panel: { w: panel.w, h: panel.h }, rail: { w: rail.w, h: rail.h } };
+    };
+    invoke("set_geometry", {
+      geometry: {
+        verticalDocked: shapes("right", true),
+        verticalFree: shapes("right", false),
+        horizontalDocked: shapes("top", true),
+        horizontalFree: shapes("top", false),
+      },
+    });
+  }, [metrics, usages.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const edge = layout?.edge ?? "right";
+  const axis = axisOf(edge);
+  const docked = layout?.docked ?? true;
+  const vertical = axis === "vertical";
+  const rail = layout?.rail ?? { x: 0, y: 0, w: 0, h: 0 };
+
+  const entries = usages.map((u) => ({ id: accountId(u.account), usage: u, title: providerNames[u.account.provider] ?? u.account.provider, headline: headlineWindow(u) }));
+  const selectedIndex = entries.findIndex((e) => e.id === selected);
+  const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] : null;
+
+  const ringCentre = (i: number) => D.firstRingAlong(docked, axis) + i * D.ringStep(axis, docked);
+  const ringCentreAcross = D.ringCentreAcross(axis, docked);
+  const panelAlong = vertical ? layout?.frame.h ?? 0 : layout?.frame.w ?? 0;
+  const railAlong = vertical ? rail.y : rail.x;
+  const cardAlong = vertical ? cardHeight ?? C.estimatedHeight : C.width;
+  const cardPadding = (i: number) => {
+    const raw = ringCentre(i) - cardAlong / 2;
+    const first = -railAlong;
+    const last = Math.max(panelAlong - railAlong - cardAlong, first);
+    return Math.min(Math.max(raw, first), last);
+  };
+  const pointerCentre = (i: number) => {
+    const raw = ringCentre(i) - cardPadding(i);
+    const inset = C.cornerRadius + C.pointerHeight / 2;
+    const first = Math.min(inset, cardAlong / 2);
+    const last = Math.max(cardAlong - inset, first);
+    return Math.min(Math.max(raw, first), last);
+  };
+
+  /** Item rects in window coordinates, for hover selection (upstream PointerEntryReporter). */
+  const itemRect = (i: number): Rect => {
+    const start = D.endPadding(docked) + i * D.ringStep(axis, docked);
+    const len = D.itemLength(axis, docked);
+    const across = D.thickness(axis, docked);
+    return vertical
+      ? { x: rail.x, y: rail.y + start, w: across, h: len }
+      : { x: rail.x + start, y: rail.y, w: len, h: across };
+  };
+
+  const cardBand = (): Rect | null => {
+    if (selectedIndex < 0 || !layout) return null;
+    const start = railAlong + cardPadding(selectedIndex) - SLACK;
+    const length = cardAlong + SLACK * 2;
+    return vertical
+      ? { x: 0, y: start, w: layout.frame.w, h: length }
+      : { x: start, y: 0, w: length, h: layout.frame.h };
+  };
+
+  // Pointer → hover selection and deselection (upstream pointerMoved / isOverContent).
+  useEffect(() => {
+    if (!layout || dragging) {
+      if (dragging) setSelected(null);
+      return;
+    }
+    if (!pointer) {
+      hoveredItem.current = null;
+      setSelected(null);
+      return;
+    }
+    const [x, y] = pointer;
+    const band = cardBand();
+    const over = contains(rail, x, y) || (band ? contains(band, x, y) : false);
+    if (!over) {
+      hoveredItem.current = null;
+      setSelected(null);
+      return;
+    }
+    const hit = entries.findIndex((_, i) => contains(itemRect(i), x, y));
+    const id = hit >= 0 ? entries[hit].id : null;
+    if (id && id !== hoveredItem.current) setSelected(id);
+    hoveredItem.current = id;
+  }, [pointer, dragging, layout]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tell Rust where input belongs; everything else stays click-through.
+  useEffect(() => {
+    if (!layout) return;
+    const band = cardBand();
+    invoke("set_hit_rects", { rects: band ? [rail, band] : [rail], grab: rail });
+  }, [layout, selected, cardHeight]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const clickAt = useCallback((x: number, y: number) => {
+    setLayout((current) => {
+      if (!current) return current;
+      // Ring hit test: within 1.08 × radius of a ring centre (upstream PanelHitArea.slot).
+      setUsages((list) => {
+        const ax = axisOf(current.edge);
+        const radius = (D.ringDiameter / 2) * 1.08;
+        const across = D.ringCentreAcross(ax, current.docked);
+        list.forEach((u, i) => {
+          const along = D.firstRingAlong(current.docked, ax) + i * D.ringStep(ax, current.docked);
+          const cx = current.rail.x + (ax === "vertical" ? across : along);
+          const cy = current.rail.y + (ax === "vertical" ? along : across);
+          if ((x - cx) ** 2 + (y - cy) ** 2 <= radius * radius) {
+            const id = accountId(u.account);
+            setRefreshing((s) => new Set(s).add(id));
+            setTimeout(() => setRefreshing((s) => { const n = new Set(s); n.delete(id); return n; }), 1200);
+          }
+        });
+        return list;
+      });
+      return current;
+    });
+  }, [D]);
+
+  const alert = useMemo(() => {
+    if (!settings.dockShowsAlertColor) return null;
+    let worst: ReturnType<typeof headlineWindow> = null;
+    for (const e of entries) if (e.headline && (!worst || e.headline.usedFraction > worst.usedFraction)) worst = e.headline;
+    if (!worst || !(worst.isExhausted || worst.usedFraction >= settings.warningAt)) return null;
+    return usageColor(worst.usedFraction, worst.isExhausted, settings.warningAt);
+  }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  void alert; // used by the collapsed sliver (auto-collapse), phase 1b
+
+  if (!layout || !usages.length) return null;
+
+  const railSize = D.size(entries.length, axis, docked);
+  const berth = berthPath(railSize.w, railSize.h, edge, docked, 1, {
+    flareHeight: D.flareHeight, flareWidth: D.flareWidth, cornerRadius: D.cornerRadius,
+    collapsedWidth: D.collapsedWidth, usesRoundEnds: metrics.usesRoundEnds,
+  });
+
+  // Card placement relative to the rail (upstream cardAlignment + cardOffset + padding).
+  const reach = C.width + C.pointerWidth + C.horizontalGap;
+  const cardStyle = (i: number): { left: number; top: number } => {
+    const along = cardPadding(i);
+    switch (edge) {
+      case "right": return { left: rail.x - reach, top: rail.y + along };
+      case "left": return { left: rail.x + rail.w + C.horizontalGap, top: rail.y + along };
+      case "top": return { left: rail.x + along, top: rail.y + rail.h + C.horizontalGap };
+      case "bottom": return { left: rail.x + along, top: rail.y - C.horizontalGap - (cardHeight ?? C.estimatedHeight) - C.pointerWidth };
+    }
+  };
+  const direction = edge === "left" || edge === "top" ? 1 : -1;
+  const revealOrigin = (index: number) => {
+    const gap = cardPadding(index);
+    const box = gap + cardAlong;
+    const alongRatio = box > 0 ? Math.min(Math.max((gap + cardAlong / 2) / box, 0), 1) : 0.5;
+    const acrossRatio = edge === "left" || edge === "top" ? 0 : 1;
+    return vertical ? `${acrossRatio * 100}% ${alongRatio * 100}%` : `${alongRatio * 100}% ${acrossRatio * 100}%`;
+  };
+  const slide = vertical ? { x: 10 * direction } : { y: 10 * direction };
+
+  return (
+    <div className="panel" onContextMenu={(e) => { e.preventDefault(); invoke("open_settings"); }}>
+      <div
+        className="rail"
+        style={{ left: rail.x, top: rail.y, width: railSize.w, height: railSize.h }}
+        onPointerDown={(e) => { if (e.button === 0) invoke("rail_press", { x: e.clientX, y: e.clientY }); }}
+      >
+        <svg className="berth" width={railSize.w} height={railSize.h}>
+          <path d={berth} fill={settings.usesGlass ? "rgba(0,0,0,var(--glass-dim))" : "#000"} />
+        </svg>
+        <div
+          className="rings"
+          style={{
+            flexDirection: vertical ? "column" : "row",
+            gap: D.gap(axis, docked),
+            padding: vertical
+              ? `${D.endPadding(docked)}px ${D.crossPadding(axis, docked)}px`
+              : `${D.crossPadding(axis, docked)}px ${D.endPadding(docked)}px`,
+          }}
+        >
+          {entries.map((e) => {
+            const second = null as ReturnType<typeof secondWindow>; // showsSecondRing off by default
+            const isSel = selected === e.id;
+            const label = D.showsPercentages(axis) ? (
+              <div
+                className="percent"
+                style={{
+                  fontSize: D.percentFontSize,
+                  height: D.percentTextHeight,
+                  lineHeight: `${D.percentTextHeight}px`,
+                  color: isSpent(e.headline) ? PulseColor.exhausted : `rgba(255,255,255,${e.headline ? 1 : 0.4})`,
+                  opacity: refreshing.has(e.id) ? 0.4 : 1,
+                }}
+              >
+                {e.headline ? percentText(e.headline, settings.showsRemaining) : "—"}
+              </div>
+            ) : null;
+            return (
+              <div
+                key={e.id}
+                className="item"
+                style={{
+                  flexDirection: "column",
+                  gap: D.ringToTextSpacing,
+                  [vertical ? "height" : "width"]: D.itemLength(axis, docked),
+                }}
+              >
+                {D.labelLeads && label}
+                <motion.div animate={{ scale: isSel ? 1.06 : 1 }} transition={spring(0.28, 0.84)}>
+                  <Ring
+                    provider={e.usage.account.provider}
+                    usedFraction={e.headline?.usedFraction ?? null}
+                    hasReading={!!e.headline}
+                    isSpent={isSpent(e.headline)}
+                    showsRemaining={settings.showsRemaining}
+                    diameter={D.ringDiameter}
+                    lineWidth={D.ringLineWidth}
+                    scale={metrics.scale}
+                    isRefreshing={refreshing.has(e.id)}
+                    highlight={isSel}
+                    secondFraction={second?.usedFraction ?? null}
+                    secondIsSpent={isSpent(second)}
+                    secondDiameter={D.secondRingDiameter}
+                    secondLineWidth={D.secondRingLineWidth}
+                    warningAt={settings.warningAt}
+                  />
+                </motion.div>
+                {!D.labelLeads && label}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {selectedEntry && (
+          <motion.div
+            key="card"
+            className="card-host"
+            style={{ position: "absolute", transformOrigin: revealOrigin(selectedIndex) }}
+            initial={{ opacity: 0, scale: 0.88, ...slide, ...cardStyle(selectedIndex) }}
+            animate={{ opacity: 1, scale: 1, x: 0, y: 0, ...cardStyle(selectedIndex) }}
+            exit={{ opacity: 0, scale: 0.88, ...slide }}
+            transition={spring(0.28, 0.84)}
+          >
+            <Card
+              usage={selectedEntry.usage}
+              title={selectedEntry.title}
+              edge={edge}
+              metrics={metrics}
+              pointerCenter={pointerCentre(selectedIndex)}
+              showsRemaining={settings.showsRemaining}
+              warningAt={settings.warningAt}
+              usesGlass={settings.usesGlass}
+              onHeight={(h) => setCardHeight((old) => (old != null && Math.abs(old - h) < 0.5 ? old : h))}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <span hidden>{ringCentreAcross}</span>
+    </div>
+  );
+}

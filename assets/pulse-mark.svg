@@ -1,0 +1,9 @@
+<!--
+  The Pulse mark on its own, for anywhere that is not the app icon. One stroke,
+  one colour; recolour by changing `stroke`. Its bounds are 302–762 × 194–830 in
+  a 1024 space, centred by the viewBox.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="20 0 1024 1024">
+  <path d="M352 780 V244 H562 A150 150 0 0 1 562 544 H530"
+    fill="none" stroke="#0B0B0C" stroke-width="100" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

@@ -1,0 +1,7 @@
+/* SF Pro Rounded where the reader has it; Nunito (bundled, OFL) otherwise. */
+:root {
+  --font-rounded: "SF Pro Rounded", "Nunito Variable", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --glass-dim: 0.3;
+}
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; }

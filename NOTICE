@@ -1,0 +1,9 @@
+Pulse for Windows
+Copyright (c) 2026 contributors of this port.
+
+This product is a port of Pulse (https://github.com/qunqin24/Pulse),
+Copyright (c) 2026 qunqin24, licensed under the Apache License, Version 2.0.
+Behaviour, layout constants, localized strings and provider logic are derived
+from that project. Source files ported from it carry a header naming the
+upstream file they derive from. Provider icons and other third-party material
+are listed in THIRD_PARTY_NOTICES.md.
