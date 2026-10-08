@@ -479,7 +479,7 @@ impl SpendSummary {
         }
 
         // Heaviest first: the list is read to find where the work went.
-        summary.agents.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+        summary.agents.sort_by_key(|a| std::cmp::Reverse(a.tokens));
 
         let overall: i64 = model_tokens.values().sum();
         summary.models = model_tokens

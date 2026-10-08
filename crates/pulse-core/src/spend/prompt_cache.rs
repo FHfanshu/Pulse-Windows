@@ -350,7 +350,7 @@ impl ClaudePromptCache {
             if entry.kind.as_deref() != Some("assistant") {
                 let at = entry.timestamp.as_deref().and_then(parse_iso)?;
                 let gap = seconds_between(at, replied_at);
-                return (gap >= 0.0 && gap <= Self::LONGEST_RESPONSE).then_some(at);
+                return (0.0..=Self::LONGEST_RESPONSE).contains(&gap).then_some(at);
             }
             parent = entry.parent_uuid;
         }
@@ -558,7 +558,7 @@ impl CodexPromptCache {
         let mut sent_at = answered_at;
         if let Some(input) = before.iter().rev().find(|l| l.is_input).and_then(|l| l.timestamp) {
             let gap = seconds_between(input, answered_at);
-            if gap >= 0.0 && gap <= ClaudePromptCache::LONGEST_RESPONSE {
+            if (0.0..=ClaudePromptCache::LONGEST_RESPONSE).contains(&gap) {
                 sent_at = input;
             }
         }

@@ -17,6 +17,7 @@ pub mod budget;
 pub mod burn;
 pub mod calendar;
 pub mod ledger;
+pub mod logio;
 pub mod loglines;
 pub mod model_summary;
 pub mod prices;
@@ -31,7 +32,15 @@ pub mod transcripts;
 #[cfg(test)]
 mod tests_ledger;
 #[cfg(test)]
+mod tests_model;
+#[cfg(test)]
+mod tests_quality;
+#[cfg(test)]
 mod tests_record;
+#[cfg(test)]
+mod tests_stream;
+#[cfg(test)]
+mod tests_summary;
 
 use std::path::Path;
 

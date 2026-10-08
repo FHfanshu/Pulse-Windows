@@ -228,7 +228,7 @@ impl TokenActivity {
         if !busy.is_empty() {
             activity.cuts = (1..=3)
                 .map(|quarter| {
-                    let index = ((busy.len() * quarter + 3) / 4).saturating_sub(1);
+                    let index = (busy.len() * quarter).div_ceil(4).saturating_sub(1);
                     busy[index.min(busy.len() - 1)]
                 })
                 .collect();

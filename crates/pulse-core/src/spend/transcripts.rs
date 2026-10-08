@@ -1205,6 +1205,6 @@ pub fn project_of(file: &str, provider: Provider) -> Option<UsageProject> {
     let normalized = file.replace('\\', "/");
     let (folder_path, _) = normalized.rsplit_once('/')?;
     let folder = folder_path.rsplit('/').next().unwrap_or(folder_path);
-    let last = folder.split('-').filter(|part| !part.is_empty()).next_back()?;
+    let last = folder.split('-').rfind(|part| !part.is_empty())?;
     Some(UsageProject::source(folder_path, last))
 }

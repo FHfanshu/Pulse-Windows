@@ -43,7 +43,7 @@ impl<'de> Deserialize<'de> for UsageProject {
 }
 
 fn last_component(path: &str) -> String {
-    path.split('/').filter(|s| !s.is_empty()).next_back().map(str::to_string).unwrap_or_else(|| "/".to_string())
+    path.split('/').rfind(|s| !s.is_empty()).map(str::to_string).unwrap_or_else(|| "/".to_string())
 }
 
 /// `X:\dir`, `X:/dir` or `\\server\share`: a Windows directory the transcripts state.
@@ -192,7 +192,7 @@ fn uri_last_component(uri: &str) -> Option<String> {
     let after_scheme = uri.split_once("://")?.1;
     let without_query = after_scheme.split(['?', '#']).next().unwrap_or(after_scheme);
     let path = without_query.split_once('/')?.1;
-    let segment = path.split('/').filter(|s| !s.is_empty()).next_back()?;
+    let segment = path.split('/').rfind(|s| !s.is_empty())?;
     Some(percent_decode(segment))
 }
 
