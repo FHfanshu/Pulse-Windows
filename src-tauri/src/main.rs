@@ -3,6 +3,7 @@
 mod notify;
 mod panel;
 mod placement;
+mod spend_ipc;
 mod state;
 mod store;
 mod tray_icon;
@@ -297,6 +298,9 @@ fn main() {
             set_dock,
             status_line_installed,
             set_status_line,
+            spend_ipc::spend_overview,
+            spend_ipc::card_spend,
+            spend_ipc::prompt_cache,
             open_settings,
             detect_providers,
             open_chooser
@@ -311,6 +315,7 @@ fn main() {
             panel::create(&handle)?;
             panel::start_sampler(handle.clone(), shared.clone());
             state::start_refresh_loop(handle.clone());
+            spend_ipc::start_price_refresh();
 
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Pulse", true, None::<&str>)?;
