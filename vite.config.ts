@@ -25,6 +25,7 @@ export default defineConfig({
         panel: resolve(__dirname, "ui/panel.html"),
         settings: resolve(__dirname, "ui/settings.html"),
         chooser: resolve(__dirname, "ui/chooser.html"),
+        recap: resolve(__dirname, "ui/recap.html"),
       },
     },
   },
