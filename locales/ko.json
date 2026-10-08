@@ -564,6 +564,7 @@
  "Choose at least one service. Pulse reads its login and checks usage only after you finish. You can change this later in Settings.": "서비스를 하나 이상 선택하십시오. 완료를 누른 뒤에만 선택한 서비스의 로그인 정보를 읽고 사용량을 확인합니다. 나중에 설정에서 바꿀 수 있습니다.",
  "This version supports more services found on your Mac. Choose any you want to add; your existing choices stay in place.": "이 버전에서 새로 지원하는 서비스가 Mac에서 발견되었습니다. 추가할 서비스를 선택하십시오. 기존 선택은 유지됩니다.",
  "Detected on this Mac": "이 Mac에서 발견됨",
+ "Detected on this PC": "이 PC에서 발견됨",
  "Select detected services": "발견된 서비스 선택",
  "Done": "완료",
  "Enable a service in its settings to start monitoring.": "설정에서 서비스를 켜면 모니터링을 시작합니다.",

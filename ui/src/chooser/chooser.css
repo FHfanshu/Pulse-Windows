@@ -1,0 +1,22 @@
+/* Provider chooser: the settings window's palette, one column with a scrolling list. */
+.chooser { display: flex; flex-direction: column; width: 100%; height: 100%; }
+.chooser-head { padding: 22px 24px 4px; }
+.chooser-head h1 { margin: 0 0 8px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+.chooser-head p { margin: 0; color: var(--s-text-2); }
+.chooser-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 24px 8px; }
+.chooser-list h2 { margin: 20px 0 4px; font-size: 14px; font-weight: 650; }
+.chooser-list h2.first { margin-top: 8px; }
+.chooser-row { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--s-line); cursor: default; }
+.chooser-row input { flex: none; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--s-accent); }
+.chooser-row .mark { flex: none; width: 20px; height: 20px; display: inline-flex; }
+.chooser-row .body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.chooser-row .line { display: flex; align-items: baseline; gap: 8px; }
+.chooser-row .name { font-weight: 600; font-size: 13.5px; }
+.chooser-row .hint { font-size: 11.5px; color: var(--s-text-2); }
+.chooser-row .access { font-size: 12.5px; color: var(--s-text-2); }
+.chooser-foot { display: flex; align-items: center; gap: 8px; padding: 14px 24px 18px; border-top: 1px solid var(--s-line); }
+.chooser-foot .spacer { flex: 1; }
+.chooser-foot .btn { height: 28px; }
+.btn.primary { background: var(--s-accent); color: var(--s-accent-text); }
+.btn.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--s-accent) 88%, black); }
+.btn.primary:disabled { opacity: 0.4; }
