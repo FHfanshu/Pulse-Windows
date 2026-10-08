@@ -2,12 +2,13 @@
 
 use std::path::PathBuf;
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::placement::Placement;
 
 fn dir(app: &AppHandle) -> Option<PathBuf> {
-    let dir = app.path().app_config_dir().ok()?;
+    let _ = app;
+    let dir = pulse_core::paths::data_dir();
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }

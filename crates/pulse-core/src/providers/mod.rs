@@ -5,6 +5,7 @@ pub mod profile;
 
 pub mod amp;
 pub mod augment;
+pub mod claude_code;
 pub mod factory;
 pub mod gemini;
 pub mod moonshot;
@@ -18,6 +19,7 @@ use crate::service::{Registry, UsageService};
 
 pub fn registry() -> Registry {
     let services: Vec<Arc<dyn UsageService>> = vec![
+        Arc::new(claude_code::ClaudeCode::default()),
         Arc::new(moonshot::Moonshot::default()),
     ];
     services.into_iter().map(|s| (s.provider(), s)).collect()
