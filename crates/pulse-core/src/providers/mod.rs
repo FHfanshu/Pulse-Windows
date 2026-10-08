@@ -7,6 +7,7 @@ pub mod amp;
 pub mod augment;
 pub mod claude_code;
 pub mod codex;
+pub mod cursor;
 pub mod deepseek;
 pub mod factory;
 pub mod gemini;
@@ -30,6 +31,7 @@ pub fn registry() -> Registry {
         Arc::new(augment::Augment),
         Arc::new(claude_code::ClaudeCode::default()),
         Arc::new(codex::Codex),
+        Arc::new(cursor::Cursor),
         Arc::new(factory::Factory),
         Arc::new(gemini::Gemini),
         Arc::new(moonshot::Moonshot::default()),
