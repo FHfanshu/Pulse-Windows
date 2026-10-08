@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { t } from "../../shared/i18n";
 import {
-  chartDate, exactTokens, hourText, money, moneyExact, tallyTotal, tokenCount, tokensText, unpricedText,
+  chartDate, exactTokens, hourText, money, moneyExact, shortDate, tallyTotal, tokenCount, tokensText, unpricedText,
   type TokenCost, type TokenTally,
 } from "../../shared/spend";
 import { Row } from "../Group";
@@ -150,7 +150,6 @@ const MAX_BAR_WIDTH = 22;
 export function SpendBarChart({ bars, height = 78 }: { bars: Bar[]; height?: number }) {
   const first = bars[0];
   const last = bars[bars.length - 1];
-  const dateLabel = (iso: string) => new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(iso));
   return (
     <div>
       <HoverPlot
@@ -186,8 +185,8 @@ export function SpendBarChart({ bars, height = 78 }: { bars: Bar[]; height?: num
       />
       {first && last && bars.length > 1 && (
         <div className="axis-ends" aria-hidden>
-          <span>{dateLabel(first.date)}</span>
-          <span>{dateLabel(last.date)}</span>
+          <span>{shortDate(first.date)}</span>
+          <span>{shortDate(last.date)}</span>
         </div>
       )}
     </div>

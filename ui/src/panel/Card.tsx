@@ -134,7 +134,7 @@ export function Card(p: CardProps) {
               >
                 {p.detailed ? (
                   <div className="card-header-stack" style={{ gap: L.headerLineSpacing }}>
-                    <div className="card-header-top">{head}</div>
+                    <div className="card-header-top" style={{ minHeight: L.headerHeight }}>{head}</div>
                     {updated && (
                       // Level with the title, not the icon.
                       <div className="ellipsis" style={{ ...font(L.footnoteFontSize), opacity: 0.4, paddingLeft: L.headerIconSize + 8 }}>{updated}</div>
