@@ -26,12 +26,15 @@ use crate::service::{Registry, UsageService};
 
 pub fn registry() -> Registry {
     let services: Vec<Arc<dyn UsageService>> = vec![
+        Arc::new(amp::Amp),
         Arc::new(augment::Augment),
         Arc::new(claude_code::ClaudeCode::default()),
         Arc::new(codex::Codex),
         Arc::new(factory::Factory),
         Arc::new(gemini::Gemini),
         Arc::new(moonshot::Moonshot::default()),
+        Arc::new(openai_platform::OpenAiPlatform),
+        Arc::new(warp::Warp),
         Arc::new(windsurf::Windsurf),
     ];
     services.into_iter().map(|s| (s.provider(), s)).collect()
