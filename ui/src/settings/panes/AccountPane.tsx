@@ -4,7 +4,7 @@ import { relativeTime, resetText, unavailableMessage, windowName } from "../../s
 import { t } from "../../shared/i18n";
 import { accountId, percentText } from "../../shared/model";
 import { updateSettings, useUsage, type AppSettings } from "../../shared/settings";
-import { Button } from "../controls";
+import { Button, Switch } from "../controls";
 import { Group, Row } from "../Group";
 import { apiProviders } from "../panes";
 import { ToggleRow } from "./ToggleRow";
@@ -35,8 +35,48 @@ export function AccountPane({ id, settings }: { id: string; settings: AppSetting
           <KeyRow id={id} provider={provider} />
         </Group>
       )}
+      {provider === "claudeCode" && enabled && (
+        <Group title={t("Connection")}>
+          <StatusLineRow />
+        </Group>
+      )}
       <CurrentUsage id={id} settings={settings} enabled={enabled} />
     </div>
+  );
+}
+
+/** Claude Code's status line as a backup route for its figures; connected and disconnected from here. */
+function StatusLineRow() {
+  const [connected, setConnected] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    invoke<boolean>("status_line_installed").then(setConnected).catch(() => {});
+  }, []);
+
+  const change = async (want: boolean) => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      const now = await invoke<boolean>("set_status_line", { connected: want });
+      setConnected(now);
+      setFailed(now !== want);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Row
+      title={t("Claude Code status line")}
+      subtitle={failed ? t("Couldn't connect the status line") : t("A backup for when the saved login expires. Your own status line keeps working.")}
+      invalid={failed}
+    >
+      <Switch label={t("Connect status line")} checked={connected} disabled={busy} onChange={(on) => void change(on)} />
+    </Row>
   );
 }
 
