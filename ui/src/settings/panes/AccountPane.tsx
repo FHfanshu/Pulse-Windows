@@ -29,6 +29,16 @@ export function AccountPane({ id, settings }: { id: string; settings: AppSetting
           disabled={enabled && settings.enabledAccounts.length === 1}
           onChange={setEnabled}
         />
+        <ToggleRow
+          title="Detailed card"
+          subtitle={detailedCardSubtitle(id === provider ? provider : null)}
+          checked={settings.detailedCards.includes(id)}
+          onChange={(on) =>
+            updateSettings({
+              detailedCards: on ? [...settings.detailedCards.filter((a) => a !== id), id] : settings.detailedCards.filter((a) => a !== id),
+            })
+          }
+        />
       </Group>
       {apiProviders.has(provider) && (
         <Group title={t("Connection")}>
@@ -43,6 +53,16 @@ export function AccountPane({ id, settings }: { id: string; settings: AppSetting
       <CurrentUsage id={id} settings={settings} enabled={enabled} />
     </div>
   );
+}
+
+/** Providers whose records the detailed card reads (`spend::supports`). */
+const transcriptProviders = new Set(["claudeCode", "codex"]);
+
+/** What the detailed card adds, said the way it will happen (upstream `detailedCardSubtitle`): the history half only on a first account that has one. */
+function detailedCardSubtitle(primaryProvider: string | null): string {
+  return primaryProvider && transcriptProviders.has(primaryProvider)
+    ? "Adds the plan, when the figures were read and, with Token spend on, this Mac's recent activity."
+    : "Adds the plan and when the figures were read.";
 }
 
 /** Claude Code's status line as a backup route for its figures; connected and disconnected from here. */

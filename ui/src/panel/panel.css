@@ -25,6 +25,9 @@ html, body, #root {
 .card-header { position: relative; display: flex; align-items: center; }
 .card-header-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .card-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-header-stack { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+.card-header-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.card-plan { margin-left: auto; padding-left: 8px; flex: 0 100 auto; min-width: 0; opacity: 0.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .metric-row { display: flex; flex-direction: column; }
 .metric-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .value-row { display: flex; justify-content: space-between; gap: 8px; }

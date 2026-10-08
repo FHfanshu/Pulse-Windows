@@ -1,10 +1,13 @@
-// Ported from upstream Panel/UsageDetailCard.swift (compact card; the detailed
-// activity section arrives with Token spend in phase 4).
+// Ported from upstream Panel/UsageDetailCard.swift. A detailed card adds the plan, the "Updated" line and the
+// activity section (Activity.tsx).
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { relativeTime, resetText, unavailableMessage, windowName } from "../shared/copy";
 import { t } from "../shared/i18n";
 import { isSpent, percentText, remainingFraction, type ProviderUsage, type UsageWindow } from "../shared/model";
+import { intlLocale } from "../shared/spend";
+import { ActivitySection, activityState } from "./Activity";
+import { useCardLedger } from "./cardLedgers";
 import { ProviderIcon } from "./Icon";
 import type { Edge } from "./layout";
 import { detailCardLayout, type PanelMetrics } from "./layout";
@@ -20,7 +23,23 @@ export interface CardProps {
   showsRemaining: boolean;
   warningAt: number;
   usesGlass: boolean;
+  /** The detailed card: the plan, how fresh the figures are and (below) recent activity. Set per account. */
+  detailed: boolean;
+  /** Whether this account has records to show: detailed, a primary account, Token spend on. */
+  showsSpend: boolean;
   onHeight: (h: number) => void;
+}
+
+/** "Updated 3 min. ago". */
+function updatedText(iso: string): string {
+  const seconds = (Date.parse(iso) - Date.now()) / 1000;
+  if (-seconds < 60) return t("Updated just now");
+  const rtf = new Intl.RelativeTimeFormat(intlLocale(), { numeric: "auto", style: "short" });
+  const abs = Math.abs(seconds);
+  const ago = abs < 3600 ? rtf.format(Math.round(seconds / 60), "minute")
+    : abs < 86_400 ? rtf.format(Math.round(seconds / 3600), "hour")
+    : rtf.format(Math.round(seconds / 86_400), "day");
+  return t("Updated %@", ago);
 }
 
 const rowTransition = {
@@ -69,6 +88,22 @@ export function Card(p: CardProps) {
 
   const font = (size: number, weight = 400) => ({ fontSize: size, fontWeight: weight, lineHeight: `${Math.round(size * 1.2)}px` });
 
+  // The detailed card's extras. Read here, not in the section, so a card with nothing to say has no gap for it.
+  const ledger = useCardLedger(u.account.provider);
+  const activity = p.detailed && p.showsSpend ? activityState(ledger) : null;
+  const plan = p.detailed && u.plan ? u.plan : null;
+  const updated = p.detailed && u.state.kind === "live" && u.observedAt ? updatedText(u.observedAt) : null;
+  const head = (
+    <>
+      <ProviderIcon provider={u.account.provider} size={L.headerIconSize} />
+      <span className="card-title" style={font(L.titleFontSize, 600)}>
+        {t("%@ Usage", p.title)}
+      </span>
+      {/* The plan as the provider names it. It gives way to the title, which says whose card this is. */}
+      {plan && <span className="card-plan" style={font(L.footnoteFontSize, 500)}>{plan}</span>}
+    </>
+  );
+
   return (
     <div className={`card ${p.usesGlass ? "glass" : ""}`} style={{ width: totalW, height: totalH, [pointerSide]: L.pointerWidth } as React.CSSProperties}>
       <svg className="card-surface" width={totalW} height={totalH}>
@@ -87,19 +122,25 @@ export function Card(p: CardProps) {
             top: p.edge === "top" ? L.pointerWidth : 0,
           }}
         >
-          <div className="card-header" style={{ height: L.headerHeight, gap: 8 }}>
+          <div className="card-header" style={{ height: p.detailed ? undefined : L.headerHeight, minHeight: L.headerHeight, gap: 8 }}>
             <AnimatePresence mode="popLayout" initial={false}>
               <motion.div
                 key={`${u.account.provider}|${u.account.slot}|${p.title}`}
                 className="card-header-line"
+                style={p.detailed ? { flex: "1 1 auto" } : undefined}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1, transition: { duration: 0.1, ease: "easeOut" } }}
                 exit={{ opacity: 0, transition: { duration: 0.06, ease: "easeOut" } }}
               >
-                <ProviderIcon provider={u.account.provider} size={L.headerIconSize} />
-                <span className="card-title" style={font(L.titleFontSize, 600)}>
-                  {t("%@ Usage", p.title)}
-                </span>
+                {p.detailed ? (
+                  <div className="card-header-stack" style={{ gap: L.headerLineSpacing }}>
+                    <div className="card-header-top">{head}</div>
+                    {updated && (
+                      // Level with the title, not the icon.
+                      <div className="ellipsis" style={{ ...font(L.footnoteFontSize), opacity: 0.4, paddingLeft: L.headerIconSize + 8 }}>{updated}</div>
+                    )}
+                  </div>
+                ) : head}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -122,6 +163,14 @@ export function Card(p: CardProps) {
           {saysNothing && <Message text={unavailableMessage("noLimitsReported")} size={L.messageFontSize} />}
           {unavailable && <Message text={unavailableMessage(unavailable)} size={L.messageFontSize} />}
           {footnote && <div style={{ ...font(L.footnoteFontSize), opacity: 0.4 }}>{footnote}</div>}
+
+          <AnimatePresence initial={false}>
+            {activity && (
+              <motion.div key="activity" {...rowTransition}>
+                <ActivitySection state={activity} L={L} provider={u.account.provider} promptCache={ledger.promptCache} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
