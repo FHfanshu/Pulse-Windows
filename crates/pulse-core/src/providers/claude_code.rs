@@ -202,14 +202,8 @@ fn capture_problem(ctx: &FetchContext, had_credentials: Option<bool>) -> Unavail
     }
 }
 
-/// Whether Claude Code's settings point the status line at Pulse.
 fn status_line_installed(ctx: &FetchContext) -> bool {
-    let path = ctx.home.join(".claude").join("settings.json");
-    let Ok(bytes) = std::fs::read(path) else { return false };
-    let Ok(root) = serde_json::from_slice::<Value>(&bytes) else { return false };
-    root.pointer("/statusLine/command")
-        .and_then(Value::as_str)
-        .is_some_and(|c| c.to_ascii_lowercase().contains("--statusline") && c.to_ascii_lowercase().contains("pulse"))
+    crate::statusline::is_installed(&ctx.home)
 }
 
 /// Parse the usage endpoint's reply. The `limits` array is preferred: only it

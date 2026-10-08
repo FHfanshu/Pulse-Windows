@@ -10,6 +10,7 @@ pub mod refresh;
 pub mod secrets;
 pub mod service;
 pub mod settings;
+pub mod statusline;
 pub mod store;
 
 pub use model::*;

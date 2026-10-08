@@ -146,6 +146,48 @@ fn rail_press(shared: State<SharedPanel>, x: f64, y: f64) {
     panel::press(&shared, (x, y));
 }
 
+fn home_dir() -> std::path::PathBuf {
+    std::env::var_os("USERPROFILE").map(Into::into).unwrap_or_default()
+}
+
+#[tauri::command]
+fn status_line_installed() -> bool {
+    pulse_core::statusline::is_installed(&home_dir())
+}
+
+/// Connect or disconnect Claude Code's status line (Claude Code pane).
+#[tauri::command]
+fn set_status_line(state: State<AppState>, connected: bool) -> Result<bool, String> {
+    let home = home_dir();
+    let result = if connected {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        pulse_core::statusline::install(&home, &exe)
+    } else {
+        pulse_core::statusline::uninstall(&home)
+    };
+    result.map_err(|e| format!("{e:?}"))?;
+    state.wake.notify_one();
+    Ok(pulse_core::statusline::is_installed(&home))
+}
+
+#[tauri::command]
+fn get_placement(shared: State<SharedPanel>) -> placement::Placement {
+    shared.lock().unwrap().placement.clone()
+}
+
+/// Settings > Position: move the rail to another dock, keeping its ratios (upstream `PanelPlacement.update(dock:)`).
+#[tauri::command]
+fn set_dock(app: AppHandle, shared: State<SharedPanel>, dock: placement::Dock) {
+    let placement = {
+        let mut state = shared.lock().unwrap();
+        state.placement.dock = dock;
+        state.placement.clone()
+    };
+    store::save_placement(&app, &placement);
+    panel::place(&app, &shared);
+    let _ = app.emit("placement-changed", &placement);
+}
+
 #[tauri::command]
 fn open_settings(app: AppHandle) {
     show_settings(&app);
@@ -166,6 +208,15 @@ fn show_settings(app: &AppHandle) {
 }
 
 fn main() {
+    // Headless modes run before any window exists.
+    if std::env::args().any(|a| a == pulse_core::statusline::MODE_ARGUMENT) {
+        pulse_core::statusline::run_as_status_line();
+        return;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        pulse_core::statusline::repair_path_if_needed(&home_dir(), &exe);
+    }
+
     let shared: SharedPanel = Arc::new(Mutex::new(PanelState::default()));
 
     tauri::Builder::default()
@@ -182,6 +233,10 @@ fn main() {
             set_geometry,
             set_hit_rects,
             rail_press,
+            get_placement,
+            set_dock,
+            status_line_installed,
+            set_status_line,
             open_settings
         ])
         .setup(move |app| {

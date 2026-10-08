@@ -265,4 +265,5 @@ fn carry(app: &AppHandle, shared: &SharedPanel, window: &WebviewWindow, cursor_p
     drop(state);
     crate::store::save_placement(app, &placement);
     let _ = app.emit_to(LABEL, "panel-layout", layout);
+    let _ = app.emit("placement-changed", &placement);
 }
