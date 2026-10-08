@@ -541,7 +541,7 @@ impl SpendSummary {
         let known: HashSet<UsageProject> = projects.values().filter_map(|p| p.metadata.clone()).collect();
         let names = UsageProject::display_names(&known);
         let mut name_counts: HashMap<&str, usize> = HashMap::new();
-        for project in &known {
+        for project in projects.values().filter_map(|p| p.metadata.as_ref()) {
             *name_counts.entry(project.name.as_str()).or_default() += 1;
         }
         summary.projects = projects

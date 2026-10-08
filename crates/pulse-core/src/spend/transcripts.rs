@@ -105,7 +105,9 @@ pub fn list_transcripts(roots: &[PathBuf]) -> Vec<(PathBuf, Stamp)> {
             if kind.is_dir() {
                 pending.push(path);
             } else if kind.is_file() && path.extension().is_some_and(|e| e == "jsonl") {
-                if let Some(stamp) = entry.metadata().ok().as_ref().and_then(Stamp::of) {
+                // The file's own metadata, not the directory entry's: NTFS refreshes an entry's
+                // size and time lazily, and a stale stamp would hide an appended transcript.
+                if let Some(stamp) = std::fs::metadata(&path).ok().as_ref().and_then(Stamp::of) {
                     found.push((path, stamp));
                 }
             }

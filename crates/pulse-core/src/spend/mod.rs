@@ -28,6 +28,11 @@ pub mod tally;
 pub mod titles;
 pub mod transcripts;
 
+#[cfg(test)]
+mod tests_ledger;
+#[cfg(test)]
+mod tests_record;
+
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
