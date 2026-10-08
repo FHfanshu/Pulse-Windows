@@ -564,6 +564,7 @@
  "Choose at least one service. Pulse reads its login and checks usage only after you finish. You can change this later in Settings.": "请至少勾选一个服务。点「完成」后，Pulse 才会读取所选服务的登录信息并查询用量。之后可以在设置里更改。",
  "This version supports more services found on your Mac. Choose any you want to add; your existing choices stay in place.": "此版本新增支持了本机检测到的更多服务。勾选想添加的即可，已有选择保持不变。",
  "Detected on this Mac": "本机已检测到",
+ "Detected on this PC": "本机已检测到",
  "Select detected services": "选择已检测到的服务",
  "Done": "完成",
  "Enable a service in its settings to start monitoring.": "在服务的设置页中开启，即可开始监控。",

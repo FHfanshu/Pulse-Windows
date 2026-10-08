@@ -24,6 +24,7 @@ export default defineConfig({
       input: {
         panel: resolve(__dirname, "ui/panel.html"),
         settings: resolve(__dirname, "ui/settings.html"),
+        chooser: resolve(__dirname, "ui/chooser.html"),
       },
     },
   },

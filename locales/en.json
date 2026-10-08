@@ -564,6 +564,7 @@
  "Choose at least one service. Pulse reads its login and checks usage only after you finish. You can change this later in Settings.": "Choose at least one service. Pulse reads its login and checks usage only after you finish. You can change this later in Settings.",
  "This version supports more services found on your Mac. Choose any you want to add; your existing choices stay in place.": "This version supports more services found on your Mac. Choose any you want to add; your existing choices stay in place.",
  "Detected on this Mac": "Detected on this Mac",
+ "Detected on this PC": "Detected on this PC",
  "Select detected services": "Select detected services",
  "Done": "Done",
  "Enable a service in its settings to start monitoring.": "Enable a service in its settings to start monitoring.",

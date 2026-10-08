@@ -75,7 +75,7 @@ export function enabledInOrder(settings: AppSettings): string[] {
   const enabled = new Set(settings.enabledAccounts);
   const ordered = settings.providerOrder.filter((id) => enabled.has(id));
   const rest = settings.enabledAccounts.filter((id) => !ordered.includes(id));
-  return [...ordered, ...rest];
+  return [...ordered, ...[...rest].sort()];
 }
 
 export function buildSections(settings: AppSettings, providers: ProviderInfo[]): SidebarSection[] {

@@ -122,3 +122,18 @@ button, input, select { font: inherit; color: inherit; }
 .btn { height: 26px; padding: 0 14px; border: 0; border-radius: 8px; background: var(--s-select); white-space: nowrap; }
 .btn:hover:not(:disabled) { background: var(--s-select-hover); }
 .btn:disabled { opacity: 0.4; }
+
+/* Position picker: beside the label when both fit, under it otherwise. */
+.row-wrap { flex-wrap: wrap; }
+.row-wrap .row-label { flex: 1 1 240px; }
+.row-wrap .row-control { max-width: 100%; min-width: 0; }
+.row-wrap .segmented { max-width: 100%; }
+.row-wrap .segmented button { min-width: 0; padding: 0 10px; overflow: hidden; text-overflow: ellipsis; }
+
+/* Order list: rows drag by pointer; the row under the pointer takes the accent tint. */
+.order-row { touch-action: none; cursor: grab; }
+.order-row + .order-row, .order-row + .row { border-top: 1px solid var(--s-line); }
+.order-row[data-over="true"] { background: color-mix(in srgb, var(--s-accent) 14%, transparent); }
+.order-row[data-dragging="true"] { cursor: grabbing; opacity: 0.55; }
+.icon-glyph { display: inline-flex; vertical-align: middle; }
+.icon-glyph svg { width: 12px; height: 12px; }
