@@ -7,7 +7,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::Utc;
-use pulse_core::spend::{self, activity::TokenActivity, summary::SpendSummary, Calendar, Ledger, LedgerDay, PromptCacheReading, SpendAgent};
+use pulse_core::spend::{
+    self, activity::TokenActivity, model_summary::ModelSpendSummary, summary::SpendSummary, Calendar, Ledger, LedgerDay, PromptCacheReading,
+    SpendAgent,
+};
 use pulse_core::Provider;
 use serde::Serialize;
 use tauri::State;
@@ -29,13 +32,26 @@ fn read_all() -> HashMap<SpendAgent, Ledger> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpendOverview {
+    /// Every agent added up.
     pub summary: SpendSummary,
+    /// The year, over the focused agent when there is one, else over all of them.
     pub activity: TokenActivity,
+    /// The same span for the focused agent alone; present only when `agent` was asked for.
+    pub agent: Option<SpendSummary>,
+    /// One model's figures, narrowed to the focused agent first; present only when `model` was asked for.
+    pub model: Option<ModelSpendSummary>,
 }
 
 /// The Token spend pane: combined and per-agent figures over the last `over_last` days (None = all).
+/// `agent` and `model` ask for the drill-downs. Everything is counted from the same ledgers with
+/// one `now` and one calendar, so a detail always adds up to the row it was opened from.
 #[tauri::command]
-pub async fn spend_overview(state: State<'_, AppState>, over_last: Option<usize>) -> Result<Option<SpendOverview>, String> {
+pub async fn spend_overview(
+    state: State<'_, AppState>,
+    over_last: Option<usize>,
+    agent: Option<SpendAgent>,
+    model: Option<String>,
+) -> Result<Option<SpendOverview>, String> {
     if !state.settings().reads_token_spend {
         return Ok(None);
     }
@@ -43,9 +59,23 @@ pub async fn spend_overview(state: State<'_, AppState>, over_last: Option<usize>
         let ledgers = read_all();
         let now = Utc::now();
         let calendar = Calendar::local();
+        let mut summary = SpendSummary::of(&ledgers, over_last, now, &calendar);
+        let narrowed: HashMap<SpendAgent, Ledger> = match agent {
+            Some(a) => ledgers.into_iter().filter(|(k, _)| *k == a).collect(),
+            None => ledgers,
+        };
+        let mut focused = agent.map(|_| SpendSummary::of(&narrowed, over_last, now, &calendar));
+        // The pane draws neither the session list nor the project list, and every session carries
+        // its quarter-hours: leave both out of what crosses the IPC.
+        for s in std::iter::once(&mut summary).chain(focused.as_mut()) {
+            s.sessions = Vec::new();
+            s.projects = Vec::new();
+        }
         Some(SpendOverview {
-            summary: SpendSummary::of(&ledgers, over_last, now, &calendar),
-            activity: TokenActivity::of(&ledgers, now, &calendar),
+            summary,
+            activity: TokenActivity::of(&narrowed, now, &calendar),
+            agent: focused,
+            model: model.map(|name| ModelSpendSummary::of(&narrowed, &name, over_last, now, &calendar)),
         })
     })
     .await
