@@ -4,6 +4,12 @@
 pub mod mock;
 pub mod model;
 pub mod provider;
+pub mod providers;
+pub mod refresh;
+pub mod secrets;
+pub mod service;
+pub mod settings;
+pub mod store;
 
 pub use model::*;
 pub use provider::Provider;
