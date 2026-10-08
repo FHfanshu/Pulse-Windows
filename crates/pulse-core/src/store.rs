@@ -26,6 +26,11 @@ struct Entry {
     last_good: Option<ProviderUsage>,
     generation: u64,
     refreshing: bool,
+    /// What the provider's service itself returned on the latest pass, before a
+    /// failure was swapped for the last good figures. Alerts are judged on it.
+    raw: Option<ProviderUsage>,
+    /// Whether `raw` has landed since the alert engine last took it.
+    raw_unseen: bool,
 }
 
 pub struct UsageStore {
@@ -70,6 +75,35 @@ impl UsageStore {
     pub fn refreshing(&self) -> Vec<String> {
         let inner = self.inner.lock().unwrap();
         inner.entries.iter().filter(|(_, e)| e.refreshing).map(|(k, _)| k.clone()).collect()
+    }
+
+    /// Passes that landed since the last call, as `(shown, raw)`: what the panel
+    /// displays and what the provider actually returned. Each is handed out once,
+    /// so a failure is counted once per pass however many callers ask.
+    pub fn take_observations(&self) -> Vec<(ProviderUsage, ProviderUsage)> {
+        let mut inner = self.inner.lock().unwrap();
+        inner
+            .entries
+            .values_mut()
+            .filter_map(|e| {
+                if !std::mem::take(&mut e.raw_unseen) {
+                    return None;
+                }
+                Some((e.usage.clone()?, e.raw.clone()?))
+            })
+            .collect()
+    }
+
+    /// Live readings as they stand, each its own raw: for re-judging what is already
+    /// in hand after a notification setting changes. Not a pass, so no failure is counted.
+    pub fn live_readings(&self) -> Vec<ProviderUsage> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .entries
+            .values()
+            .filter_map(|e| e.usage.clone())
+            .filter(|u| u.state == UsageState::Live)
+            .collect()
     }
 
     pub fn note_looked(&self) {
@@ -123,6 +157,8 @@ impl UsageStore {
                 return false;
             }
             entry.refreshing = false;
+            entry.raw = Some(fetched.clone());
+            entry.raw_unseen = true;
             let shown = merge(fetched, entry.last_good.as_ref(), Utc::now());
             if shown.state == UsageState::Live {
                 entry.last_good = Some(shown.clone());
@@ -233,5 +269,45 @@ mod tests {
 
         let refused = ProviderUsage::unavailable(key, Unavailability::ApiKeyRefused);
         assert_eq!(merge(refused, Some(&good), now).state, UsageState::Unavailable(Unavailability::ApiKeyRefused));
+    }
+
+    struct Scripted(Mutex<Vec<ProviderUsage>>);
+
+    #[async_trait::async_trait]
+    impl crate::service::UsageService for Scripted {
+        fn provider(&self) -> Provider {
+            Provider::Codex
+        }
+        async fn fetch(&self, _: &FetchContext, _: &AccountKey) -> ProviderUsage {
+            self.0.lock().unwrap().remove(0)
+        }
+    }
+
+    #[tokio::test]
+    async fn each_pass_is_handed_to_alerts_once_with_the_raw_answer() {
+        let key = AccountKey::primary(Provider::Codex);
+        let good = ProviderUsage::live(key.clone(), vec![UsageWindow::new("w", WindowKind::Weekly, 0.3, 604_800)], Utc::now());
+        let down = ProviderUsage::unavailable(key.clone(), Unavailability::Unreachable);
+        let service: Arc<dyn crate::service::UsageService> = Arc::new(Scripted(Mutex::new(vec![good, down])));
+        let registry: Registry = [(Provider::Codex, service)].into();
+        let store = UsageStore::new(registry, Arc::new(crate::secrets::MemorySecrets::default()), None);
+        let mut settings = AppSettings::default();
+        settings.enabled_accounts.insert(key.id());
+        let settings = Arc::new(settings);
+
+        assert!(store.take_observations().is_empty());
+        store.refresh(settings.clone(), &key.id()).await;
+        let first = store.take_observations();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].1.state, UsageState::Live);
+        assert!(store.take_observations().is_empty(), "handed out once");
+        assert_eq!(store.live_readings().len(), 1);
+
+        // The panel keeps the last good figures, marked stale; the raw answer is the failure.
+        store.refresh(settings, &key.id()).await;
+        let second = store.take_observations();
+        assert_eq!(second[0].0.state, UsageState::Stale);
+        assert_eq!(second[0].1.state, UsageState::Unavailable(Unavailability::Unreachable));
+        assert!(store.live_readings().is_empty());
     }
 }

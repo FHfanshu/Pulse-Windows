@@ -16,6 +16,8 @@ pub struct AppState {
     /// Wakes the refresh loop early (settings changed, manual refresh, panel looked at).
     pub wake: Notify,
     pub dir: PathBuf,
+    /// Usage notification engine and its memory (`alerts.json`).
+    pub alerts: crate::notify::Alerts,
     /// Development aid: `PULSE_MOCK=1` shows fixed sample readings.
     pub mock: bool,
 }
@@ -39,6 +41,7 @@ impl AppState {
             store,
             secrets,
             wake: Notify::new(),
+            alerts: crate::notify::Alerts::load(&dir),
             dir,
             mock: std::env::var("PULSE_MOCK").is_ok_and(|v| v == "1"),
         }
@@ -92,6 +95,7 @@ pub fn start_refresh_loop(app: AppHandle) {
                 emit_usage(&app);
                 state.store.refresh_all(settings.clone()).await;
                 emit_usage(&app);
+                crate::notify::after_refresh(&app);
             }
             let wait = state.store.next_interval(&settings).max(30) as u64;
             tokio::select! {
