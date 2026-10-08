@@ -269,6 +269,19 @@ mod tests {
     }
 
     #[test]
+    fn a_window_whose_duration_overflows_is_dropped() {
+        let json = format!(
+            r#"{{"limits":[
+              {{"window":{{"duration":{},"timeUnit":"TIME_UNIT_DAY"}},"detail":{{"limit":"10","used":"1","resetTime":"2026-10-01T00:00:00.000Z"}}}},
+              {{"window":{{"duration":5,"timeUnit":"TIME_UNIT_HOUR"}},"detail":{{"limit":"10","used":"1","resetTime":"2026-10-01T00:00:00.000Z"}}}}
+            ]}}"#,
+            i64::MAX
+        );
+        let w = windows(&decode(&json));
+        assert_eq!(w.iter().map(|w| w.window_seconds).collect::<Vec<_>>(), [18_000]);
+    }
+
+    #[test]
     fn plan_names() {
         assert_eq!(plan_name(Some("LEVEL_INTERMEDIATE")).as_deref(), Some("Intermediate"));
         assert_eq!(plan_name(Some("LEVEL_ADVANCED_PLUS")).as_deref(), Some("Advanced Plus"));
