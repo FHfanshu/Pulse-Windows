@@ -13,7 +13,7 @@ use pulse_core::Provider;
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, Wry};
 
 use panel::{PanelState, SharedPanel};
 use placement::{Geometry, Rect};
@@ -49,6 +49,7 @@ fn update_settings(app: AppHandle, state: State<AppState>, patch: serde_json::Va
             || old.refresh_interval != settings.refresh_interval
     };
     state.save_settings(settings.clone());
+    sync_tray_choice(&app, settings.needs_provider_selection());
     let _ = app.emit("settings-changed", &settings);
     state::emit_usage(&app);
     if refetch {
@@ -193,6 +194,59 @@ fn open_settings(app: AppHandle) {
     show_settings(&app);
 }
 
+/// Presence-only scan for the chooser: which providers left a folder on this PC.
+#[tauri::command]
+fn detect_providers() -> Vec<&'static str> {
+    let env_path = |name: &str| std::env::var_os(name).map(std::path::PathBuf::from).unwrap_or_default();
+    pulse_core::discovery::detected(&home_dir(), &env_path("APPDATA"), &env_path("LOCALAPPDATA"))
+        .into_iter()
+        .map(|p| p.raw())
+        .collect()
+}
+
+#[tauri::command]
+fn open_chooser(app: AppHandle) {
+    show_chooser(&app);
+}
+
+fn show_chooser(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("chooser") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(app, "chooser", WebviewUrl::App("chooser.html".into()))
+        .title("Pulse")
+        .inner_size(560.0, 640.0)
+        .min_inner_size(480.0, 420.0)
+        .center()
+        .build();
+}
+
+/// The tray menu, kept so its leading "choose services" item can come and go.
+struct TrayMenu(Menu<Wry>);
+
+const CHOOSE_ITEM: &str = "choose";
+
+/// Nothing else on screen says why there is no rail, so while no service is
+/// chosen the tray menu leads with a way back to the chooser.
+fn sync_tray_choice(app: &AppHandle, needs_choice: bool) {
+    let Some(menu) = app.try_state::<TrayMenu>() else { return };
+    let existing = menu.0.get(CHOOSE_ITEM);
+    if needs_choice && existing.is_none() {
+        if let Ok(item) =
+            MenuItem::with_id(app, CHOOSE_ITEM, "Choose services to start monitoring…", true, None::<&str>)
+        {
+            let _ = menu.0.insert(&item, 0);
+        }
+    } else if !needs_choice {
+        if let Some(item) = existing {
+            let _ = menu.0.remove(&item);
+        }
+    }
+}
+
 fn show_settings(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.unminimize();
@@ -237,7 +291,9 @@ fn main() {
             set_dock,
             status_line_installed,
             set_status_line,
-            open_settings
+            open_settings,
+            detect_providers,
+            open_chooser
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -253,20 +309,23 @@ fn main() {
             let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Pulse", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings, &quit])?;
+            app.manage(TrayMenu(menu.clone()));
+            sync_tray_choice(&handle, needs_choice);
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().expect("icon"))
                 .tooltip("Pulse")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => show_settings(app),
+                    CHOOSE_ITEM => show_chooser(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .build(app)?;
 
-            // Upstream opens the provider chooser on first launch; until it exists, Settings.
+            // First launch with nothing chosen: the provider chooser, not Settings.
             if needs_choice {
-                show_settings(&handle);
+                show_chooser(&handle);
             }
             Ok(())
         })
