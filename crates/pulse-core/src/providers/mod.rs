@@ -6,6 +6,7 @@ pub mod profile;
 pub mod amp;
 pub mod augment;
 pub mod claude_code;
+pub mod codex;
 pub mod deepseek;
 pub mod factory;
 pub mod gemini;
@@ -27,6 +28,7 @@ pub fn registry() -> Registry {
     let services: Vec<Arc<dyn UsageService>> = vec![
         Arc::new(augment::Augment),
         Arc::new(claude_code::ClaudeCode::default()),
+        Arc::new(codex::Codex),
         Arc::new(factory::Factory),
         Arc::new(gemini::Gemini),
         Arc::new(moonshot::Moonshot::default()),
