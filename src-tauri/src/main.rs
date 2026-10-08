@@ -4,6 +4,7 @@ mod panel;
 mod placement;
 mod state;
 mod store;
+mod tray_icon;
 mod win;
 
 use std::sync::{Arc, Mutex};

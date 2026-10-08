@@ -71,6 +71,7 @@ impl AppState {
 pub fn emit_usage(app: &AppHandle) {
     let state = app.state::<AppState>();
     let payload = UsagePayload { usages: state.snapshot(), refreshing: state.store.refreshing() };
+    crate::tray_icon::update(app, &payload.usages, &state.settings());
     let _ = app.emit("usage-changed", payload);
 }
 
