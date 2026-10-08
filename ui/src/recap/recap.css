@@ -1,0 +1,100 @@
+/* The recap window: the deck on the left, the period, price and ways out on the right. The window
+   follows the system's light or dark; only the cards are paper. */
+:root {
+  --r-font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --r-bg: #f5f5f6;
+  --r-stage: #e4e4e6;
+  --r-line: rgba(0, 0, 0, 0.1);
+  --r-text: #1d1d1f;
+  --r-text-2: rgba(60, 60, 67, 0.62);
+  --r-field: rgba(0, 0, 0, 0.06);
+  --r-select: rgba(120, 120, 128, 0.14);
+  --r-select-hover: rgba(120, 120, 128, 0.24);
+  --r-track: rgba(120, 120, 128, 0.32);
+  --r-accent: #0a7aff;
+  --r-accent-text: #ffffff;
+  --r-knob: #ffffff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --r-bg: #28282b;
+    --r-stage: #1b1b1d;
+    --r-line: rgba(255, 255, 255, 0.1);
+    --r-text: #f2f2f4;
+    --r-text-2: rgba(235, 235, 245, 0.58);
+    --r-field: rgba(255, 255, 255, 0.09);
+    --r-select: rgba(255, 255, 255, 0.12);
+    --r-select-hover: rgba(255, 255, 255, 0.2);
+    --r-track: rgba(255, 255, 255, 0.28);
+    --r-accent: #0a84ff;
+    color-scheme: dark;
+  }
+}
+
+html, body, #root { width: 100%; height: 100%; overflow: hidden; }
+body {
+  background: var(--r-bg);
+  color: var(--r-text);
+  font: 13px/1.35 var(--r-font);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+button, input, select { font: inherit; color: inherit; }
+
+.recap-window { display: flex; width: 100%; height: 100%; min-width: 780px; }
+
+/* Stage */
+.stage { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; background: var(--r-stage); }
+.viewer { display: flex; flex-direction: column; gap: 12px; width: 100%; height: 100%; padding: 18px 12px; min-height: 0; }
+.pager { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 6px; }
+.pager-button { width: 28px; flex: none; align-self: center; height: 40px; display: flex; align-items: center; justify-content: center; border: 0; background: transparent; border-radius: 8px; color: var(--r-text); }
+.pager-button:hover:not(:disabled) { background: var(--r-field); }
+.pager-button:disabled { color: var(--r-text-2); opacity: 0.4; }
+.card-frame { flex: 1; min-width: 0; min-height: 0; }
+.card-clip { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); overflow: hidden; border-radius: 10px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18); }
+.dots { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.dots-row { display: flex; gap: 6px; }
+.dot { width: 6px; height: 6px; padding: 0; border: 0; border-radius: 3px; background: var(--r-text-2); opacity: 0.45; }
+.dot.on { background: var(--r-text); opacity: 1; }
+.counter { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--r-text-2); }
+
+/* Messages */
+.message { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 340px; padding: 24px; text-align: center; }
+.message svg { width: 30px; height: 30px; color: var(--r-text-2); }
+.message .title { font-size: 15px; font-weight: 600; }
+.message .detail { font-size: 12px; color: var(--r-text-2); }
+.spinner { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--r-track); border-top-color: var(--r-text-2); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Sidebar */
+.sidebar { width: 280px; flex: none; display: flex; flex-direction: column; gap: 22px; padding: 18px; border-left: 1px solid var(--r-line); background: var(--r-bg); overflow-y: auto; }
+.section { display: flex; flex-direction: column; gap: 8px; }
+.section > .heading { font-size: 12px; font-weight: 600; }
+.hint { font-size: 11px; color: var(--r-text-2); }
+.grow { flex: 1; }
+
+.segmented { display: flex; padding: 2px; border-radius: 8px; background: var(--r-select); }
+.segmented button { flex: 1; height: 24px; border: 0; border-radius: 6px; background: transparent; }
+.segmented button.on { background: var(--r-accent); color: var(--r-accent-text); }
+.select { width: 100%; height: 28px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--r-select); outline: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+.select:hover { background-color: var(--r-select-hover); }
+.select option { background: var(--r-bg); color: var(--r-text); }
+.price { display: flex; align-items: center; gap: 6px; }
+.price .sign { color: var(--r-text-2); }
+.price input { width: 96px; height: 26px; padding: 0 8px; border: 1px solid var(--r-line); border-radius: 6px; background: var(--r-field); outline: none; user-select: text; }
+.price input:focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--r-accent) 55%, transparent); }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.switch { position: relative; width: 34px; height: 20px; flex: none; padding: 0; border: 0; border-radius: 10px; background: var(--r-track); transition: background 0.15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 8px; background: var(--r-knob); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); transition: transform 0.15s; }
+.switch.on { background: var(--r-accent); }
+.switch.on::after { transform: translateX(14px); }
+
+.exports { display: flex; flex-direction: column; gap: 8px; }
+.note { font-size: 11px; color: var(--r-text-2); min-height: 15px; }
+.buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.button { height: 28px; padding: 0 10px; border: 1px solid var(--r-line); border-radius: 8px; background: var(--r-select); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.button:hover:not(:disabled) { background: var(--r-select-hover); }
+.button:disabled { opacity: 0.45; }
+.button.primary { background: var(--r-accent); color: var(--r-accent-text); border-color: transparent; }

@@ -56,6 +56,9 @@ export interface AppSettings {
   refreshInterval: RefreshInterval;
   networkProxy: { enabled: boolean; scheme: string; host: string; port: number };
   readsTokenSpend: boolean;
+  recapMonthlyPrice: number | null;
+  recapHidesProjects: boolean;
+  recapAnnouncedMonth: string | null;
   lowBalanceAlerts: Record<string, number>;
   alertThreshold: number | null;
   alertsOnReset: boolean;

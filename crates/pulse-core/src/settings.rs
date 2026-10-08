@@ -149,6 +149,15 @@ pub struct AppSettings {
     // Token spend
     pub reads_token_spend: bool,
 
+    // Recap
+    /// The reader's monthly subscription price in US dollars, for the payback card. `None` and 0
+    /// both mean no price.
+    pub recap_monthly_price: Option<f64>,
+    /// Replace project names on the cards with "Project 1", "Project 2"...
+    pub recap_hides_projects: bool,
+    /// The month ("2026-09") whose "recap is ready" notification was already sent.
+    pub recap_announced_month: Option<String>,
+
     // Notifications (all off by default)
     pub low_balance_alerts: BTreeMap<String, f64>,
     pub alert_threshold: Option<u8>,
@@ -204,6 +213,9 @@ impl Default for AppSettings {
             refresh_interval: RefreshInterval::Adaptive,
             network_proxy: NetworkProxy::default(),
             reads_token_spend: false,
+            recap_monthly_price: None,
+            recap_hides_projects: false,
+            recap_announced_month: None,
             low_balance_alerts: BTreeMap::new(),
             alert_threshold: None,
             alerts_on_reset: false,

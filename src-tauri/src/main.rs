@@ -3,6 +3,7 @@
 mod notify;
 mod panel;
 mod placement;
+mod recap_ipc;
 mod spend_ipc;
 mod state;
 mod store;
@@ -301,6 +302,8 @@ fn main() {
             spend_ipc::spend_overview,
             spend_ipc::card_spend,
             spend_ipc::prompt_cache,
+            recap_ipc::recap_report,
+            recap_ipc::open_recap,
             open_settings,
             detect_providers,
             open_chooser
