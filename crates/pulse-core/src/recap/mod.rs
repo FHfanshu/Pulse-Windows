@@ -193,6 +193,9 @@ pub struct ModelShare {
 pub struct AgentShare {
     pub agent: SpendAgent,
     pub name: &'static str,
+    /// The stem of the agent's mark in the bundled icon set, where it has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<&'static str>,
     pub tokens: i64,
     pub share: f64,
     /// Calendar days in the period with any of this agent's work.

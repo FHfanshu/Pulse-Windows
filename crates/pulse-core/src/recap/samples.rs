@@ -52,6 +52,7 @@ fn agent_shares(total: i64, days: &[Day], scale: usize) -> Vec<AgentShare> {
             AgentShare {
                 agent: *agent,
                 name: agent.display_name(),
+                icon: Some(agent.provider().icon_resource()),
                 tokens: (share * total as f64) as i64,
                 share: *share,
                 active_days: dates.len(),
