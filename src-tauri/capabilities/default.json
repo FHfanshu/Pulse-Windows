@@ -2,5 +2,5 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "windows": ["panel", "settings"],
-  "permissions": ["core:default", "core:window:allow-start-dragging"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "notification:default"]
 }

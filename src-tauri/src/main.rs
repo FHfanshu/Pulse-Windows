@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod notify;
 mod panel;
 mod placement;
 mod state;
@@ -48,7 +49,9 @@ fn update_settings(app: AppHandle, state: State<AppState>, patch: serde_json::Va
             || old.network_proxy != settings.network_proxy
             || old.refresh_interval != settings.refresh_interval
     };
+    let previous = state.settings();
     state.save_settings(settings.clone());
+    notify::reconsider(&app, &previous);
     let _ = app.emit("settings-changed", &settings);
     state::emit_usage(&app);
     if refetch {
@@ -103,6 +106,7 @@ async fn refresh(app: AppHandle, account: Option<String>) -> Result<(), String> 
             tauri::async_runtime::spawn(async move {
                 store.refresh(settings, &id).await;
                 state::emit_usage(&app2);
+                notify::after_refresh(&app2);
             });
         }
         None => state.wake.notify_one(),
@@ -220,6 +224,7 @@ fn main() {
     let shared: SharedPanel = Arc::new(Mutex::new(PanelState::default()));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
