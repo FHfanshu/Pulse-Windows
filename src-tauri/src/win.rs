@@ -250,54 +250,90 @@ pub mod login_item {
     }
 }
 
-/// Keep the window out of screen captures (and so out of [`capture_screen`]'s own reading of
-/// what is behind it). Windows 10 2004 or later; earlier builds ignore it.
-pub fn exclude_from_capture(window: &WebviewWindow, exclude: bool) {
-    use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE};
-    let Some(hwnd) = hwnd(window) else { return };
-    unsafe {
-        let _ = SetWindowDisplayAffinity(hwnd, if exclude { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE });
-    }
+
+/// The desktop wallpaper: the image file Windows draws (None for a solid colour), how it is
+/// fitted (`HKCU\Control Panel\Desktop` WallpaperStyle / TileWallpaper), and the desktop colour.
+pub struct Wallpaper {
+    pub file: Option<std::path::PathBuf>,
+    pub style: &'static str,
+    pub colour: (u8, u8, u8),
 }
 
-/// The screen inside `rect` (physical pixels: left, top, right, bottom), shrunk to `w` x `h` with
-/// halftone averaging. BGRA rows, top row first.
-pub fn capture_screen(rect: (i32, i32, i32, i32), w: i32, h: i32) -> Option<Vec<u8>> {
-    use windows::Win32::Foundation::HANDLE;
-    use windows::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject, SetBrushOrgEx,
-        SetStretchBltMode, StretchBlt, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HALFTONE, SRCCOPY,
+pub fn wallpaper() -> Wallpaper {
+    use windows::Win32::Graphics::Gdi::{GetSysColor, COLOR_BACKGROUND};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SystemParametersInfoW, SPI_GETDESKWALLPAPER, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     };
+    let mut buffer = [0u16; 1024];
+    let read = unsafe {
+        SystemParametersInfoW(
+            SPI_GETDESKWALLPAPER,
+            buffer.len() as u32,
+            Some(buffer.as_mut_ptr().cast()),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    let named = read
+        .is_ok()
+        .then(|| std::path::PathBuf::from(String::from_utf16_lossy(&buffer[..len])))
+        .filter(|p| !p.as_os_str().is_empty());
+    // The file named may since have moved; Windows keeps its own copy of what it draws.
+    let transcoded = std::env::var_os("APPDATA")
+        .map(|a| std::path::PathBuf::from(a).join("Microsoft").join("Windows").join("Themes").join("TranscodedWallpaper"));
+    let file = match named {
+        Some(p) if p.is_file() => Some(p),
+        Some(_) => transcoded.filter(|p| p.is_file()),
+        None => None,
+    };
+    let text = |name: &str| desktop_value(name).unwrap_or_default();
+    let style = match (text("WallpaperStyle").as_str(), text("TileWallpaper").as_str()) {
+        (_, "1") => "tile",
+        ("0", _) => "center",
+        ("2", _) => "stretch",
+        ("6", _) => "fit",
+        ("22", _) => "span",
+        _ => "fill",
+    };
+    let c = unsafe { GetSysColor(COLOR_BACKGROUND) };
+    Wallpaper { file, style, colour: ((c & 0xff) as u8, ((c >> 8) & 0xff) as u8, ((c >> 16) & 0xff) as u8) }
+}
+
+fn desktop_value(name: &str) -> Option<String> {
+    use windows::core::{w, HSTRING};
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+    let mut buffer = vec![0u16; 64];
+    let mut size = (buffer.len() * 2) as u32;
+    let name = HSTRING::from(name);
     unsafe {
-        let screen = GetDC(HWND::default());
-        let memory = CreateCompatibleDC(screen);
-        let info = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: w,
-                biHeight: -h,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-        let mut out = None;
-        if let Ok(bitmap) = CreateDIBSection(memory, &info, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0) {
-            let previous = SelectObject(memory, bitmap);
-            SetStretchBltMode(memory, HALFTONE);
-            let _ = SetBrushOrgEx(memory, 0, 0, None);
-            let copied = StretchBlt(memory, 0, 0, w, h, screen, rect.0, rect.1, rect.2 - rect.0, rect.3 - rect.1, SRCCOPY);
-            if copied.as_bool() && !bits.is_null() {
-                out = Some(std::slice::from_raw_parts(bits as *const u8, (w * h * 4) as usize).to_vec());
-            }
-            SelectObject(memory, previous);
-            let _ = DeleteObject(bitmap);
-        }
-        let _ = DeleteDC(memory);
-        ReleaseDC(HWND::default(), screen);
-        out
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!(r"Control Panel\Desktop"),
+            &name,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buffer.as_mut_ptr().cast()),
+            Some(&mut size),
+        )
+        .ok()
+        .ok()?;
     }
+    let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    Some(String::from_utf16_lossy(&buffer[..len]))
+}
+
+/// Where the window sits on its display, in that display's DIPs: the window's corner from the
+/// display's corner, the display's size, and its scale.
+pub fn place_on_display(window: &WebviewWindow) -> Option<(f64, f64, f64, f64, f64)> {
+    let (l, t, r, b) = window_rect_px(window)?;
+    let monitor = monitor_at(((l + r) / 2, (t + b) / 2));
+    let m = monitor.bounds;
+    let s = monitor.scale;
+    Some((
+        (l - m.left) as f64 / s,
+        (t - m.top) as f64 / s,
+        (m.right - m.left) as f64 / s,
+        (m.bottom - m.top) as f64 / s,
+        s,
+    ))
 }
