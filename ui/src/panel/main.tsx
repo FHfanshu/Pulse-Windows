@@ -1,4 +1,5 @@
 import "@fontsource-variable/nunito";
+import "@fontsource-variable/outfit";
 import { createRoot } from "react-dom/client";
 import "../shared/base.css";
 import "./panel.css";
