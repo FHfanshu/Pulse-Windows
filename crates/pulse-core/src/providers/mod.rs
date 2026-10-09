@@ -4,15 +4,18 @@
 pub mod profile;
 
 pub mod amp;
+pub mod antigravity;
 pub mod augment;
 pub mod claude_code;
 pub mod codex;
+pub mod copilot;
 pub mod cursor;
 pub mod deepseek;
 pub mod factory;
 pub mod gemini;
 pub mod grok;
 pub mod kimi_code;
+pub mod kiro;
 pub mod minimax;
 pub mod moonshot;
 pub mod openai_platform;
@@ -28,15 +31,18 @@ use crate::service::{Registry, UsageService};
 pub fn registry() -> Registry {
     let services: Vec<Arc<dyn UsageService>> = vec![
         Arc::new(amp::Amp),
+        Arc::new(antigravity::Antigravity),
         Arc::new(augment::Augment),
         Arc::new(claude_code::ClaudeCode::default()),
         Arc::new(codex::Codex),
+        Arc::new(copilot::Copilot),
         Arc::new(cursor::Cursor),
         Arc::new(deepseek::DeepSeek::default()),
         Arc::new(factory::Factory),
         Arc::new(gemini::Gemini),
         Arc::new(grok::Grok),
         Arc::new(kimi_code::KimiCode),
+        Arc::new(kiro::Kiro),
         Arc::new(minimax::Minimax),
         Arc::new(moonshot::Moonshot::default()),
         Arc::new(openai_platform::OpenAiPlatform),
