@@ -2,7 +2,7 @@
 // the last twelve months as a grid with a square per day, a bar per week, or the running total. One
 // horizontal scale for all three, so the month labels are the same for each and switching views moves
 // nothing sideways.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../../shared/i18n";
 import {
   chartDate, exactTokens, intlLocale, tokenCount,
@@ -159,6 +159,7 @@ function DailyGrid({ activity }: { activity: TokenActivity }) {
   const height = pitch * 7;
   const gap = Math.min(Math.max(pitch * 0.2, 1), 3);
   const radius = Math.max((pitch - gap) * 0.24, 1);
+  useEffect(() => setHovered(null), [activity]);
   const hoveredDay = hovered ? activity.weeks[hovered.column]?.days[hovered.row] ?? null : null;
 
   const move = (e: React.PointerEvent) => {
@@ -219,6 +220,7 @@ function WeeklyBars({ activity }: { activity: TokenActivity }) {
   return (
     <HoverPlot
       height={(w) => (w / columns) * 7}
+      data={activity}
       label={t("Token activity")}
       build={(width, height) => {
         const pitch = width / columns;
@@ -265,6 +267,7 @@ function CumulativeLine({ activity }: { activity: TokenActivity }) {
   return (
     <HoverPlot
       height={(w) => (w / columns) * 7}
+      data={activity}
       label={t("Token activity")}
       build={(width, height) => {
         const pitch = width / columns;

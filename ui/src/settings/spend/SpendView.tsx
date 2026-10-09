@@ -1,16 +1,17 @@
 // Ported from upstream Settings/TokenSpendView.swift: what every coding agent on this PC has cost, added
 // up. The per-provider card answers "how heavily am I using this"; this answers "where did the work go".
-// Not drawn yet: the day table, the project and session lists (they need IPC the pane does not have).
 import { useEffect, useRef, useState } from "react";
 import { ProviderIcon } from "../../panel/Icon";
 import { t } from "../../shared/i18n";
 import {
   agentName, exactTokens, hourText, intlLocale, money, moneyExact, reportsNoCache, shortDate, tokenCount, tokensText,
-  type SpendAgent, type SpendOverview, type SpendSummary,
+  type SpendAgent, type SpendLists, type SpendOverview, type SpendSummary,
 } from "../../shared/spend";
 import { Button, Select } from "../controls";
 import { Group, Row } from "../Group";
+import { DayTable, summaryDayRow } from "./DayTable";
 import { ModelSpendDetail } from "./ModelDetail";
+import { ProjectsGroup, SessionsGroup } from "./ProjectsSessions";
 import {
   CostText, HourProfile, ShareBar, SpendBarChart, SpendCaption, TokenKindBreakdown,
 } from "./SpendCharts";
@@ -66,12 +67,12 @@ export function TokenSpendView(p: SpendViewProps) {
     body = overview?.model && overview.model.tokens > 0 ? <ModelSpendDetail model={overview.model} /> : <NothingIn title={model} />;
   } else if (agent) {
     body = !focused || isEmpty(focused) ? <NothingIn title={agentName[agent]} /> : (
-      <Overview summary={focused} p={p} focus={agent} anchor={modelsAnchor} activity={overview!.activity} />
+      <Overview summary={focused} p={p} focus={agent} anchor={modelsAnchor} activity={overview!.activity} lists={overview!.lists} />
     );
   } else if (!summary || isEmpty(summary)) {
     body = <Empty loading={p.loading} />;
   } else {
-    body = <Overview summary={summary} p={p} focus={null} anchor={modelsAnchor} activity={overview!.activity} />;
+    body = <Overview summary={summary} p={p} focus={null} anchor={modelsAnchor} activity={overview!.activity} lists={overview!.lists} />;
   }
 
   return (
@@ -94,7 +95,21 @@ export function TokenSpendView(p: SpendViewProps) {
         </Row>
       </Group>
 
+      {/* A partial read is stated, not hidden: a source can hold history this PC cannot decode (a compressed
+          transcript) while other records read fine; without this line the readable subset would look like the whole. */}
+      {overview?.hasReadLimitations && (
+        <div className="footnote">{t("Some compressed records could not be read.")}</div>
+      )}
+
       {body}
+
+      {/* Only for the combined page: a source with no records is a fact about the whole page; under one agent
+          or one model it would read as a per-agent absence the same list already shows. */}
+      {!model && !agent && !p.pending && overview && overview.noRecords.length > 0 && (
+        <Group title={t("No usage data read")}>
+          <Row title={overview.noRecords.map((a) => agentName[a]).join(" · ")} />
+        </Group>
+      )}
     </>
   );
 }
@@ -155,12 +170,13 @@ function peakHour(s: SpendSummary): number | null {
   return best;
 }
 
-function Overview({ summary, p, focus, anchor, activity }: {
+function Overview({ summary, p, focus, anchor, activity, lists }: {
   summary: SpendSummary;
   p: SpendViewProps;
   focus: SpendAgent | null;
   anchor: React.RefObject<HTMLDivElement>;
   activity: SpendOverview["activity"];
+  lists: SpendLists | null;
 }) {
   const today = p.span === "today";
   const complete = hoursComplete(summary);
@@ -170,6 +186,8 @@ function Overview({ summary, p, focus, anchor, activity }: {
   const busiest = summary.days.reduce<SpendSummary["days"][number] | null>((best, d) => (!best || d.tokens > best.tokens ? d : best), null);
   const peak = peakHour(summary);
   const cacheUnreported = reportsNoCache(summary.tally);
+  const projects = lists?.projects ?? [];
+  const sessions = lists?.sessions ?? [];
 
   return (
     <>
@@ -243,6 +261,16 @@ function Overview({ summary, p, focus, anchor, activity }: {
         </Group>
       )}
 
+      {!today && (
+        <DayTable
+          days={summary.days}
+          cacheUnreported={cacheUnreported}
+          unclassifiedTokens={summary.unclassifiedTokens}
+          makeRow={summaryDayRow}
+          zeroAsDash
+        />
+      )}
+
       {summary.months.length > 1 && (
         <Group title={t("By month")}>
           {[...summary.months].reverse().map((month) => (
@@ -265,7 +293,10 @@ function Overview({ summary, p, focus, anchor, activity }: {
         </div>
       )}
 
-      <Footnote summary={summary} />
+      {projects.length > 0 && <ProjectsGroup projects={projects} total={summary.tokens} />}
+      {sessions.length > 0 && <SessionsGroup sessions={sessions} />}
+
+      <Footnote summary={summary} lists={lists} />
     </>
   );
 }
@@ -317,12 +348,16 @@ function Models({ summary, onModel }: { summary: SpendSummary; onModel: (m: stri
 }
 
 /** What the figures are not: the money is a translation of records at published rates, not a bill. */
-function Footnote({ summary }: { summary: SpendSummary }) {
+function Footnote({ summary, lists }: { summary: SpendSummary; lists: SpendLists | null }) {
   const partial = (unpriced: number, tokens: number) => unpriced > 0 && unpriced < tokens;
+  // Whether any row shows an amount with a `*` beside it: a partly priced agent, day, month, project or
+  // session. A row that priced nothing shows an em dash instead, and a row that priced everything has no `*`.
   const hasPartialAmounts =
     summary.agents.some((a) => partial(a.unpricedTokens, a.tokens)) ||
     summary.days.some((d) => partial(d.unpricedTokens, d.tokens)) ||
-    summary.months.some((m) => partial(m.unpricedTokens, m.tokens));
+    summary.months.some((m) => partial(m.unpricedTokens, m.tokens)) ||
+    (lists?.projects.some((x) => partial(x.unpricedTokens, x.tokens)) ?? false) ||
+    (lists?.sessions.some((x) => partial(x.unpricedTokens, x.tokens)) ?? false);
   return (
     <div className="footnote">
       <div>{t("Usage records, estimated at models.dev API rates—not an actual bill.")}</div>

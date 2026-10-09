@@ -320,6 +320,7 @@ fn main() {
             account_ipc::installed_browsers,
             account_ipc::open_external,
             spend_ipc::spend_overview,
+            spend_ipc::spend_release,
             spend_ipc::card_spend,
             spend_ipc::prompt_cache,
             recap_ipc::recap_report,

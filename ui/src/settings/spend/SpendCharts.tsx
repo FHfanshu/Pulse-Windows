@@ -1,11 +1,12 @@
 // Ported from upstream Settings/SpendCharts.swift and ChartHoverOverlay.swift. Charts are plain SVG; the
 // pointer reads out the nearest column the way upstream's `ChartHoverOverlay` does.
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { t } from "../../shared/i18n";
 import {
   chartDate, exactTokens, hourText, money, moneyExact, shortDate, tallyTotal, tokenCount, tokensText, unpricedText,
   type TokenCost, type TokenTally,
 } from "../../shared/spend";
+import { Select } from "../controls";
 import { Row } from "../Group";
 
 // MARK: - Measuring
@@ -78,14 +79,17 @@ export function FloatingCard({ left, right, midY, bounds, gap, children }: {
  * A plot that fills its row, drawn at the measured width, with the whole area a hover target: the nearest
  * sample is marked and read out, including the space above a short bar and the gaps between bars.
  */
-export function HoverPlot({ height: heightOf, build, label }: {
+export function HoverPlot({ height: heightOf, build, label, data }: {
   /** Fixed, or worked out from the measured width (the activity plots are seven columns tall). */
   height: number | ((width: number) => number);
   build: (width: number, height: number) => { content: ReactNode; samples: Sample[] };
   label: string;
+  /** What the plot draws. A different series drops the readout (upstream `onChange(of: samples)`): its index would name another datum. */
+  data?: unknown;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
+  useEffect(() => setHover(null), [data]);
   const height = typeof heightOf === "function" ? heightOf(width) : heightOf;
   const { content, samples } = width > 0 ? build(width, height) : { content: null, samples: [] as Sample[] };
   const sample = hover !== null ? samples[hover] : undefined;
@@ -154,6 +158,7 @@ export function SpendBarChart({ bars, height = 78 }: { bars: Bar[]; height?: num
     <div>
       <HoverPlot
         height={height}
+        data={bars}
         label={t("Tokens per day")}
         build={(width) => {
           const peak = Math.max(...bars.map((b) => b.tokens), 1);
@@ -199,6 +204,7 @@ export function HourProfile({ hours, height = 66 }: { hours: Record<string, numb
     <div>
       <HoverPlot
         height={height}
+        data={hours}
         label={t("Tokens per hour")}
         build={(width) => {
           const spacing = 2;
@@ -253,6 +259,54 @@ export function PartialNote({ tokens }: { tokens: number }) {
     <div className="partial-note" title={unpricedText(tokens)}>
       <span>*</span>
       <span>{t("Excludes unpriced tokens.")}</span>
+    </div>
+  );
+}
+
+// MARK: - Paging
+
+/** The row counts a long table may be cut into. Ten by default: a table long enough to scroll past is a table nobody reads to the end of. */
+export const PAGE_SIZES = [10, 20, 30, 50] as const;
+
+/** The page a list is on, clamped: the span and the sort can both shorten the table under a page already on screen. */
+export function pageOf(rows: number, pageSize: number, page: number) {
+  const pages = Math.max(Math.ceil(rows / pageSize), 1);
+  return Math.min(Math.max(page, 0), pages - 1);
+}
+
+/**
+ * The foot of a paged table: the page size, where in the list the reader is, and the two arrows. Shared by the
+ * day tables and the session list: the same control, and a second copy is a second place for the range
+ * arithmetic to disagree.
+ */
+export function SpendPageFooter({ rows, pageSize, page, onPageSize, onPage }: {
+  rows: number;
+  pageSize: number;
+  page: number;
+  onPageSize: (size: number) => void;
+  onPage: (page: number) => void;
+}) {
+  const pages = Math.max(Math.ceil(rows / pageSize), 1);
+  const current = pageOf(rows, pageSize, page);
+  const arrow = (dir: "left" | "right") => (
+    <svg viewBox="0 0 8 12" width="8" height="12" aria-hidden>
+      <path d={dir === "left" ? "M6.5 1.5 2 6l4.5 4.5" : "M1.5 1.5 6 6l-4.5 4.5"} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+  return (
+    <div className="pager">
+      <Select
+        label={t("Rows per page")}
+        value={pageSize}
+        options={PAGE_SIZES.map((size) => ({ value: size, label: t("%@ per page", size) }))}
+        // A shorter page does not mean the same rows: going back to the first one is the only answer that is the same every time.
+        onChange={(size) => { onPageSize(size); onPage(0); }}
+      />
+      <span className="pager-range secondary num">
+        {t("%@–%@ of %@", current * pageSize + 1, Math.min((current + 1) * pageSize, rows), rows)}
+      </span>
+      <button type="button" className="btn pager-arrow" aria-label={t("Previous page")} disabled={current === 0} onClick={() => onPage(Math.max(current - 1, 0))}>{arrow("left")}</button>
+      <button type="button" className="btn pager-arrow" aria-label={t("Next page")} disabled={current >= pages - 1} onClick={() => onPage(Math.min(current + 1, pages - 1))}>{arrow("right")}</button>
     </div>
   );
 }
