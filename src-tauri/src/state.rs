@@ -85,8 +85,23 @@ pub struct UsagePayload {
 }
 
 /// One-shot adaptive refresh loop (upstream `UsageStore.scheduleNext`).
+///
+/// Between passes it wakes every few seconds to feed the adaptive interval its signals (panel
+/// visible, when an agent last wrote a transcript), and to re-read Claude Code at once when one of
+/// its local sources changed: the status-line capture or the desktop app's usage record. Those are
+/// files on this PC, so reading them costs nothing and the ring follows them as they land.
 pub fn start_refresh_loop(app: AppHandle) {
+    const TICK: std::time::Duration = std::time::Duration::from_secs(5);
     tauri::async_runtime::spawn(async move {
+        let home: std::path::PathBuf = std::env::var_os("USERPROFILE").map(Into::into).unwrap_or_default();
+        let appdata: std::path::PathBuf = std::env::var_os("APPDATA").map(Into::into).unwrap_or_default();
+        let local_sources = [
+            pulse_core::paths::claude_status_line_capture(),
+            appdata.join("Claude").join("plan-usage-history.json"),
+        ];
+        let stamp = || local_sources.iter().map(|p| pulse_core::activity::modified(p)).collect::<Vec<_>>();
+        let mut seen = stamp();
+        let mut activity_checked = std::time::Instant::now() - std::time::Duration::from_secs(60);
         loop {
             let state = app.state::<AppState>();
             let settings = state.settings();
@@ -96,10 +111,39 @@ pub fn start_refresh_loop(app: AppHandle) {
                 emit_usage(&app);
                 crate::notify::after_refresh(&app);
             }
-            let wait = state.store.next_interval(&settings).max(30) as u64;
-            tokio::select! {
-                _ = tokio::time::sleep(std::time::Duration::from_secs(wait)) => {}
-                _ = state.wake.notified() => {}
+            let started = std::time::Instant::now();
+            loop {
+                let settings = state.settings();
+                state.store.set_panel_visible(crate::shell::panel_should_show(&settings));
+                if activity_checked.elapsed() >= std::time::Duration::from_secs(30) {
+                    activity_checked = std::time::Instant::now();
+                    let home = home.clone();
+                    let last = tauri::async_runtime::spawn_blocking(move || {
+                        pulse_core::activity::last_agent_write(&home, chrono::Utc::now())
+                    })
+                    .await
+                    .ok()
+                    .flatten();
+                    state.store.set_agent_activity(last);
+                }
+                let wait = std::time::Duration::from_secs(state.store.next_interval(&settings).max(30) as u64);
+                if started.elapsed() >= wait {
+                    break;
+                }
+                let now = stamp();
+                if now != seen {
+                    seen = now;
+                    let id = pulse_core::Provider::ClaudeCode.account_id();
+                    if settings.enabled_accounts.contains(&id) && !state.mock {
+                        state.store.refresh(settings.clone(), &id).await;
+                        emit_usage(&app);
+                        crate::notify::after_refresh(&app);
+                    }
+                }
+                tokio::select! {
+                    _ = tokio::time::sleep(TICK.min(wait.saturating_sub(started.elapsed()).max(std::time::Duration::from_millis(100)))) => {}
+                    _ = state.wake.notified() => break,
+                }
             }
         }
     });

@@ -2,6 +2,7 @@
 //! so `pulse --json` can run headless.
 
 pub mod accounts;
+pub mod activity;
 pub mod alerts;
 pub mod auth;
 pub mod codex_signals;

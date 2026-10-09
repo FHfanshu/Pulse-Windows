@@ -135,6 +135,10 @@ impl UsageStore {
         self.inner.lock().unwrap().signals.is_panel_visible = visible;
     }
 
+    pub fn set_agent_activity(&self, last_write: Option<DateTime<Utc>>) {
+        self.inner.lock().unwrap().signals.last_agent_activity = last_write;
+    }
+
     /// Seconds until the next pass should run.
     pub fn next_interval(&self, settings: &AppSettings) -> i64 {
         match settings.refresh_interval {
