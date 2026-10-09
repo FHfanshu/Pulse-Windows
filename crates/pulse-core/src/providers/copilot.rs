@@ -10,8 +10,6 @@
 //! Token sources on Windows, in order: the key saved in Pulse, then `gh auth token`,
 //! then the Copilot editor plugin's `oauth_token` in `%LOCALAPPDATA%\github-copilot`.
 
-use std::path::Path;
-use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -70,63 +68,11 @@ impl UsageService for Copilot {
     }
 }
 
-/// The first usable token: the saved key, then `gh auth token`, then the editor plugin's file.
+/// Upstream reads only the token Pulse saved (GitHub device sign-in or a pasted
+/// token). `gh`'s token is deliberately not borrowed: it carries repo and
+/// workflow scope this app has no business holding.
 async fn token(ctx: &FetchContext, account: &AccountKey) -> Option<String> {
-    if let Some(key) = ctx.api_key(account).map(|k| k.trim().to_string()).filter(|k| !k.is_empty()) {
-        return Some(key);
-    }
-    if let Some(token) = gh_token().await {
-        return Some(token);
-    }
-    editor_token(&ctx.local_app_data)
-}
-
-/// `gh auth token`, run without a console window. Blocking, so it runs on the blocking pool.
-async fn gh_token() -> Option<String> {
-    tokio::task::spawn_blocking(|| {
-        let mut command = std::process::Command::new("gh");
-        command.args(["auth", "token"]).stdin(Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            // CREATE_NO_WINDOW: do not flash a console for a background query.
-            command.creation_flags(0x0800_0000);
-        }
-        let output = command.output().ok()?;
-        if !output.status.success() {
-            return None;
-        }
-        gh_output_token(&output.stdout)
-    })
-    .await
-    .ok()
-    .flatten()
-}
-
-/// `gh auth token` prints the token and a newline.
-fn gh_output_token(stdout: &[u8]) -> Option<String> {
-    let text = String::from_utf8_lossy(stdout);
-    let token = text.trim();
-    (!token.is_empty()).then(|| token.to_string())
-}
-
-/// The Copilot editor plugin's token: `apps.json` first, then `hosts.json`.
-// WINDOWS-PATH: unverified. Copilot plugins on Windows keep these under %LOCALAPPDATA%\github-copilot.
-fn editor_token(local_app_data: &Path) -> Option<String> {
-    ["apps.json", "hosts.json"].iter().find_map(|file| {
-        let bytes = std::fs::read(local_app_data.join("github-copilot").join(file)).ok()?;
-        oauth_token_in(&bytes)
-    })
-}
-
-/// An `oauth_token` either at the top level or on one of the per-host records.
-fn oauth_token_in(bytes: &[u8]) -> Option<String> {
-    let value: Value = serde_json::from_slice(bytes).ok()?;
-    let map = value.as_object()?;
-    let direct = map.get("oauth_token").and_then(Value::as_str);
-    let nested = || map.values().find_map(|record| record.get("oauth_token").and_then(Value::as_str));
-    let token = direct.or_else(nested)?.trim();
-    (!token.is_empty()).then(|| token.to_string())
+    ctx.api_key(account).map(|k| k.trim().to_string()).filter(|k| !k.is_empty())
 }
 
 /// Maps a 200 reply to a reading. Split from the network so tests can drive it.
@@ -357,20 +303,5 @@ mod tests {
         assert_eq!(reading(b"[1,2]", &account(), &ctx).unwrap_err(), Unavailability::UnreadableReply);
     }
 
-    #[test]
-    fn gh_output_is_trimmed_and_blank_output_is_no_token() {
-        assert_eq!(gh_output_token(b"gho_abc123\r\n").as_deref(), Some("gho_abc123"));
-        assert_eq!(gh_output_token(b"  \n"), None);
-    }
 
-    #[test]
-    fn the_editor_token_is_found_at_the_top_level_or_on_a_host_record() {
-        assert_eq!(oauth_token_in(br#"{"oauth_token":" gho_top "}"#).as_deref(), Some("gho_top"));
-        assert_eq!(
-            oauth_token_in(br#"{"github.com:Iv1.x":{"user":"me","oauth_token":"gho_apps"}}"#).as_deref(),
-            Some("gho_apps")
-        );
-        assert_eq!(oauth_token_in(br#"{"github.com":{"oauth_token":""}}"#), None);
-        assert_eq!(oauth_token_in(b"not json"), None);
-    }
 }

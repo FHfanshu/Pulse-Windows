@@ -7,7 +7,7 @@
 //! refresh; Pulse never reads Kiro's tokens or database.
 //!
 //! Windows differences: the CLI is looked up on PATH (`kiro-cli.exe`,
-//! `kiro-cli.cmd`, `kiro.cmd`) and in `%LOCALAPPDATA%\Programs\Kiro`, since a GUI
+//! `kiro-cli.cmd`) and in `%LOCALAPPDATA%\Programs\Kiro`, since a GUI
 //! app may inherit a thin PATH. `.cmd` shims go through `cmd /c`, and the helper
 //! runs without a console window. Its stderr is discarded rather than drained,
 //! which keeps a chatty helper from filling its pipe.
@@ -184,7 +184,8 @@ async fn acp_usage(ctx: &FetchContext) -> Result<Vec<u8>, Failure> {
 /// Where `kiro-cli` may be on Windows. The PATH entries come first, then the
 /// Kiro install folder. WINDOWS-PATH: unverified for `Programs\Kiro`.
 fn locate_kiro(ctx: &FetchContext) -> Option<PathBuf> {
-    let names = ["kiro-cli.exe", "kiro-cli.cmd", "kiro.cmd"];
+    // `kiro.cmd` is the IDE launcher and does not speak ACP.
+    let names = ["kiro-cli.exe", "kiro-cli.cmd"];
     let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
     dirs.push(ctx.local_app_data.join("Programs").join("Kiro"));
     dirs.iter().flat_map(|d| names.iter().map(move |n| d.join(n))).find(|p| p.is_file())
