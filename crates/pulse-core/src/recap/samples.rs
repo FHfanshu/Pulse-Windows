@@ -195,6 +195,7 @@ pub fn month(spec: MonthSpec) -> Recap {
         currency: "USD".to_string(),
         is_partial: false,
         records_begin: None,
+        previous_days: None,
         days,
     }
 }
@@ -299,6 +300,7 @@ pub fn year(priced: bool, through_month: Option<u32>) -> Recap {
         currency: "USD".to_string(),
         is_partial: false,
         records_begin: None,
+        previous_days: None,
         days,
     }
 }
@@ -336,5 +338,6 @@ pub fn empty() -> Recap {
         currency: "USD".to_string(),
         is_partial: false,
         records_begin: None,
+        previous_days: None,
     }
 }

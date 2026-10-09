@@ -74,6 +74,7 @@ fn recap_of(days: Vec<Day>, spec: Spec) -> Recap {
         currency: "USD".to_string(),
         is_partial: false,
         records_begin: None,
+        previous_days: None,
         days,
     }
 }
@@ -282,7 +283,7 @@ fn dollars_per_million_tokens_count_the_priced_tokens_only() {
 }
 
 #[test]
-fn the_dearest_day_is_named_only_when_every_working_day_has_a_price() {
+fn the_dearest_day_is_named_among_the_priced_days_and_an_unpriced_one_does_not_take_it_away() {
     let priced = september_priced(&[10, 0, 30, 20], |c| Some(c as f64));
     let r = recap_of(priced.clone(), Spec { cost: Some(60.0), ..Spec::default() });
     assert_eq!(RecapInsights::new(&r).costliest_day().unwrap().date, date(9, 3));
@@ -290,7 +291,7 @@ fn the_dearest_day_is_named_only_when_every_working_day_has_a_price() {
     let mut unpriced = priced;
     unpriced[1] = Day { date: date(9, 2), tokens: 99, cost: None };
     let r = recap_of(unpriced, Spec { cost: Some(60.0), ..Spec::default() });
-    assert!(RecapInsights::new(&r).costliest_day().is_none());
+    assert_eq!(RecapInsights::new(&r).costliest_day().unwrap().date, date(9, 3));
     assert!(RecapInsights::new(&recap(september(&[10, 20]))).costliest_day().is_none());
 }
 
@@ -302,7 +303,7 @@ fn the_earliest_of_equal_days_is_the_dearest() {
 }
 
 #[test]
-fn daily_money_is_a_series_only_if_every_working_day_has_a_price_a_quiet_one_is_a_real_zero() {
+fn daily_money_a_quiet_day_is_a_real_zero_and_a_day_with_no_price_is_a_gap() {
     let priced = september_priced(&[10, 0, 30], |c| Some(c as f64));
     let r = recap_of(priced.clone(), Spec { cost: Some(40.0), ..Spec::default() });
     assert_eq!(RecapInsights::new(&r).cost_bars(), Some(vec![Some(10.0), Some(0.0), Some(30.0)]));
@@ -310,12 +311,12 @@ fn daily_money_is_a_series_only_if_every_working_day_has_a_price_a_quiet_one_is_
     let mut partial = priced;
     partial[2] = Day { date: date(9, 3), tokens: 30, cost: None };
     let r = recap_of(partial, Spec { cost: Some(10.0), ..Spec::default() });
-    assert_eq!(RecapInsights::new(&r).cost_bars(), None);
+    assert_eq!(RecapInsights::new(&r).cost_bars(), Some(vec![Some(10.0), Some(0.0), None]));
     assert_eq!(RecapInsights::new(&recap(september(&[10, 20]))).cost_bars(), None);
 }
 
 #[test]
-fn a_years_money_is_by_month_and_one_unpriced_month_takes_it_away() {
+fn a_years_money_is_by_month_and_an_unpriced_month_is_a_gap() {
     let months: Vec<Month> = (1..=12)
         .map(|m| Month { month: m, tokens: if m == 4 { 0 } else { 100 }, cost: if m == 4 { None } else { Some(m as f64) }, active_days: 1 })
         .collect();
@@ -331,7 +332,9 @@ fn a_years_money_is_by_month_and_one_unpriced_month_takes_it_away() {
     let mut broken = months;
     broken[8] = Month { month: 9, tokens: 100, cost: None, active_days: 1 };
     let r = recap_of(september(&[1]), Spec { year: Some(2026), months: broken, cost: Some(70.0), ..Spec::default() });
-    assert_eq!(RecapInsights::new(&r).cost_bars(), None);
+    let mut gap: Vec<Option<f64>> = [1.0, 2.0, 3.0, 0.0, 5.0, 6.0, 7.0, 8.0, 0.0, 10.0, 11.0, 12.0].map(Some).to_vec();
+    gap[8] = None;
+    assert_eq!(RecapInsights::new(&r).cost_bars(), Some(gap));
 }
 
 // Who worked when.

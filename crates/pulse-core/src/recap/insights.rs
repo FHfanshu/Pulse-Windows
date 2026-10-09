@@ -333,20 +333,11 @@ impl<'a> RecapInsights<'a> {
         (self.recap.active_days > 0).then(|| cost / self.recap.active_days as f64)
     }
 
-    /// Whether every day with work has a cost, and some do: only then can a day be called the
-    /// dearest, or the days drawn as a series.
-    fn days_are_fully_priced(&self) -> bool {
-        let worked: Vec<&Day> = self.recap.days.iter().filter(|d| d.tokens > 0).collect();
-        // A price of exactly zero (a free model) is a price; only None is not.
-        !worked.is_empty() && worked.iter().all(|d| d.cost.is_some())
-    }
-
-    /// The day that cost most, the earliest of a tie. `None` where any working day has no price:
-    /// the dearest might be that one.
+    /// The day that cost most among the days with a price, the earliest of a tie; `None` when no
+    /// day had one. A day with work and no price at all is left out of the running rather than
+    /// taking the tile away: it once did, and one Kimi-only day (0.05% of July) removed it. The
+    /// card already says the money is a floor where any work went unpriced.
     pub fn costliest_day(&self) -> Option<Day> {
-        if !self.days_are_fully_priced() {
-            return None;
-        }
         let mut best: Option<&Day> = None;
         for day in &self.recap.days {
             if day.cost.unwrap_or(0.0) > best.and_then(|b| b.cost).unwrap_or(0.0) {
@@ -356,34 +347,33 @@ impl<'a> RecapInsights<'a> {
         best.cloned()
     }
 
-    /// Money by day (a month) or by month (a year), one entry per day or month with a quiet one
-    /// a real zero and a month still to come in a running year `None`; `None` altogether unless
-    /// every one with work has a cost: a bar for an unpriced day would be drawn as a zero.
+    /// Money by day (a month) or by month (a year), one entry per day or month: a quiet one a
+    /// real zero, and **`None` for one with no figure** (a month still to come or before the first
+    /// record, or work with no price at all, which is not a zero). `None` altogether when nothing
+    /// had a price.
     pub fn cost_bars(&self) -> Option<Vec<Option<f64>>> {
-        if !self.recap.period.is_year() {
-            if !self.days_are_fully_priced() {
+        let bars: Vec<Option<f64>> = if self.recap.period.is_year() {
+            if self.recap.months.len() != 12 {
                 return None;
             }
-            return Some(self.recap.days.iter().map(|d| Some(if d.tokens > 0 { d.cost.unwrap_or(0.0) } else { 0.0 })).collect());
-        }
-        let months = &self.recap.months;
-        let worked: Vec<_> = months.iter().filter(|m| m.tokens > 0).collect();
-        if months.len() != 12 || worked.is_empty() || !worked.iter().all(|m| m.cost.is_some()) {
-            return None;
-        }
-        Some(
-            months
+            self.recap
+                .months
                 .iter()
                 .enumerate()
                 .map(|(index, month)| {
                     if self.is_month_unrecorded(index) {
                         None
+                    } else if month.tokens > 0 {
+                        month.cost
                     } else {
-                        Some(if month.tokens > 0 { month.cost.unwrap_or(0.0) } else { 0.0 })
+                        Some(0.0)
                     }
                 })
-                .collect(),
-        )
+                .collect()
+        } else {
+            self.recap.days.iter().map(|d| if d.tokens > 0 { d.cost } else { Some(0.0) }).collect()
+        };
+        bars.iter().any(|b| b.unwrap_or(0.0) > 0.0).then_some(bars)
     }
 
     /// Whether month `index` (0 for January) of a running year has not begun: a month to come,

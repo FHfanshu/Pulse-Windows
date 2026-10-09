@@ -39,7 +39,7 @@ export interface Deck {
   activeDaysLine: string;
   change: Change | null;
   tokensPerDay: number | null;
-  costSeries: number[];
+  costSeries: (number | null)[];
   streak: { days: number; isCurrent: boolean } | null;
   provenance: string[];
   costIsFloor: boolean;

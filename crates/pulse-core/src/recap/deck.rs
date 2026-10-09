@@ -156,11 +156,14 @@ pub fn cache_savings(recap: &Recap) -> Option<f64> {
     recap.cache_savings.filter(|s| *s >= MINIMUM_SAVINGS)
 }
 
-/// Cost per day, or per month for a year, to draw under the poster's total. Empty where fewer
-/// than two points carry a price, and where any point with work has none: a line through a zero
-/// for a day that was merely unpriced would be a figure made up. A quiet point is a real zero, and
-/// a month still to come is not drawn at all.
-pub fn cost_series(recap: &Recap) -> Vec<f64> {
+/// Cost per day, or per month for a year, to draw under the poster's total and on the scorecard.
+/// A day (or month) with work and **no price at all is `None`**, drawn as a break in the line
+/// rather than a zero; a quiet one is a real zero. Months still to come or before the first record
+/// are not points at all. Empty with fewer than two priced points.
+///
+/// It used to be empty whenever any worked day had no price, and one Kimi-only day (0.05% of
+/// July) took the line off every card.
+pub fn cost_series(recap: &Recap) -> Vec<Option<f64>> {
     let series: Vec<(i64, Option<f64>)> = if recap.period.is_year() {
         let insights = RecapInsights::new(recap);
         recap
@@ -173,11 +176,10 @@ pub fn cost_series(recap: &Recap) -> Vec<f64> {
     } else {
         recap.days.iter().map(|d| (d.tokens, d.cost)).collect()
     };
-    if series.iter().any(|(tokens, cost)| *tokens > 0 && cost.is_none()) {
-        return Vec::new();
-    }
-    if series.iter().filter(|(_, cost)| cost.is_some()).count() > 1 {
-        series.iter().map(|(_, cost)| cost.unwrap_or(0.0)).collect()
+    let points: Vec<Option<f64>> = series.iter().map(|(tokens, cost)| if *tokens > 0 { *cost } else { Some(0.0) }).collect();
+    let priced = points.iter().filter(|p| p.is_some()).count();
+    if priced > 1 && points.iter().any(|p| p.unwrap_or(0.0) > 0.0) {
+        points
     } else {
         Vec::new()
     }
@@ -318,7 +320,7 @@ pub struct DeckFacts {
     pub cost_is_floor: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_savings: Option<f64>,
-    pub cost_series: Vec<f64>,
+    pub cost_series: Vec<Option<f64>>,
     /// (days, still going)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub streak: Option<(usize, bool)>,

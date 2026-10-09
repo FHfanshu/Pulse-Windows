@@ -172,13 +172,13 @@ fn a_cache_saving_under_fifty_cents_is_not_worth_a_sentence() {
 }
 
 #[test]
-fn the_posters_cost_line_is_drawn_only_when_every_day_with_work_has_a_price() {
+fn the_posters_cost_line_has_a_point_per_day_and_none_without_any_price() {
     let full = month();
     let series = deck::cost_series(&full);
     assert_eq!(series.len(), full.days.len());
     // Quiet days are zero, not missing.
     let quiet: Vec<_> = full.days.iter().zip(&series).filter(|(d, _)| d.tokens == 0).collect();
-    assert!(!quiet.is_empty() && quiet.iter().all(|(_, c)| **c == 0.0));
+    assert!(!quiet.is_empty() && quiet.iter().all(|(_, c)| **c == Some(0.0)));
     assert!(deck::cost_series(&samples::month(MonthSpec { priced: false, ..MonthSpec::default() })).is_empty());
     assert_eq!(deck::cost_series(&year()).len(), 12);
 }

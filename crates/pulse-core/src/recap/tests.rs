@@ -150,7 +150,9 @@ fn a_month_holds_its_first_and_last_day_and_nothing_from_either_neighbour() {
     assert_eq!(hours.iter().sum::<i64>(), 200);
     assert_eq!(hours[0], 100);
     assert_eq!(hours[23], 100);
-    assert_eq!(recap.late_nights, 1);
+    // October 1's 00:00 continues September 30's evening, which is not this month's: within
+    // October it is a stretch that began at midnight.
+    assert_eq!(recap.late_nights, 0);
 }
 
 #[test]
@@ -405,21 +407,23 @@ fn work_past_midnight_up_to_0500_counts_toward_its_night_once() {
         session("b", None, at(2026, 10, 4, 4, 40), at(2026, 10, 4, 4, 58), vec![slot(at(2026, 10, 4, 4, 45), 100)]),
     ];
     let recap = month_of(2026, 10, vec![(SpendAgent::ClaudeCode, l.clone())]);
-    assert_eq!(recap.late_nights, 2);
-    // 04:58, from the session's own last record rather than its quarter-hour.
-    assert_eq!(recap.latest_minute, Some(4 * 60 + 58));
+    // Only the first crossed a midnight; 04:40-04:58 began after one.
+    assert_eq!(recap.late_nights, 1);
+    // 01:22 the next day, from the session's own last record.
+    assert_eq!(recap.latest_minute, Some(24 * 60 + 60 + 22));
 
-    // Without the session's end it is the quarter-hour's start.
+    // Without the session's end it is the last quarter-hour's start.
     let mut bare = l;
     bare.sessions = vec![];
-    assert_eq!(month_of(2026, 10, vec![(SpendAgent::ClaudeCode, bare)]).latest_minute, Some(4 * 60 + 45));
+    assert_eq!(month_of(2026, 10, vec![(SpendAgent::ClaudeCode, bare)]).latest_minute, Some(24 * 60 + 60 + 15));
 }
 
 #[test]
 fn no_work_after_midnight_is_no_late_night_not_a_zero_minute() {
     let recap = october(vec![event(at(2026, 10, 2, 22, 0), 100), event(at(2026, 10, 3, 5, 0), 100)]);
+    // Seven quiet hours between them: two stretches, neither over midnight.
     assert_eq!(recap.late_nights, 0);
-    assert_eq!(recap.latest_minute, None);
+    assert_eq!(recap.latest_minute, Some(22 * 60));
 }
 
 // Persona.
@@ -703,7 +707,7 @@ fn tokens_with_no_published_price_are_carried_so_the_money_can_be_called_a_floor
 }
 
 #[test]
-fn one_unpriced_day_takes_the_posters_cost_line_away_rather_than_drawing_a_zero_for_it() {
+fn one_unpriced_day_breaks_the_posters_cost_line_rather_than_drawing_a_zero_for_it() {
     let series = |mystery_day: Option<u32>| {
         let mut events = vec![event(noon(2026, 10, 1), 1_000_000), event(noon(2026, 10, 3), 1_000_000)];
         if let Some(day) = mystery_day {
@@ -713,9 +717,9 @@ fn one_unpriced_day_takes_the_posters_cost_line_away_rather_than_drawing_a_zero_
         super::deck::cost_series(&recap)
     };
     // October 2nd is quiet: a real zero between priced days.
-    assert_eq!(series(None), vec![3.0, 0.0, 3.0, 0.0, 0.0]);
-    // On the 4th there was work with no price: no line.
-    assert!(series(Some(4)).is_empty());
+    assert_eq!(series(None), vec![Some(3.0), Some(0.0), Some(3.0), Some(0.0), Some(0.0)]);
+    // On the 4th there was work with no price: a break in the line, not a zero and not no line.
+    assert_eq!(series(Some(4)), vec![Some(3.0), Some(0.0), Some(3.0), None, Some(0.0)]);
 }
 
 // The command and the report.

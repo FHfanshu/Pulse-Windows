@@ -259,10 +259,11 @@ pub struct Recap {
     /// Share of the period's tokens in 21:00-04:59.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub late_share: Option<f64>,
-    /// The latest a session ran past midnight, as minutes after midnight (0..300).
+    /// The latest any stretch of work ended, as minutes after the midnight of the day it began:
+    /// past 1440 when it ran into the next morning (`build::workdays`). `None` with no timed work.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_minute: Option<u32>,
-    /// Nights on which work ran past midnight.
+    /// Stretches of work that ran over a midnight.
     pub late_nights: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub persona: Option<Persona>,
@@ -300,6 +301,12 @@ pub struct Recap {
     /// the count those use, and a month entirely before it is drawn as unrecorded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub records_begin: Option<NaiveDate>,
+
+    /// The days `previous_tokens` was counted over: as many as this period has had while it runs
+    /// (fewer where the period before is shorter), all of the period before once this one is
+    /// over, and none from before the first record. `None` where `previous_tokens` is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_days: Option<usize>,
 }
 
 impl Recap {

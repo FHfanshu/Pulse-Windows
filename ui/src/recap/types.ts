@@ -110,7 +110,8 @@ export interface DeckFacts {
   paybackMonths?: number;
   costIsFloor: boolean;
   cacheSavings?: number;
-  costSeries: number[];
+  /** Null is work with no price: a break in the line, not a zero. */
+  costSeries: (number | null)[];
   streak?: [number, boolean];
   sessionsPerActiveDay?: number;
   scoreBars: ScoreBar[];

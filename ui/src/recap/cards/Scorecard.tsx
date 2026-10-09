@@ -4,6 +4,7 @@
 import { ReactNode } from "react";
 import { locale, t } from "../../shared/i18n";
 import { Deck, personaTitle } from "../deck";
+import { lineRuns } from "../charts";
 import * as F from "../format";
 import { C, FigureText, Geo, H, Hairline, Pill, RichText, Spacer, StoryPage, T, ThatFits, V } from "../kit";
 import { PulseMark } from "../marks";
@@ -471,19 +472,27 @@ function Meter({ fraction, width }: { fraction: number; width: number }) {
 
 /** The cost line: a stroke through one point per day (or month), a ring on each when there are
  *  few of them, and the last point filled. */
-function MiniLine({ values }: { values: number[] }) {
+/** Null breaks the line: work with no price, which is not a zero. */
+function MiniLine({ values }: { values: (number | null)[] }) {
   const width = 200;
   const height = 54;
-  const maximum = Math.max(0, ...values);
+  const maximum = Math.max(0, ...values.map((v) => v ?? 0));
   if (values.length < 2 || maximum <= 0) return <div style={{ width, height }} />;
   const inset = 5;
-  const points = values.map((v, i) => [inset + (i / (values.length - 1)) * (width - inset * 2), height - 4 - (v / maximum) * (height - 10)] as const);
-  const rings = points.length <= 12 ? points.map((_, i) => i) : [points.length - 1];
+  const at = (i: number) => [inset + (i / (values.length - 1)) * (width - inset * 2), height - 4 - ((values[i] ?? 0) / maximum) * (height - 10)] as const;
+  // A ring on every point while they are few enough to count, and always on the last with a figure.
+  const drawn = values.map((v, i) => (v === null ? -1 : i)).filter((i) => i >= 0);
+  const rings = values.length <= 12 ? drawn : drawn.slice(-1);
+  const last = drawn[drawn.length - 1];
   return (
     <svg width={width} height={height} style={{ display: "block", flex: "none" }}>
-      <path d={points.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ")} fill="none" stroke={C.ink} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+      {lineRuns(values)
+        .filter((run) => run.length > 1)
+        .map((run) => (
+          <path key={run[0]} d={run.map((i, k) => `${k ? "L" : "M"}${at(i)[0].toFixed(2)} ${at(i)[1].toFixed(2)}`).join(" ")} fill="none" stroke={C.ink} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+        ))}
       {rings.map((i) => (
-        <circle key={i} cx={points[i][0]} cy={points[i][1]} r={4.5} fill={i === points.length - 1 ? C.ink : C.paper} stroke={C.ink} strokeWidth={2} />
+        <circle key={i} cx={at(i)[0]} cy={at(i)[1]} r={4.5} fill={i === last ? C.ink : C.paper} stroke={C.ink} strokeWidth={2} />
       ))}
     </svg>
   );
