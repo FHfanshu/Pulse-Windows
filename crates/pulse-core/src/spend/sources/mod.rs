@@ -127,6 +127,17 @@ registry! {
     Grok => grok::Grok,
     KimiCli => kimi::KimiCli,
     DevinCli => devin::DevinCli,
+    // batch A
+    Pi => pi::Pi,
+    Omp => omp::Omp,
+    Senpi => senpi::Senpi,
+    Kimchi => kimchi::Kimchi,
+    PrimeAgent => prime_agent::PrimeAgent,
+    Gemini => gemini::Gemini,
+    Qwen => qwen::Qwen,
+    Amp => amp::Amp,
+    Droid => droid::Droid,
+    OpenClaw => openclaw::OpenClaw,
 }
 
 /// A count out of a JSON value the way the Swift readers took one: a number, whole or not,
