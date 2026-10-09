@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod dashboard;
 mod notify;
 mod panel;
 mod placement;
@@ -56,6 +57,7 @@ fn update_settings(app: AppHandle, state: State<AppState>, patch: serde_json::Va
     let previous = state.settings();
     state.save_settings(settings.clone());
     shell::apply(&app, Some(&previous));
+    dashboard::sync(&app, Some(&previous));
     notify::reconsider(&app, &previous);
     let _ = app.emit("settings-changed", &settings);
     state::emit_usage(&app);
@@ -317,7 +319,12 @@ fn main() {
             detect_providers,
             open_chooser,
             shell::shortcut_status,
-            save_file
+            save_file,
+            dashboard::dashboard_resize,
+            dashboard::dashboard_hide,
+            dashboard::dashboard_spend,
+            dashboard::open_url,
+            dashboard::quit_app
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -336,8 +343,10 @@ fn main() {
                 .tooltip("Pulse")
                 .menu(&Menu::new(app)?)
                 .on_menu_event(|app, event| shell::on_menu_event(app, event.id.as_ref()))
+                .on_tray_icon_event(|tray, event| dashboard::on_tray_event(tray.app_handle(), event))
                 .build(app)?;
             shell::apply(&handle, None);
+            dashboard::sync(&handle, None);
             shell::start_watcher(handle.clone());
 
             // First launch with nothing chosen: the provider chooser, not Settings.

@@ -15,6 +15,7 @@ export interface AppSettings {
   trayAccount: string | null;
   showsUsageInTray: boolean;
   trayStyle: "figure" | "ring" | "split";
+  showsMenuDashboard: boolean;
   openSettingsShortcut: { accelerator: string } | null;
   togglePanelShortcut: { accelerator: string } | null;
   language: AppLanguage;
