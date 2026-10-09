@@ -12,6 +12,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::panel;
+use crate::placement::Layout;
 use crate::state::AppState;
 use crate::win;
 
@@ -65,39 +66,47 @@ fn sample(window: &tauri::WebviewWindow) -> Option<Vec<[u8; 3]>> {
     Some(pixels.chunks_exact(4).map(|p| [p[2], p[1], p[0]]).collect())
 }
 
-/// Experiment (PULSE_ACRYLIC_TEST=1): DWM acrylic clipped to the rail by a window region.
-pub fn acrylic_experiment(app: AppHandle) {
-    if std::env::var_os("PULSE_ACRYLIC_TEST").is_none() {
+// Windows difference: keep the native rail experiment opt-in. Docked flares and cards still
+// use the existing glass until their arbitrary outlines have a matching Composition clip.
+static NATIVE_LAYOUT: std::sync::Mutex<Option<(Layout, f64)>> = std::sync::Mutex::new(None);
+static NATIVE_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static NATIVE_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+pub fn get_native_backdrop() -> bool {
+    NATIVE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Record while layout changes are serialized by the panel lock. This lock only protects a copy;
+/// no window or main-thread calls can run under it.
+pub fn record_layout(layout: &Layout, scale: f64) {
+    *NATIVE_LAYOUT.lock().unwrap() = Some((*layout, scale));
+}
+
+/// Call after releasing the panel lock: Tauri executes inline when already on the UI thread.
+/// Read the latest recorded geometry without taking the panel lock on the UI thread.
+pub fn sync_native(app: &AppHandle) {
+    if std::env::var_os("PULSE_ACRYLIC_TEST").is_none() || NATIVE_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(4));
-        let Some(window) = app.get_webview_window(panel::LABEL) else { return };
-        let shared = app.state::<panel::SharedPanel>().inner().clone();
-        let (rail, scale) = {
-            let s = shared.lock().unwrap();
-            (s.layout.map(|l| l.rail), s.monitor.as_ref().map(|m| m.scale).unwrap_or(1.0))
-        };
-        let Some(rail) = rail else { return };
-        let r = rail.w.min(rail.h) / 2.0;
-        let mut points = Vec::new();
-        let corners = [
-            (rail.x + rail.w - r, rail.y + r, -90.0f64),
-            (rail.x + rail.w - r, rail.y + rail.h - r, 0.0),
-            (rail.x + r, rail.y + rail.h - r, 90.0),
-            (rail.x + r, rail.y + r, 180.0),
-        ];
-        for (cx, cy, start) in corners {
-            for k in 0..=12 {
-                let a = (start + 90.0 * k as f64 / 12.0).to_radians();
-                points.push((((cx + r * a.cos()) * scale).round() as i32, ((cy + r * a.sin()) * scale).round() as i32));
+    let next = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let Some(window) = next.get_webview_window(panel::LABEL) else { return };
+        let glass = next.state::<AppState>().settings().uses_glass;
+        let geometry = *NATIVE_LAYOUT.lock().unwrap();
+        let (rail, scale) = geometry.map(|(layout, scale)| ((glass && !layout.docked).then_some(layout.rail), scale)).unwrap_or((None, 1.0));
+        let active = match win::host_backdrop(&window, rail, scale) {
+            Ok(active) => active,
+            Err(error) => {
+                // An unsupported OS or failed target keeps the existing glass, not a clear hole.
+                eprintln!("native rail backdrop unavailable: {error}");
+                let _ = win::host_backdrop(&window, None, scale);
+                NATIVE_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+                false
             }
+        };
+        if NATIVE_ACTIVE.swap(active, std::sync::atomic::Ordering::Relaxed) != active {
+            let _ = next.emit_to(panel::LABEL, "native-backdrop", active);
         }
-        eprintln!("acrylic test: rail {rail:?} scale {scale} points {}", points.len());
-        let (x, y, w, h) = ((rail.x * scale) as f32, (rail.y * scale) as f32, (rail.w * scale) as f32, (rail.h * scale) as f32);
-        let _ = app.run_on_main_thread(move || {
-            let result = win::host_backdrop_experiment(&window, x, y, w, h, w / 2.0);
-            eprintln!("acrylic test: host backdrop {result:?}");
-        });
     });
 }

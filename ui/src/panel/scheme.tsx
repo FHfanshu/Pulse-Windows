@@ -41,10 +41,11 @@ export function Surface(p: {
   glassTransparency: number;
   light: boolean;
   screenEdge?: Edge | null;
+  nativeBackdrop?: boolean;
 }) {
   const clip = useId();
   if (p.usesGlass) {
-    return <FrostedGlass d={p.d} width={p.width} height={p.height} transparency={p.glassTransparency} />;
+    return <FrostedGlass d={p.d} width={p.width} height={p.height} transparency={p.glassTransparency} nativeBackdrop={p.nativeBackdrop} />;
   }
   if (!p.light) {
     return <path d={p.d} fill="#000" />;

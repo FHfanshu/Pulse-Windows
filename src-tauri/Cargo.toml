@@ -40,7 +40,6 @@ windows = { version = "0.58", features = [
   "Win32_System_Memory",
   "Win32_System_Ole",
   "Win32_Graphics_Dwm",
-  "Win32_System_LibraryLoader",
   "Win32_System_WinRT",
   "Win32_System_WinRT_Composition",
   "Foundation",
@@ -49,9 +48,4 @@ windows = { version = "0.58", features = [
   "UI_Composition",
   "UI_Composition_Desktop",
   "System",
-  "Graphics",
-  "Win32_Graphics_Direct2D",
-  "Win32_Graphics_Direct2D_Common",
-  "Win32_System_WinRT_Graphics_Direct2D",
-  "implement",
 ] }

@@ -13,7 +13,7 @@ import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelS
 import { Ring } from "./Ring";
 import { railSlots } from "./slots";
 import { berthPath } from "./shapes";
-import { GlassLook } from "./glass";
+import { GlassLook, useNativeBackdrop } from "./glass";
 import { ink, LightPanel, Surface } from "./scheme";
 import { pulseColors, spring, usageColor } from "./tint";
 
@@ -27,6 +27,7 @@ const contains = (r: Rect, x: number, y: number) => x >= r.x && x < r.x + r.w &&
 export function App() {
   const { usages, refreshing: refreshingIds } = useUsage();
   const stored = useSettings();
+  const nativeBackdrop = useNativeBackdrop();
   const [layout, setLayout] = useState<PanelLayout | null>(null);
   const [pointer, setPointer] = useState<[number, number] | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -286,6 +287,7 @@ export function App() {
             usesGlass={settings.usesGlass}
             glassTransparency={settings.glassTransparency}
             light={settings.light}
+            nativeBackdrop={nativeBackdrop && !docked}
             screenEdge={docked ? edge : null}
           />
         </svg>

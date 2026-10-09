@@ -6,6 +6,7 @@
 // them on under the panel as a gradient, taken towards Mica's dark base so white text stays readable
 // (the transparency slider sets how far). On top: a faint sheen, glitter that slowly twinkles (a
 // switch), and a faint edge so the outline still reads.
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createContext, useContext, useEffect, useId, useRef, useSyncExternalStore } from "react";
 
@@ -61,6 +62,25 @@ const useBands = () =>
     () => bands,
   );
 
+// Only the floating rail has a native clip in this experiment. Keep other shapes opaque.
+let nativeBackdrop = false;
+const nativeSubscribers = new Set<() => void>();
+const setNative = (active: boolean) => {
+  nativeBackdrop = active;
+  nativeSubscribers.forEach((f) => f());
+};
+let nativeEventSeen = false;
+void listen<boolean>("native-backdrop", (e) => {
+  nativeEventSeen = true;
+  setNative(e.payload);
+}).then(() => invoke<boolean>("get_native_backdrop").then((active) => {
+  if (!nativeEventSeen) setNative(active);
+})).catch(() => {});
+export const useNativeBackdrop = () => useSyncExternalStore(
+  (f) => (nativeSubscribers.add(f), () => void nativeSubscribers.delete(f)),
+  () => nativeBackdrop,
+);
+
 /** The bands run the window's height; each shape's gradient is shifted back by where its own SVG
  *  sits in the window. Followed frame by frame while the shape moves, then left alone. */
 function useWindowSpan(gradient: React.RefObject<SVGLinearGradientElement>) {
@@ -90,7 +110,7 @@ function useWindowSpan(gradient: React.RefObject<SVGLinearGradientElement>) {
   });
 }
 
-export function FrostedGlass({ d, width, height, transparency }: { d: string; width: number; height: number; transparency: number }) {
+export function FrostedGlass({ d, width, height, transparency, nativeBackdrop = false }: { d: string; width: number; height: number; transparency: number; nativeBackdrop?: boolean }) {
   const id = useId().replace(/:/g, "");
   const box = { x: 0, y: 0, width, height };
   const look = useContext(GlassLook);
@@ -127,7 +147,8 @@ export function FrostedGlass({ d, width, height, transparency }: { d: string; wi
           <stop offset="0.3" stopColor="#fff" stopOpacity={0} />
         </linearGradient>
       </defs>
-      <path d={d} fill={`url(#${id}-behind)`} />
+      {/* Windows difference: let the native blur show through the rail, with the same dark scrim. */}
+      <path d={d} fill={nativeBackdrop ? `rgba(32,32,32,${TOWARDS_DARKEST - (TOWARDS_DARKEST - TOWARDS_CLEAREST) * Math.min(Math.max(transparency, 0), 1)})` : `url(#${id}-behind)`} />
       <g clipPath={`url(#${id}-shape)`} style={{ pointerEvents: "none" }}>
         <rect {...box} fill={`url(#${id}-sheen)`} />
         {/* Two sprinkles fading in turn: a speck lights up, dims, and another takes its place. */}
