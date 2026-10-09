@@ -296,7 +296,11 @@ fn main() {
 
     tauri::Builder::default()
         // One Pulse at a time: launching it again opens Settings in the one already running.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_settings(app, None)))
+        // `--pane=spend` (or `account:codex`) opens that pane.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let pane = args.iter().find_map(|a| a.strip_prefix("--pane=")).map(str::to_string);
+            show_settings(app, pane)
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
