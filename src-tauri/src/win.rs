@@ -243,3 +243,27 @@ pub mod login_item {
         }
     }
 }
+
+/// Clip the window to `polygons` (window-local DIPs); empty clears the clip.
+pub fn set_region(window: &WebviewWindow, polygons: &[Vec<(f64, f64)>], scale: f64) {
+    use windows::Win32::Graphics::Gdi::{CombineRgn, CreatePolygonRgn, CreateRectRgn, DeleteObject, SetWindowRgn, HRGN, RGN_OR, WINDING};
+    let Some(hwnd) = hwnd(window) else { return };
+    unsafe {
+        if polygons.is_empty() {
+            SetWindowRgn(hwnd, HRGN::default(), true);
+            return;
+        }
+        let combined = CreateRectRgn(0, 0, 0, 0);
+        for polygon in polygons {
+            let points: Vec<POINT> = polygon
+                .iter()
+                .map(|(x, y)| POINT { x: (x * scale).round() as i32, y: (y * scale).round() as i32 })
+                .collect();
+            let part = CreatePolygonRgn(&points, WINDING);
+            CombineRgn(combined, combined, part, RGN_OR);
+            let _ = DeleteObject(part);
+        }
+        // The system owns the region from here on.
+        SetWindowRgn(hwnd, combined, true);
+    }
+}

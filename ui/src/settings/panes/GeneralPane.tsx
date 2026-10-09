@@ -97,6 +97,13 @@ export function GeneralPane({ settings }: { settings: AppSettings }) {
             </Row>
           </>
         )}
+        <ToggleRow
+          title="Usage panel in the menu"
+          subtitle="Opens the menu bar menu on an overview of every account, with a tab for each one's limits, plan and spend."
+          checked={settings.showsMenuDashboard}
+          disabled={settings.hidesTrayIcon}
+          onChange={(showsMenuDashboard) => updateSettings({ showsMenuDashboard })}
+        />
       </Group>
 
       <Group title={t("Shortcuts")}>

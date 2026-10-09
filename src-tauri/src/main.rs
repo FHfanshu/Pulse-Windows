@@ -1,5 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod account_ipc;
+mod dashboard;
+mod history_ipc;
+mod notifications_ipc;
 mod notify;
 mod panel;
 mod placement;
@@ -8,6 +12,7 @@ mod shell;
 mod signin_ipc;
 mod spend_ipc;
 mod state;
+mod status_ipc;
 mod store;
 mod tray_icon;
 mod win;
@@ -57,6 +62,7 @@ fn update_settings(app: AppHandle, state: State<AppState>, patch: serde_json::Va
     let previous = state.settings();
     state.save_settings(settings.clone());
     shell::apply(&app, Some(&previous));
+    dashboard::sync(&app, Some(&previous));
     notify::reconsider(&app, &previous);
     let _ = app.emit("settings-changed", &settings);
     state::emit_usage(&app);
@@ -309,12 +315,19 @@ fn main() {
             set_dock,
             status_line_installed,
             set_status_line,
+            account_ipc::estimated_value,
+            account_ipc::installed_browsers,
+            account_ipc::open_external,
             spend_ipc::spend_overview,
             spend_ipc::card_spend,
             spend_ipc::prompt_cache,
             recap_ipc::recap_report,
             recap_ipc::open_recap,
             open_settings,
+            history_ipc::account_history,
+            status_ipc::service_status,
+            status_ipc::open_status_page,
+            notifications_ipc::reports_spendable_balance,
             detect_providers,
             open_chooser,
             shell::shortcut_status,
@@ -325,7 +338,13 @@ fn main() {
             signin_ipc::signin_remove_account,
             signin_ipc::signin_open_page,
             signin_ipc::signin_copy_code,
-            save_file
+            shell::set_glass_region,
+            save_file,
+            dashboard::dashboard_resize,
+            dashboard::dashboard_hide,
+            dashboard::dashboard_spend,
+            dashboard::open_url,
+            dashboard::quit_app
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -338,14 +357,18 @@ fn main() {
             panel::start_sampler(handle.clone(), shared.clone());
             state::start_refresh_loop(handle.clone());
             spend_ipc::start_price_refresh();
+            status_ipc::start(&handle);
+            notifications_ipc::start(&handle);
 
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().expect("icon"))
                 .tooltip("Pulse")
                 .menu(&Menu::new(app)?)
                 .on_menu_event(|app, event| shell::on_menu_event(app, event.id.as_ref()))
+                .on_tray_icon_event(|tray, event| dashboard::on_tray_event(tray.app_handle(), event))
                 .build(app)?;
             shell::apply(&handle, None);
+            dashboard::sync(&handle, None);
             shell::start_watcher(handle.clone());
 
             // First launch with nothing chosen: the provider chooser, not Settings.

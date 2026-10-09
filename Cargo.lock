@@ -2926,6 +2926,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-notification",
+ "tauri-winrt-notification",
  "tiny-skia",
  "tokio",
  "window-vibrancy 0.6.0",
