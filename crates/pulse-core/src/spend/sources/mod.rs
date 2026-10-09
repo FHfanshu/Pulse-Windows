@@ -12,6 +12,7 @@
 #[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -171,6 +172,14 @@ registry! {
     Fx => fx::Fx,
     LmStudio => lmstudio::LmStudio,
     Reasonix => reasonix::Reasonix,
+    // batch E
+    Cursor => cursor::Cursor,
+    Antigravity => antigravity::Antigravity,
+    Trae => trae::Trae,
+    Warp => warp::Warp,
+    Hindsight => hindsight::Hindsight,
+    Mcode => mcode::Mcode,
+    Copilot => copilot::Copilot,
 }
 
 /// A count out of a JSON value the way the Swift readers took one: a number, whole or not,
@@ -243,6 +252,69 @@ pub(crate) fn push_unique(roots: &mut Vec<PathBuf>, path: PathBuf) {
     if !roots.contains(&path) {
         roots.push(path);
     }
+}
+
+/// The multiset union of the records read from several files of one scope (the Group E exports).
+///
+/// `{A}` and `{A, B}` yield `A` and `B`, never two `A`s: a row found in several files is kept once
+/// per the most any single file holds. Two equal rows inside one file are both kept, because that
+/// file itself says there were two. The flag is true when some row appeared in more than one file,
+/// so the caller can mark the scope partial rather than add the shared increment again. `signature`
+/// is a row's content identity; it only counts, it never drops a row a single file reported twice.
+pub(crate) fn reconcile(files: &[Vec<AgentUsageRecord>], signature: impl Fn(&AgentUsageRecord) -> String) -> (Vec<AgentUsageRecord>, bool) {
+    let mut order: Vec<String> = Vec::new();
+    let mut representative: HashMap<String, AgentUsageRecord> = HashMap::new();
+    let mut maximum: HashMap<String, usize> = HashMap::new();
+    let mut total: HashMap<String, usize> = HashMap::new();
+
+    for records in files {
+        let mut per_file: HashMap<String, usize> = HashMap::new();
+        for record in records {
+            let key = signature(record);
+            *per_file.entry(key.clone()).or_insert(0) += 1;
+            if !representative.contains_key(&key) {
+                representative.insert(key.clone(), record.clone());
+                order.push(key);
+            }
+        }
+        for (key, count) in per_file {
+            let most = maximum.entry(key.clone()).or_insert(0);
+            *most = (*most).max(count);
+            *total.entry(key).or_insert(0) += count;
+        }
+    }
+
+    let mut out = Vec::new();
+    let mut overlapped = false;
+    for key in order {
+        let emit = maximum.get(&key).copied().unwrap_or(0);
+        if total.get(&key).copied().unwrap_or(0) > emit {
+            overlapped = true;
+        }
+        if let Some(record) = representative.get(&key) {
+            for _ in 0..emit {
+                out.push(record.clone());
+            }
+        }
+    }
+    (out, overlapped)
+}
+
+/// The files whose bytes differ, in path order: a byte-identical export written to two roots is one
+/// export, read once. Rows inside one file are untouched.
+pub(crate) fn replay_distinct(files: &[PathBuf]) -> Vec<PathBuf> {
+    use sha2::{Digest, Sha256};
+    let mut sorted: Vec<&PathBuf> = files.iter().collect();
+    sorted.sort();
+    let mut seen = std::collections::HashSet::new();
+    let mut distinct = Vec::new();
+    for file in sorted {
+        let Ok(bytes) = std::fs::read(file) else { continue };
+        if seen.insert(Sha256::digest(&bytes).to_vec()) {
+            distinct.push(file.clone());
+        }
+    }
+    distinct
 }
 
 /// The agent's ledger, cut in `calendar` and priced with `prices`.

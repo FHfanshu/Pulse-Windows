@@ -33,7 +33,7 @@ fn a_finished_ledger_is_served_from_the_cache_until_a_file_or_the_prices_change(
     std::fs::write(&log, turn(100)).unwrap();
     let none = PriceTable::new();
     assert_eq!(read(home.path(), cache.path(), &none).all_time().tokens, 100);
-    assert!(cache.path().join("agent-1-grok.json").exists());
+    assert!(cache.path().join(format!("agent-{}-grok.json", crate::spend::agent_cache::VERSION)).exists());
 
     // Same size and modification time, different contents: only the cache still knows the
     // original number, which makes its reuse observable.
@@ -99,8 +99,8 @@ fn a_card_adds_up_its_agents_and_a_provider_nothing_borrows_has_none() {
     assert_eq!(ledger.all_time().tokens, 42);
     assert_eq!(ledger.read_at, Some(now));
     assert!(supports_card(Provider::Grok) && supports_card(Provider::Codex) && supports_card(Provider::OpenCodeGo));
-    assert!(!supports_card(Provider::Cursor));
-    assert!(read_card_ledger_with(Provider::Cursor, &sources, cache.path(), &calendar, &none, now).is_none());
+    assert!(!supports_card(Provider::Zai));
+    assert!(read_card_ledger_with(Provider::Zai, &sources, cache.path(), &calendar, &none, now).is_none());
     // A provider with transcripts of its own reads those, not an agent card.
     assert_eq!(read_card_ledger_with(Provider::Codex, &sources, cache.path(), &calendar, &none, now).unwrap().all_time().tokens, 0);
 }
