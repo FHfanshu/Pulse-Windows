@@ -103,6 +103,8 @@ npm ci
 npm run tauri dev
 ```
 
+如果 1420 已被另一个开发实例占用，可运行 `npm run tauri:dev`。它会选择空闲端口，并同步设置 Vite 端口与 Tauri 页面地址，不复用其他工作树的前端。
+
 使用样例读数预览界面：
 
 ```powershell
