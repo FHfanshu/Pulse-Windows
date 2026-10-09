@@ -23,7 +23,9 @@ export async function selectDevPort() {
 }
 
 export function devConfig(port) {
-  return { build: {
+  // Its own identity, so the single-instance check does not hand the launch to an installed Pulse
+  // that is running: the two run side by side (the dev build also keeps its own data folder).
+  return { identifier: "app.pulse.windows.dev", build: {
     devUrl: `http://127.0.0.1:${port}/panel.html`,
     // If another process takes the port after probing, fail instead of serving a different URL.
     beforeDevCommand: `npm run dev -- --host 127.0.0.1 --port ${port} --strictPort`,

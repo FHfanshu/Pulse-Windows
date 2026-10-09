@@ -103,7 +103,9 @@ npm ci
 npm run tauri dev
 ```
 
-如果 1420 已被另一个开发实例占用，可运行 `npm run tauri:dev`。它会选择空闲端口，并同步设置 Vite 端口与 Tauri 页面地址，不复用其他工作树的前端。
+开发时推荐运行 `npm run tauri:dev`：它会选择空闲端口（1420 被另一个开发实例占用时也能启动），并同步设置 Vite 端口与 Tauri 页面地址，不复用其他工作树的前端。
+
+开发版与已安装的正式版可以同时运行：`tauri:dev` 使用独立的应用标识（`app.pulse.windows.dev`），开发版的数据放在 `%APPDATA%\Pulse Dev`（首次启动时从 `%APPDATA%\Pulse` 复制一份设置与账号，之后互不影响），也不会改动开机自启项。直接运行 `npm run tauri dev` 时，若正式版正在运行，启动会被交给正式版。
 
 使用样例读数预览界面：
 
