@@ -42,6 +42,14 @@ pub fn text(row: &Row, column: usize) -> Option<String> {
     }
 }
 
+/// A column's bytes, from a blob or a text value alike. NULL is None.
+pub fn blob(row: &Row, column: usize) -> Option<Vec<u8>> {
+    match row.get_ref(column).ok()? {
+        ValueRef::Blob(bytes) | ValueRef::Text(bytes) => Some(bytes.to_vec()),
+        _ => None,
+    }
+}
+
 /// A column as an integer, the way `sqlite3_column_int64` reads it: a number as itself, text by
 /// its leading digits, NULL as zero.
 pub fn integer(row: &Row, column: usize) -> i64 {
@@ -51,6 +59,31 @@ pub fn integer(row: &Row, column: usize) -> i64 {
         Ok(ValueRef::Text(bytes)) => std::str::from_utf8(bytes).ok().and_then(|t| t.trim().parse::<f64>().ok()).map_or(0, |v| v as i64),
         _ => 0,
     }
+}
+
+/// A column as a number. NULL and non-numeric text are None.
+pub fn number(row: &Row, column: usize) -> Option<f64> {
+    match row.get_ref(column).ok()? {
+        ValueRef::Integer(value) => Some(value as f64),
+        ValueRef::Real(value) => value.is_finite().then_some(value),
+        ValueRef::Text(bytes) => std::str::from_utf8(bytes).ok()?.trim().parse::<f64>().ok().filter(|v| v.is_finite()),
+        _ => None,
+    }
+}
+
+/// A column as a count: NULL, a negative value or a non-number is None, so a reader can tell
+/// "absent" from "zero" where the schema makes the difference.
+pub fn count(row: &Row, column: usize) -> Option<i64> {
+    number(row, column).filter(|v| *v >= 0.0).map(|v| v as i64)
+}
+
+/// `SELECT` of `columns`, in that order, from `table`. A column the table does not have (an older
+/// schema) is replaced by NULL, so one reader serves both shapes. A missing table still fails to
+/// prepare, which reads as no rows.
+pub fn select(connection: &Connection, table: &str, columns: &[&str]) -> String {
+    let present = self::columns(connection, table);
+    let list: Vec<&str> = columns.iter().map(|c| if present.contains(*c) { *c } else { "NULL" }).collect();
+    format!("SELECT {} FROM {table}", list.join(", "))
 }
 
 /// The column names of a table; empty when there is no such table.

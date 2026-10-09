@@ -148,6 +148,17 @@ registry! {
     CommandCode => commandcode::CommandCode,
     OpenCodeReview => opencodereview::OpenCodeReview,
     ZCode => zcode::ZCode,
+    // batch C
+    Hermes => hermes::Hermes,
+    Goose => goose::Goose,
+    Zed => zed::Zed,
+    Kiro => kiro::Kiro,
+    Crush => crush::Crush,
+    Unsloth => unsloth::Unsloth,
+    AntigravityCli => antigravity_cli::AntigravityCli,
+    AntigravityIde => antigravity_ide::AntigravityIde,
+    Micode => micode::Micode,
+    DevinDesktop => devin_desktop::DevinDesktop,
 }
 
 /// A count out of a JSON value the way the Swift readers took one: a number, whole or not,
@@ -156,6 +167,55 @@ pub(crate) fn int(value: Option<&serde_json::Value>) -> i64 {
     match value {
         Some(serde_json::Value::Number(n)) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)).unwrap_or(0),
         _ => 0,
+    }
+}
+
+/// A numeric epoch in seconds, or milliseconds at or above `1e12`. Zero and negatives are None:
+/// an unset column is not 1970, and a record is never dated on a value nobody wrote.
+pub(crate) fn epoch(raw: f64) -> Option<DateTime<Utc>> {
+    if !raw.is_finite() || raw <= 0.0 {
+        return None;
+    }
+    let seconds = if raw < 1e12 { raw } else { raw / 1000.0 };
+    let whole = seconds.trunc() as i64;
+    let nanos = ((seconds - seconds.trunc()) * 1e9) as u32;
+    DateTime::from_timestamp(whole, nanos)
+}
+
+/// A JSON number, or a numeric string, as a finite float.
+pub(crate) fn number(value: &serde_json::Value) -> Option<f64> {
+    match value {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    }
+    .filter(|n| n.is_finite())
+}
+
+/// A token count from JSON, the way the Swift readers clamped one: a number or numeric string,
+/// truncated; negative, absent or non-numeric is zero.
+pub(crate) fn clamped(value: Option<&serde_json::Value>) -> i64 {
+    match value.and_then(number) {
+        Some(n) if n > 0.0 => n.trunc() as i64,
+        _ => 0,
+    }
+}
+
+/// An ISO 8601 string or a numeric epoch, as text. A numeric string is an epoch, never an ISO date.
+pub(crate) fn flexible_text(text: &str) -> Option<DateTime<Utc>> {
+    let trimmed = text.trim();
+    if let Ok(number) = trimmed.parse::<f64>() {
+        return epoch(number);
+    }
+    crate::spend::logio::timestamp(Some(&serde_json::Value::String(trimmed.to_string())), false)
+}
+
+/// A timestamp from a JSON string (ISO 8601 or a numeric epoch) or a JSON number; None otherwise.
+pub(crate) fn flexible(value: Option<&serde_json::Value>) -> Option<DateTime<Utc>> {
+    match value? {
+        serde_json::Value::String(text) => flexible_text(text),
+        serde_json::Value::Number(number) => epoch(number.as_f64()?),
+        _ => None,
     }
 }
 
