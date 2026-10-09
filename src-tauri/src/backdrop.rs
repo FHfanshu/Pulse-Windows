@@ -62,23 +62,19 @@ pub fn start(app: AppHandle) {
     });
 }
 
-/// A top-down 32-bit BMP: the bytes as captured, behind a 54-byte header. Opaque (the alpha byte
-/// of a BI_RGB bitmap is ignored).
+/// A PNG of the frame (an SVG `<image>` in WebView2 does not draw a BMP). Fast settings: the frame
+/// is a few dozen kilobytes and is about to be blurred.
 fn data_url(bgra: &[u8], w: i32, h: i32) -> String {
-    let mut bmp = Vec::with_capacity(54 + bgra.len());
-    let le32 = |v: &mut Vec<u8>, n: u32| v.extend_from_slice(&n.to_le_bytes());
-    bmp.extend_from_slice(b"BM");
-    le32(&mut bmp, 54 + bgra.len() as u32);
-    le32(&mut bmp, 0);
-    le32(&mut bmp, 54);
-    le32(&mut bmp, 40);
-    le32(&mut bmp, w as u32);
-    le32(&mut bmp, (-h) as u32);
-    bmp.extend_from_slice(&1u16.to_le_bytes());
-    bmp.extend_from_slice(&32u16.to_le_bytes());
-    for _ in 0..6 {
-        le32(&mut bmp, 0);
+    let rgb: Vec<u8> = bgra.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0]]).collect();
+    let mut bytes = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut bytes, w as u32, h as u32);
+        encoder.set_color(png::ColorType::Rgb);
+        encoder.set_depth(png::BitDepth::Eight);
+        encoder.set_compression(png::Compression::Fast);
+        if let Ok(mut writer) = encoder.write_header() {
+            let _ = writer.write_image_data(&rgb);
+        }
     }
-    bmp.extend_from_slice(bgra);
-    format!("data:image/bmp;base64,{}", base64::engine::general_purpose::STANDARD.encode(bmp))
+    format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))
 }

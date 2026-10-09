@@ -13,6 +13,7 @@ import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelS
 import { Ring } from "./Ring";
 import { railSlots } from "./slots";
 import { berthPath } from "./shapes";
+import { GlassLook } from "./glass";
 import { ink, LightPanel, Surface } from "./scheme";
 import { pulseColors, spring, usageColor } from "./tint";
 
@@ -43,6 +44,8 @@ export function App() {
     warningAt: (stored?.warningThreshold ?? 75) / 100,
     usesGlass: stored?.usesGlass ?? false,
     glassTransparency: stored?.glassTransparency ?? 0.5,
+    glassStyle: stored?.glassStyle ?? "acrylic",
+    glassGlitter: stored?.glassGlitter ?? true,
     // Light only for the solid surface: glass is always drawn dark (upstream `panelScheme`).
     light: (stored?.usesLightPanel ?? false) && !(stored?.usesGlass ?? false),
     autoCollapse: stored?.autoCollapse ?? false,
@@ -269,6 +272,7 @@ export function App() {
 
   return (
     <LightPanel.Provider value={settings.light}>
+    <GlassLook.Provider value={{ style: settings.glassStyle, glitter: settings.glassGlitter }}>
     <div className={`panel${settings.light ? " light" : ""}`} onContextMenu={(e) => { e.preventDefault(); invoke("open_settings"); }}>
       <div
         className="rail"
@@ -384,6 +388,7 @@ export function App() {
       </AnimatePresence>
       <span hidden>{ringCentreAcross}</span>
     </div>
+    </GlassLook.Provider>
     </LightPanel.Provider>
   );
 }

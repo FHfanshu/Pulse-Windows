@@ -7,7 +7,8 @@
 // on top: the dim, a smoky tint, a milky haze, a fine grain, a sheen along the top, a sprinkle of
 // glitter that slowly twinkles, and a faint edge so the outline still reads over a busy background.
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useSyncExternalStore } from "react";
+import type { GlassStyle } from "../shared/settings";
 
 /** Upstream `PanelGlass.maximumDim`: the darkest the dimming goes, at transparency 0. */
 const MAXIMUM_DIM = 0.6;
@@ -17,10 +18,18 @@ export const glassDim = (transparency: number) => (1 - Math.min(Math.max(transpa
 /** The glass's edge. */
 export const GLASS_EDGE = "rgba(255,255,255,0.16)";
 
-/** The frost: a smoky tint that keeps white text readable however clear the slider is, and a milky
- *  haze over it; together they are what tells frosted glass from a hole. */
-const TINT = "rgba(24,24,28,0.28)";
-const HAZE = 0.08;
+/** The style and the glitter switch, from Settings > Appearance; one value for every shape. */
+export const GlassLook = createContext<{ style: GlassStyle; glitter: boolean }>({ style: "acrylic", glitter: true });
+
+/** What each style draws over what is behind, once blurred. `tint` is a smoky layer that keeps white
+ *  text readable however clear the slider is; `haze` a milky one; together they are the frost.
+ *  Acrylic follows WinUI's material: tint and a fine grain. */
+const LOOKS: Record<GlassStyle, { tint: number; haze: number; grain: boolean }> = {
+  blur: { tint: 0.12, haze: 0.03, grain: false },
+  acrylic: { tint: 0.28, haze: 0.08, grain: true },
+};
+/** How far the backdrop is blurred, in DIPs. */
+const BLUR = 14;
 /** The grain: white specks whose alpha follows the noise (`alpha = noise * GRAIN - GRAIN_FLOOR`).
  *  Not a blend mode: over a transparent window there is nothing to blend with. */
 const GRAIN = 0.32;
@@ -32,9 +41,6 @@ const GLITTER_THRESHOLD = 0.66;
 
 /** Alpha = (noise - threshold) scaled to reach 1 at the brightest, so only the peaks show. */
 const glitterSlope = 1 / (1 - GLITTER_THRESHOLD);
-
-/** How far the backdrop is blurred, in DIPs. */
-const BLUR = 14;
 
 // The latest backdrop frame, a data URL of the screen under the whole window (null while glass is
 // off or before the first frame). Outside React, so every shape shares one subscription.
@@ -85,6 +91,8 @@ function useWindowOrigin(image: React.RefObject<SVGImageElement>, frame: string 
 export function FrostedGlass({ d, width, height, transparency }: { d: string; width: number; height: number; transparency: number }) {
   const id = useId().replace(/:/g, "");
   const box = { x: 0, y: 0, width, height };
+  const look = useContext(GlassLook);
+  const { tint, haze, grain } = LOOKS[look.style] ?? LOOKS.acrylic;
   const frame = useBackdrop();
   const image = useRef<SVGImageElement>(null);
   useWindowOrigin(image, frame);
@@ -128,14 +136,18 @@ export function FrostedGlass({ d, width, height, transparency }: { d: string; wi
         </g>
       )}
       <path d={d} fill={`rgba(0,0,0,${glassDim(transparency)})`} />
-      <path d={d} fill={TINT} />
+      <path d={d} fill={`rgba(24,24,28,${tint})`} />
       <g clipPath={`url(#${id}-shape)`} style={{ pointerEvents: "none" }}>
-        <rect {...box} fill={`rgba(255,255,255,${HAZE})`} />
-        <rect {...box} filter={`url(#${id}-grain)`} />
+        <rect {...box} fill={`rgba(255,255,255,${haze})`} />
+        {grain && <rect {...box} filter={`url(#${id}-grain)`} />}
         <rect {...box} fill={`url(#${id}-sheen)`} />
         {/* Two sprinkles fading in turn: a speck lights up, dims, and another takes its place. */}
-        <rect {...box} filter={`url(#${id}-glitter-11)`} className="glitter glitter-a" />
-        <rect {...box} filter={`url(#${id}-glitter-29)`} className="glitter glitter-b" />
+        {look.glitter && (
+          <>
+            <rect {...box} filter={`url(#${id}-glitter-11)`} className="glitter glitter-a" />
+            <rect {...box} filter={`url(#${id}-glitter-29)`} className="glitter glitter-b" />
+          </>
+        )}
       </g>
       <path d={d} fill="none" stroke={GLASS_EDGE} strokeWidth={1} />
     </>

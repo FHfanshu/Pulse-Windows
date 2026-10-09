@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ProviderUsage } from "./model";
 
 export type PanelSize = "small" | "standard" | "large";
+export type GlassStyle = "blur" | "acrylic";
 export type RailSpacing = "compact" | "standard" | "roomy";
 export type AppLanguage = "system" | "en" | "zh-Hans" | "zh-Hant" | "ja" | "ko";
 export type RefreshInterval = { type: "adaptive" } | { type: "fixed"; minutes: number };
@@ -32,6 +33,8 @@ export interface AppSettings {
   usesRoundEnds: boolean;
   usesGlass: boolean;
   glassTransparency: number;
+  glassStyle: GlassStyle;
+  glassGlitter: boolean;
   usesLightPanel: boolean;
   autoCollapse: boolean;
   detailedCards: string[];

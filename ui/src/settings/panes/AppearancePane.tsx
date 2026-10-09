@@ -1,5 +1,5 @@
 import { t } from "../../shared/i18n";
-import { updateSettings, type AppSettings } from "../../shared/settings";
+import { updateSettings, type AppSettings, type GlassStyle } from "../../shared/settings";
 import { Segmented, Slider } from "../controls";
 import { Group, Row } from "../Group";
 import { ToggleRow } from "./ToggleRow";
@@ -65,6 +65,29 @@ export function AppearancePane({ settings }: { settings: AppSettings }) {
           onChange={(usesGlass) => updateSettings({ usesGlass })}
         />
         {settings.usesGlass && (
+          <Row title={t("Effect")} subtitle={glassStyleSubtitle(settings.glassStyle)} disabled={off}>
+            <Segmented
+              label={t("Effect")}
+              disabled={off}
+              value={settings.glassStyle}
+              options={[
+                { value: "blur", label: t("Blur (glass)") },
+                { value: "acrylic", label: t("Acrylic") },
+              ]}
+              onChange={(glassStyle) => updateSettings({ glassStyle })}
+            />
+          </Row>
+        )}
+        {settings.usesGlass && (
+          <ToggleRow
+            title="Glitter"
+            subtitle="Specks of glitter that slowly twinkle."
+            checked={settings.glassGlitter}
+            disabled={off}
+            onChange={(glassGlitter) => updateSettings({ glassGlitter })}
+          />
+        )}
+        {settings.usesGlass && (
           <Row title={t("Transparency")} subtitle={t("Clearer to the right. Darker reads better over bright pages.")} disabled={off}>
             <Slider
               label={t("Transparency")}
@@ -84,4 +107,10 @@ export function AppearancePane({ settings }: { settings: AppSettings }) {
       </Group>
     </div>
   );
+}
+
+/** What the chosen glass does, and what reading the screen behind costs. */
+function glassStyleSubtitle(style: GlassStyle): string {
+  const line = style === "blur" ? t("Blurs what is behind, as it changes.") : t("Blurred, tinted and finely grained, like Windows acrylic.");
+  return `${line} ${t("While it blurs, the panel stays out of screenshots and recordings.")}`;
 }
