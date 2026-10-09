@@ -20,10 +20,21 @@ import { ink, LightPanel, Surface } from "./scheme";
 import { pulseColors, spring, usageColor } from "./tint";
 
 interface Rect { x: number; y: number; w: number; h: number }
-interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean; morph?: boolean }
+interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean; morph?: boolean; visible: Rect }
 interface PointerEvent { point: [number, number] | null; pressed: boolean; dragging: boolean }
 
 const SLACK = 8;
+
+/** The part of the window (along its length for a rail down a side, else along its width) the screen shows. */
+function shownOfWindow(layout: PanelLayout, vertical: boolean): { lo: number; hi: number } {
+  const { frame, visible } = layout;
+  const start = vertical ? frame.y : frame.x;
+  const length = vertical ? frame.h : frame.w;
+  const from = vertical ? visible.y : visible.x;
+  const to = from + (vertical ? visible.h : visible.w);
+  return { lo: Math.max(0, from - start), hi: Math.min(length, to - start) };
+}
+
 const contains = (r: Rect, x: number, y: number) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 
 export function App() {
@@ -158,11 +169,25 @@ export function App() {
   const panelAlong = vertical ? layout?.frame.h ?? 0 : layout?.frame.w ?? 0;
   const railAlong = vertical ? rail.y : rail.x;
   const cardAlong = vertical ? cardHeight ?? C.estimatedHeight : C.width;
+  // Windows difference: the window is as big as the biggest card needs, which a small display can be
+  // too short for, so it can reach past the screen. The card is kept to what the screen shows of it:
+  // slid along the rail only that far, and (below) shortened when even that is not enough.
+  const onScreen = layout ? shownOfWindow(layout, vertical) : { lo: 0, hi: panelAlong };
   const cardPadding = (i: number) => {
     const raw = ringCentre(i) - cardAlong / 2;
-    const first = -railAlong;
-    const last = Math.max(panelAlong - railAlong - cardAlong, first);
+    const first = onScreen.lo - railAlong;
+    const last = Math.max(onScreen.hi - railAlong - cardAlong, first);
     return Math.min(Math.max(raw, first), last);
+  };
+  // How tall the card may be, pointer excluded: along a rail down a side, the room along it; across
+  // a rail lying across, from the rail to the screen's edge on the side it opens to (upstream
+  // `PanelPlacement.cardRoom`, which has no side case, as AppKit keeps a window on its screen).
+  const cardRoom = (): number | null => {
+    if (!layout) return null;
+    if (vertical) return onScreen.hi - onScreen.lo;
+    const across = shownOfWindow(layout, true);
+    const room = edge === "top" ? across.hi - (rail.y + rail.h) : rail.y - across.lo;
+    return Math.max(room - C.horizontalGap - C.pointerWidth, 0);
   };
   const pointerCentre = (i: number) => {
     const raw = ringCentre(i) - cardPadding(i);
@@ -390,6 +415,7 @@ export function App() {
               usesGlass={settings.usesGlass}
               glassTransparency={settings.glassTransparency}
               nativeBackdrop={nativeBackdrop}
+              maxHeight={cardRoom()}
               detailed={selectedIsDetailed}
               showsSpend={selectedShowsSpend}
               onHeight={(h) => setCardHeight((old) => (old != null && Math.abs(old - h) < 0.5 ? old : h))}

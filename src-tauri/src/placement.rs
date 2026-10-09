@@ -111,6 +111,10 @@ pub struct Layout {
     /// Windows difference: this layout follows a change of the rail's shape (dock <-> float, a turn
     /// between axes), so the window was grown to hold the old shape too and the UI should morph.
     pub morph: bool,
+    /// Windows difference: the display's usable area (DIPs, screen coordinates), so the UI can tell
+    /// how much of the window the screen shows. The window is as tall as the tallest card and a
+    /// small display can be shorter than that.
+    pub visible: Rect,
 }
 
 impl Layout {
@@ -229,7 +233,7 @@ impl Placement {
             w: rail.w,
             h: rail.h,
         };
-        Layout { frame, rail: rail_rect, edge, docked, morph: false }
+        Layout { frame, rail: rail_rect, edge, docked, morph: false, visible }
     }
 
     /// Ratios for a rail whose top-left is at `origin` (screen DIPs).
@@ -258,6 +262,8 @@ mod tests {
         let visible = Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1040.0 };
         let layout = Placement::default().layout(visible, &geometry());
         assert_eq!(layout.frame.right(), 1920.0);
+        // The UI is told how much of the screen there is, to keep a card within it.
+        assert_eq!(layout.visible, visible);
         assert_eq!(layout.rail.x + layout.rail.w, layout.frame.w);
         let rail_screen_top = layout.frame.y + layout.rail.y;
         assert!((rail_screen_top - 320.0).abs() < 0.01);

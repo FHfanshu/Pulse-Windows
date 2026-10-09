@@ -24,6 +24,9 @@ html, body, #root {
 .card { position: relative; }
 .card-surface { position: absolute; left: 0; top: 0; overflow: visible; }
 .card-content { display: flex; flex-direction: column; align-items: stretch; }
+/* Upstream's bounded card: when the screen cannot hold the card, its contents scroll inside the outline. */
+.card-scroll.scrolls { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.28) transparent; }
+.panel.light .card-scroll.scrolls { scrollbar-color: rgba(0, 0, 0, 0.28) transparent; }
 .card-header { position: relative; display: flex; align-items: center; }
 .card-header-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .card-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
