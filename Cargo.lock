@@ -2885,6 +2885,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-notification",
+ "tauri-winrt-notification",
  "tiny-skia",
  "tokio",
  "window-vibrancy 0.6.0",

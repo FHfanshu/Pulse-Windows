@@ -63,6 +63,8 @@ export interface AppSettings {
   alertThreshold: number | null;
   alertsOnReset: boolean;
   alertsOnFailure: boolean;
+  alertsOnOutage: boolean;
+  alertsOnRecap: boolean;
 }
 
 export interface ProviderInfo {

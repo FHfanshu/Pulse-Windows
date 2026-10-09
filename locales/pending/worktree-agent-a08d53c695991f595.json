@@ -1,0 +1,16 @@
+{
+ "Nothing has been logged on this PC yet, so there is no history to add up.": {
+  "en": "Nothing has been logged on this PC yet, so there is no history to add up.",
+  "zh-Hans": "本机上还没有日志，无从统计。",
+  "zh-Hant": "本機上還沒有紀錄，無從統計。",
+  "ja": "この PC にはまだログがないため、集計できる履歴がありません。",
+  "ko": "이 PC에는 아직 로그가 없어 합산할 기록이 없습니다."
+ },
+ "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.": {
+  "en": "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.",
+  "zh-Hans": "根据本机的 %@ 日志统计，按 models.dev 上公布的 API 价格折算。你用的是订阅套餐，这里显示的是同样的用量改走 API 要花的钱，并非实际扣款。",
+  "zh-Hant": "依本機的 %@ 紀錄統計，按 models.dev 公布的 API 價格換算。你用的是訂閱方案，這裡顯示的是同樣用量改走 API 要花的錢，並非實際扣款。",
+  "ja": "この PC の %@ のログから集計し、models.dev が公開している API 料金で換算しています。ご利用はサブスクリプションなので、これは同じ作業を API で行った場合の金額であり、実際の請求額ではありません。",
+  "ko": "이 PC의 %@ 로그를 집계하고 models.dev에 공개된 API 요금으로 환산한 값입니다. 구독 요금제를 쓰고 있으므로, 같은 작업을 API로 했을 때의 비용이지 실제 청구액이 아닙니다."
+ }
+}

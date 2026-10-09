@@ -4,6 +4,11 @@
 //! Nothing is posted unless the matching setting is on; the engine enforces that
 //! (`wants_usage_alerts`), this file only carries what it returns to the screen.
 //! Engine memory lives in `%APPDATA%\Pulse\alerts.json`.
+//!
+//! This file also posts the other two notifications ("a service is down", from `status_ipc`, and
+//! "a recap is ready", from `notifications_ipc`) through [`post`], so every toast is written in the
+//! interface language and clicking one opens a window: the recap for a recap toast, Settings for
+//! the rest.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -63,10 +68,19 @@ pub fn after_refresh(app: &AppHandle) {
 }
 
 /// Settings changed: re-judge the readings in hand, so a limit already past a line
-/// that was just switched on is announced now, not on the next pass.
+/// that was just switched on is announced now, not on the next pass. The two notifications that are
+/// not about readings follow their own switches: an outage already under way is said now (the
+/// status pages, not the readings, are asked), and a recap switched on in the first days of a
+/// month is announced now.
 pub fn reconsider(app: &AppHandle, previous: &AppSettings) {
     let state = app.state::<AppState>();
     let settings = state.settings();
+    if previous.alerts_on_outage != settings.alerts_on_outage || previous.enabled_accounts != settings.enabled_accounts {
+        crate::status_ipc::check_now(app);
+    }
+    if !previous.alerts_on_recap && settings.alerts_on_recap {
+        crate::notifications_ipc::check_recap_now(app);
+    }
     let touched = previous.alert_threshold != settings.alert_threshold
         || previous.alerts_on_reset != settings.alerts_on_reset
         || previous.alerts_on_failure != settings.alerts_on_failure
@@ -79,21 +93,77 @@ pub fn reconsider(app: &AppHandle, previous: &AppSettings) {
 }
 
 fn post_all(app: &AppHandle, settings: &AppSettings, notifications: Vec<Notification>) {
-    if notifications.is_empty() {
-        return;
+    for note in &notifications {
+        post(app, settings, note);
     }
+}
+
+/// Localize and show one notification. A toast has a title and a body: the limit's name goes on
+/// the body's first line.
+pub fn post(app: &AppHandle, settings: &AppSettings, note: &Notification) {
     let lang = language(settings);
-    for note in notifications {
-        let title = render(&note.title, lang);
-        let body = render(&note.body, lang);
-        // A toast has a title and a body: the limit's name goes on the body's first line.
-        let body = match &note.subtitle {
-            Some(subtitle) => format!("{}\n{body}", render(subtitle, lang)),
-            None => body,
-        };
-        // No sound is named: Windows plays the default one, and its own per-app switch mutes it.
+    let title = render(&note.title, lang);
+    let body = render(&note.body, lang);
+    let body = match &note.subtitle {
+        Some(subtitle) => format!("{}\n{body}", render(subtitle, lang)),
+        None => body,
+    };
+    show_toast(app, &note.identifier, title, body);
+}
+
+/// What clicking a toast opens: the recap window on that month for a recap toast (upstream's
+/// `NotificationTapHandler` reads the month out of the identifier), Settings for every other.
+#[cfg(windows)]
+fn activated(app: &AppHandle, identifier: &str) {
+    let app = app.clone();
+    let identifier = identifier.to_string();
+    tauri::async_runtime::spawn(async move {
+        match pulse_core::recap::periods::notice::period_from_identifier(&identifier) {
+            Some(period) => crate::recap_ipc::open_recap(app, Some(period.key())),
+            // TODO(settings-deep-link): open the pane the toast is about once `open_settings`
+            // takes a `pane`; today it opens on the last pane shown, as upstream does.
+            None => crate::show_settings(&app),
+        }
+    });
+}
+
+/// The app id a toast is shown under. The installed app has its own; a build run from `target\`
+/// borrows PowerShell's, as `tauri-plugin-notification` does.
+#[cfg(windows)]
+fn toast_app_id(app: &AppHandle) -> String {
+    let sep = std::path::MAIN_SEPARATOR;
+    let from_target = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.display().to_string()))
+        .is_some_and(|dir| dir.ends_with(&format!("{sep}target{sep}debug")) || dir.ends_with(&format!("{sep}target{sep}release")));
+    if from_target {
+        tauri_winrt_notification::Toast::POWERSHELL_APP_ID.to_string()
+    } else {
+        app.config().identifier.clone()
+    }
+}
+
+/// A Windows toast with a click handler (`tauri-plugin-notification` cannot report a click on
+/// desktop). The default sound is asked for, as upstream does: Windows' own per-app switch mutes it.
+#[cfg(windows)]
+fn show_toast(app: &AppHandle, identifier: &str, title: String, body: String) {
+    let (handle, id) = (app.clone(), identifier.to_string());
+    let shown = tauri_winrt_notification::Toast::new(&toast_app_id(app))
+        .title(&title)
+        .text1(&body)
+        .on_activated(move |_| {
+            activated(&handle, &id);
+            Ok(())
+        })
+        .show();
+    if shown.is_err() {
         let _ = app.notification().builder().title(title).body(body).show();
     }
+}
+
+#[cfg(not(windows))]
+fn show_toast(app: &AppHandle, _identifier: &str, title: String, body: String) {
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +267,7 @@ pub fn render(text: &Text, lang: &str) -> String {
         }
         Text::ResetTime(at) => format_reset_time(*at, lang),
         Text::Dotted(parts) => parts.iter().map(|p| render(p, lang)).collect::<Vec<_>>().join(" · "),
+        Text::List(items) => list(&items.iter().map(|p| render(p, lang)).collect::<Vec<_>>(), lang),
         Text::Sentences(parts) => {
             let mut out = String::new();
             for part in parts.iter().map(|p| render(p, lang)).filter(|s| !s.is_empty()) {
@@ -208,6 +279,39 @@ pub fn render(text: &Text, lang: &str) -> String {
             }
             out
         }
+    }
+}
+
+/// Items in the interface language's own way of listing (`ListFormatter`): "A and B",
+/// "A, B, and C"; "A和B", "A、B和C"; "A、B、C"; "A 및 B", "A, B 및 C".
+pub fn list(items: &[String], lang: &str) -> String {
+    let (separator, last, pair) = match lang {
+        "zh-Hans" | "zh-Hant" => ("、", "和", "和"),
+        "ja" => ("、", "、", "、"),
+        "ko" => (", ", " 및 ", " 및 "),
+        _ => (", ", ", and ", " and "),
+    };
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [a, b] => format!("{a}{pair}{b}"),
+        [head @ .., tail] => format!("{}{last}{tail}", head.join(separator)),
+    }
+}
+
+/// The month's own name in the interface language ("September", "九月", "9月", "9월"), for the
+/// recap notification. Upstream `RecapFormat.monthName`.
+pub fn month_name(month: u32, lang: &str) -> String {
+    const EN: [&str; 12] = [
+        "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
+    ];
+    const HANS: [&str; 12] = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"];
+    let index = (month as usize).saturating_sub(1);
+    match lang {
+        "zh-Hans" | "zh-Hant" => HANS.get(index).map_or_else(|| month.to_string(), |m| m.to_string()),
+        "ja" => format!("{month}月"),
+        "ko" => format!("{month}월"),
+        _ => EN.get(index).map_or_else(|| month.to_string(), |m| m.to_string()),
     }
 }
 
@@ -263,12 +367,51 @@ mod tests {
             "5-hour limit", "Weekly limit", "Spend limit", "Daily limit", "Message allowance", "Monthly limit",
             "Top-up pack", "Credit allowance", "Team credits", "%@-day limit", "%@-hour limit", "estimated",
             "since top-up", "of your budget",
+            "Service status", "%@ reports %@.", "%@ (%@)", "Back to normal: %@.", "Operational", "Degraded performance",
+            "Partial outage", "Full outage", "Under maintenance", "Unrecognised status", "Monthly Recap", "Your %@ recap is ready",
         ] {
             assert!(english.contains_key(key), "missing locale key {key:?}");
         }
         for reason in ["The service didn't respond.", "That key was refused. Check it in Settings.", "Couldn't read the reply."] {
             assert!(english.contains_key(reason), "missing locale key {reason:?}");
         }
+    }
+
+    #[test]
+    fn lists_follow_the_language() {
+        let items = |n: usize| ["A", "B", "C"][..n].iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(list(&items(1), "en"), "A");
+        assert_eq!(list(&items(2), "en"), "A and B");
+        assert_eq!(list(&items(3), "en"), "A, B, and C");
+        assert_eq!(list(&items(3), "zh-Hans"), "A、B和C");
+        assert_eq!(list(&items(3), "ja"), "A、B、C");
+        assert_eq!(list(&items(3), "ko"), "A, B 및 C");
+    }
+
+    #[test]
+    fn the_service_and_recap_notifications_render_from_the_locale_files() {
+        use pulse_core::outage::{notification, recap_notification, Change};
+        use pulse_core::recap::Period;
+        use pulse_core::status::{Component, State, StatusPage};
+
+        let change = Change {
+            worse: vec![Component::new("cli", "CLI", State::PartialOutage), Component::new("api", "Codex API", State::Degraded)],
+            recovered: vec![Component::new("web", "Codex Web", State::Operational)],
+        };
+        let note = notification(StatusPage::OpenAi, &change).unwrap();
+        assert_eq!(render(&note.title, "en"), "Codex");
+        assert_eq!(render(note.subtitle.as_ref().unwrap(), "en"), "Service status");
+        assert_eq!(
+            render(&note.body, "en"),
+            "OpenAI reports CLI (Partial outage) and Codex API (Degraded performance). Back to normal: Codex Web."
+        );
+        assert_ne!(render(&note.body, "zh-Hans"), render(&note.body, "en"));
+
+        let recap = recap_notification(Period::Month { year: 2026, month: 9 }, &month_name(9, "en")).unwrap();
+        assert_eq!(render(&recap.title, "en"), "Monthly Recap");
+        assert_eq!(render(&recap.body, "en"), "Your September recap is ready");
+        assert_eq!(month_name(9, "ja"), "9月");
+        assert_eq!(month_name(9, "zh-Hans"), "九月");
     }
 
     #[test]
