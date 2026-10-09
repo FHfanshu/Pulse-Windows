@@ -292,3 +292,134 @@ pub fn capture_screen(rect: (i32, i32, i32, i32), w: i32, h: i32) -> Option<Vec<
         out
     }
 }
+
+/// DWM's acrylic behind the window (`SetWindowCompositionAttribute`'s accent policy, the material
+/// Windows composites itself, so it shows in screenshots and remote desktop), tinted with `tint`
+/// (0xAABBGGRR); None turns it off.
+pub fn set_acrylic(window: &WebviewWindow, tint: Option<u32>) {
+    use windows::core::s;
+    use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    #[repr(C)]
+    struct AccentPolicy {
+        state: u32,
+        flags: u32,
+        gradient: u32,
+        animation: u32,
+    }
+    #[repr(C)]
+    struct CompositionData {
+        attribute: u32,
+        data: *mut std::ffi::c_void,
+        size: usize,
+    }
+    type SetComposition = unsafe extern "system" fn(HWND, *mut CompositionData) -> BOOL;
+    const WCA_ACCENT_POLICY: u32 = 19;
+    const ACCENT_DISABLED: u32 = 0;
+    const ACCENT_ENABLE_ACRYLICBLURBEHIND: u32 = 4;
+    let Some(hwnd) = hwnd(window) else { return };
+    unsafe {
+        let Ok(user32) = GetModuleHandleA(s!("user32.dll")) else { return };
+        let Some(address) = GetProcAddress(user32, s!("SetWindowCompositionAttribute")) else { return };
+        let set: SetComposition = std::mem::transmute(address);
+        let mut policy = AccentPolicy {
+            state: if tint.is_some() { ACCENT_ENABLE_ACRYLICBLURBEHIND } else { ACCENT_DISABLED },
+            flags: 0,
+            gradient: tint.unwrap_or(0),
+            animation: 0,
+        };
+        let mut data = CompositionData {
+            attribute: WCA_ACCENT_POLICY,
+            data: (&mut policy as *mut AccentPolicy).cast(),
+            size: std::mem::size_of::<AccentPolicy>(),
+        };
+        let _ = set(hwnd, &mut data);
+    }
+}
+
+/// Whether the window carries `WS_EX_LAYERED` (which DWM's acrylic does not follow a region on).
+pub fn set_layered(window: &WebviewWindow, layered: bool) {
+    let Some(hwnd) = hwnd(window) else { return };
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        let ex = if layered { ex | WS_EX_LAYERED.0 } else { ex & !WS_EX_LAYERED.0 };
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
+        if layered {
+            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+        }
+    }
+}
+
+/// Clips the window (its drawing, DWM's backdrop and its hit-testing) to polygons in window-local
+/// physical pixels; None removes the clip.
+pub fn set_region(window: &WebviewWindow, polygons: Option<&[Vec<(i32, i32)>]>) {
+    use windows::Win32::Graphics::Gdi::{CreatePolyPolygonRgn, SetWindowRgn, WINDING};
+    let Some(hwnd) = hwnd(window) else { return };
+    unsafe {
+        match polygons {
+            None => {
+                SetWindowRgn(hwnd, None, true);
+            }
+            Some(polygons) => {
+                let points: Vec<POINT> = polygons.iter().flatten().map(|&(x, y)| POINT { x, y }).collect();
+                let counts: Vec<i32> = polygons.iter().map(|p| p.len() as i32).collect();
+                let region = CreatePolyPolygonRgn(points.as_ptr(), &counts, WINDING);
+                // The system owns the region from here.
+                SetWindowRgn(hwnd, region, true);
+            }
+        }
+    }
+}
+
+/// Experiment: the window's extended style and whether it has a region.
+pub fn debug_style(window: &WebviewWindow) -> String {
+    use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, GetWindowRgn};
+    let Some(hwnd) = hwnd(window) else { return "no hwnd".into() };
+    unsafe {
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        let r = CreateRectRgn(0, 0, 0, 0);
+        let kind = GetWindowRgn(hwnd, r);
+        let _ = DeleteObject(r);
+        format!("ex=0x{ex:X} region kind={}", kind.0)
+    }
+}
+
+/// Experiment: WinUI-style acrylic. A composition visual behind the window's own content, filled
+/// with DWM's host backdrop (what is behind the window, blurred) and clipped to a rounded rect
+/// (window-local physical pixels). Composited by DWM, so it shows in screenshots and remote desktop.
+pub fn host_backdrop_experiment(window: &WebviewWindow, x: f32, y: f32, w: f32, h: f32, radius: f32) -> windows::core::Result<()> {
+    use windows::core::Interface;
+    use windows::Foundation::Numerics::{Vector2, Vector3};
+    use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
+    use windows::Win32::System::WinRT::Composition::ICompositorDesktopInterop;
+    use windows::Win32::System::WinRT::{CreateDispatcherQueueController, DispatcherQueueOptions, DQTAT_COM_NONE, DQTYPE_THREAD_CURRENT};
+    use windows::UI::Composition::Compositor;
+    let Some(hwnd) = hwnd(window) else { return Ok(()) };
+    unsafe {
+        // DWMWA_USE_HOSTBACKDROPBRUSH
+        let on = BOOL(1);
+        DwmSetWindowAttribute(hwnd, DWMWINDOWATTRIBUTE(17), (&on as *const BOOL).cast(), 4)?;
+        let options = DispatcherQueueOptions {
+            dwSize: std::mem::size_of::<DispatcherQueueOptions>() as u32,
+            threadType: DQTYPE_THREAD_CURRENT,
+            apartmentType: DQTAT_COM_NONE,
+        };
+        let controller = CreateDispatcherQueueController(options)?;
+        let compositor = Compositor::new()?;
+        let interop: ICompositorDesktopInterop = compositor.cast()?;
+        let target = interop.CreateDesktopWindowTarget(hwnd, false)?;
+        let root = compositor.CreateContainerVisual()?;
+        target.SetRoot(&root)?;
+        let sprite = compositor.CreateSpriteVisual()?;
+        sprite.SetBrush(&compositor.CreateHostBackdropBrush()?)?;
+        sprite.SetOffset(Vector3 { X: x, Y: y, Z: 0.0 })?;
+        sprite.SetSize(Vector2 { X: w, Y: h })?;
+        let shape = compositor.CreateRoundedRectangleGeometry()?;
+        shape.SetSize(Vector2 { X: w, Y: h })?;
+        shape.SetCornerRadius(Vector2 { X: radius, Y: radius })?;
+        sprite.SetClip(&compositor.CreateGeometricClipWithGeometry(&shape)?)?;
+        root.Children()?.InsertAtTop(&sprite)?;
+        // Kept for the life of the process (experiment).
+        std::mem::forget((controller, compositor, target, root, sprite));
+    }
+    Ok(())
+}

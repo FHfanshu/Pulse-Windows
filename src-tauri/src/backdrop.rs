@@ -64,3 +64,40 @@ fn sample(window: &tauri::WebviewWindow) -> Option<Vec<[u8; 3]>> {
     let pixels = win::capture_screen((x, top, x + STRIP, bottom), 1, BANDS)?;
     Some(pixels.chunks_exact(4).map(|p| [p[2], p[1], p[0]]).collect())
 }
+
+/// Experiment (PULSE_ACRYLIC_TEST=1): DWM acrylic clipped to the rail by a window region.
+pub fn acrylic_experiment(app: AppHandle) {
+    if std::env::var_os("PULSE_ACRYLIC_TEST").is_none() {
+        return;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(4));
+        let Some(window) = app.get_webview_window(panel::LABEL) else { return };
+        let shared = app.state::<panel::SharedPanel>().inner().clone();
+        let (rail, scale) = {
+            let s = shared.lock().unwrap();
+            (s.layout.map(|l| l.rail), s.monitor.as_ref().map(|m| m.scale).unwrap_or(1.0))
+        };
+        let Some(rail) = rail else { return };
+        let r = rail.w.min(rail.h) / 2.0;
+        let mut points = Vec::new();
+        let corners = [
+            (rail.x + rail.w - r, rail.y + r, -90.0f64),
+            (rail.x + rail.w - r, rail.y + rail.h - r, 0.0),
+            (rail.x + r, rail.y + rail.h - r, 90.0),
+            (rail.x + r, rail.y + r, 180.0),
+        ];
+        for (cx, cy, start) in corners {
+            for k in 0..=12 {
+                let a = (start + 90.0 * k as f64 / 12.0).to_radians();
+                points.push((((cx + r * a.cos()) * scale).round() as i32, ((cy + r * a.sin()) * scale).round() as i32));
+            }
+        }
+        eprintln!("acrylic test: rail {rail:?} scale {scale} points {}", points.len());
+        let (x, y, w, h) = ((rail.x * scale) as f32, (rail.y * scale) as f32, (rail.w * scale) as f32, (rail.h * scale) as f32);
+        let _ = app.run_on_main_thread(move || {
+            let result = win::host_backdrop_experiment(&window, x, y, w, h, w / 2.0);
+            eprintln!("acrylic test: host backdrop {result:?}");
+        });
+    });
+}
