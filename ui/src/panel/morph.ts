@@ -20,8 +20,6 @@ export interface RailTarget {
   docked: boolean;
   /** Rust grew the window to hold the old shape too, so there is room to animate in. */
   morph?: boolean;
-  /** Windows difference: native origin animates separately; local offsets stay in the same canvas. */
-  glide?: boolean;
 }
 
 /** What to draw this frame. `x`/`y` are window-local; `items` are ring-item centres from the rail's centre. */
@@ -85,14 +83,15 @@ export function useRailMorph(target: RailTarget | null, size: { w: number; h: nu
 
   const next = target ? shapeKey(target) : null;
   if (target && next && key.current !== null && key.current !== next) {
-    // The shape changed: start from the outline last drawn (kept on screen, whatever the window did).
+    // Windows difference: Rust keeps one local canvas and glides its origin on the same spring.
+    // Start from the last local outline; no rebasing is needed when that canvas later shrinks.
     const prev = shown.current;
     run.current = null;
     progress.current = 1;
     if (target.morph && prev) {
       run.current = {
-        dx: target.glide ? prev.x - target.rail.x : prev.x + prev.origin[0] - (target.rail.x + target.frame.x),
-        dy: target.glide ? prev.y - target.rail.y : prev.y + prev.origin[1] - (target.rail.y + target.frame.y),
+        dx: prev.x - target.rail.x,
+        dy: prev.y - target.rail.y,
         dw: prev.w - size.w,
         dh: prev.h - size.h,
         d0: prev.d,

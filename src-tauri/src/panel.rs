@@ -124,7 +124,6 @@ impl PanelState {
             natural.frame.w = natural.frame.w.max(room.w);
             natural.frame.h = natural.frame.h.max(room.h);
             natural.morph = true;
-            natural.glide = true;
         }
         if let Some(glide) = self.glide {
             let (x, y) = glide.residual(now);
@@ -599,7 +598,7 @@ mod tests {
         assert_eq!(layout.rail, natural.rail);
         assert!(layout.frame.w >= before.frame.w.max(natural.frame.w));
         assert!(layout.frame.h >= before.frame.h.max(natural.frame.h));
-        assert!(layout.glide);
+        assert!(state.glide.is_some());
         // The grown layout is what later placements (a drag tick, a display change) show too.
         assert_eq!(state.show(natural, now), layout);
         assert!(!state.settle_due(now));
@@ -644,7 +643,7 @@ mod tests {
         assert_eq!(started.rail, natural.rail);
         assert!(started.frame.w >= before.frame.w.max(natural.frame.w));
         assert!(started.frame.h >= before.frame.h.max(natural.frame.h));
-        assert!(started.morph && started.glide);
+        assert!(started.morph && state.glide.is_some());
 
         let finished_at = now + Duration::from_secs(2);
         let finished = state.commit(natural, true, finished_at);

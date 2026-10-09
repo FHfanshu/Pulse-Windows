@@ -111,8 +111,6 @@ pub struct Layout {
     /// Windows difference: this layout follows a change of the rail's shape (dock <-> float, a turn
     /// between axes), so the window was grown to hold the old shape too and the UI should morph.
     pub morph: bool,
-    /// Windows difference: the HWND origin follows the same spring as the local rail morph.
-    pub glide: bool,
 }
 
 impl Layout {
@@ -215,7 +213,7 @@ impl Placement {
             w: rail.w,
             h: rail.h,
         };
-        Layout { frame, rail: rail_rect, edge, docked, morph: false, glide: false }
+        Layout { frame, rail: rail_rect, edge, docked, morph: false }
     }
 
     /// Ratios for a rail whose top-left is at `origin` (screen DIPs).
