@@ -19,6 +19,7 @@ mod state;
 mod status_ipc;
 mod store;
 mod tray_icon;
+mod update_ipc;
 mod win;
 mod window_starter_ipc;
 
@@ -313,6 +314,11 @@ fn main() {
         // One Pulse at a time: launching it again opens Settings in the one already running.
         // `--pane=spend` (or `account:codex`) opens that pane.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // A start at login while Pulse is already running (the installer starts it again after
+            // an update) has nothing to show.
+            if args.iter().any(|a| a == pulse_core::login_item::AUTOSTART_ARGUMENT) {
+                return;
+            }
             // `--recap=month` / `--recap=2026-09` opens the recap window instead.
             if let Some(period) = args.iter().find_map(|a| a.strip_prefix("--recap=")) {
                 return recap_ipc::show_recap(app, Some(period.to_string()));
@@ -323,6 +329,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -366,6 +373,10 @@ fn main() {
             detect_providers,
             open_chooser,
             shell::shortcut_status,
+            shell::sync_login_item,
+            update_ipc::update_state,
+            update_ipc::update_check,
+            update_ipc::update_install,
             signin_ipc::signin_state,
             signin_ipc::signin_start,
             signin_ipc::signin_cancel,
@@ -385,6 +396,7 @@ fn main() {
             let state = AppState::load();
             let needs_choice = state.settings().needs_provider_selection() && !state.mock;
             app.manage(state);
+            app.manage(update_ipc::UpdateHandle::new(&handle.package_info().version.to_string()));
 
             shared.lock().unwrap().placement = store::load_placement(&handle);
             panel::create(&handle)?;
@@ -394,6 +406,7 @@ fn main() {
             status_ipc::start(&handle);
             notifications_ipc::start(&handle);
             window_starter_ipc::start(&handle);
+            update_ipc::start(&handle);
 
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().expect("icon"))
@@ -407,8 +420,10 @@ fn main() {
             shell::start_watcher(handle.clone());
             backdrop::start(handle.clone());
 
-            // First launch with nothing chosen: the provider chooser, not Settings.
-            if needs_choice {
+            // First launch with nothing chosen: the provider chooser, not Settings. Not at login:
+            // that start is silent, the panel and the tray icon only.
+            let at_login = std::env::args().any(|a| a == pulse_core::login_item::AUTOSTART_ARGUMENT);
+            if needs_choice && !at_login {
                 show_chooser(&handle);
             }
             Ok(())

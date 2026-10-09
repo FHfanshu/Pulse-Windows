@@ -21,6 +21,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
 # Toasts with a click handler (the plugin cannot report a click on desktop); already in the lock

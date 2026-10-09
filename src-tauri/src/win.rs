@@ -225,19 +225,18 @@ pub fn fullscreen_monitor(except: Option<&WebviewWindow>) -> Option<String> {
     }
 }
 
-/// `HKCU\…\Run\Pulse`: start at login.
+/// `HKCU\…\Run\Pulse`: start at login. What the value should be and when to change it is
+/// `pulse_core::login_item`; this is only the registry.
 pub mod login_item {
     use windows::core::{w, HSTRING, PCWSTR};
     use windows::Win32::System::Registry::{
-        RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
+        RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_SZ,
     };
 
     const KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
+    /// Where Windows' Startup apps page and Task Manager record that the user switched an entry off.
+    const APPROVED_KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run");
     const NAME: PCWSTR = w!("Pulse");
-
-    pub fn command(exe: &std::path::Path) -> String {
-        format!("\"{}\"", exe.display())
-    }
 
     pub fn current() -> Option<String> {
         let mut buf = vec![0u16; 1024];
@@ -251,19 +250,41 @@ pub mod login_item {
         Some(String::from_utf16_lossy(&buf[..len]))
     }
 
-    pub fn set(enabled: bool, exe: &std::path::Path) {
+    /// Write the Run value, `command` being `pulse_core::login_item::command`.
+    pub fn write(command: &str) {
         unsafe {
-            if enabled {
-                let value = HSTRING::from(command(exe));
-                let bytes = std::slice::from_raw_parts(value.as_ptr().cast::<u8>(), (value.len() + 1) * 2);
-                let _ = RegSetKeyValueW(HKEY_CURRENT_USER, KEY, NAME, REG_SZ.0, Some(bytes.as_ptr().cast()), bytes.len() as u32);
-            } else {
-                let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, KEY, NAME);
-            }
+            let value = HSTRING::from(command);
+            let bytes = std::slice::from_raw_parts(value.as_ptr().cast::<u8>(), (value.len() + 1) * 2);
+            let _ = RegSetKeyValueW(HKEY_CURRENT_USER, KEY, NAME, REG_SZ.0, Some(bytes.as_ptr().cast()), bytes.len() as u32);
+        }
+    }
+
+    pub fn remove() {
+        unsafe {
+            let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, KEY, NAME);
+        }
+    }
+
+    /// The Startup apps toggle's record for Pulse, if Windows has written one.
+    pub fn startup_approved() -> Option<Vec<u8>> {
+        let mut buf = [0u8; 32];
+        let mut size = buf.len() as u32;
+        unsafe {
+            RegGetValueW(HKEY_CURRENT_USER, APPROVED_KEY, NAME, RRF_RT_REG_BINARY, None, Some(buf.as_mut_ptr().cast()), Some(&mut size))
+                .ok()
+                .ok()?;
+        }
+        Some(buf[..(size as usize).min(buf.len())].to_vec())
+    }
+
+    /// Forget the user's earlier "off" in Windows: a missing record means enabled. Done when the
+    /// user switches Pulse on themselves, or the entry would stay off without a word.
+    pub fn clear_startup_approved() {
+        unsafe {
+            let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, APPROVED_KEY, NAME);
         }
     }
 }
-
 
 /// The screen inside `rect` (physical pixels: left, top, right, bottom), shrunk to `w` x `h` with
 /// halftone averaging. BGRA rows, top row first.

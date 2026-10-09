@@ -11,6 +11,10 @@ on:
         description: Optional release tag that must match the app version
         type: string
         default: ''
+      sign-updates:
+        description: Also build the signed updater artifacts (installer signature and latest.json); needs the signing key secrets
+        type: boolean
+        default: false
     outputs:
       version:
         description: Validated application version
@@ -58,9 +62,18 @@ jobs:
       - name: Test Rust workspace
         run: cargo test --workspace --all-targets --locked
       - name: Build Windows installer
+        if: ${{ !inputs.sign-updates }}
         run: npm run tauri build -- --target x86_64-pc-windows-msvc -- --locked
+      # The updater artifacts need the private key, which pull requests do not have: only a release
+      # build (release.yml passes sign-updates) signs the installer.
+      - name: Build Windows installer with signed updater artifacts
+        if: ${{ inputs.sign-updates }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --target x86_64-pc-windows-msvc --config src-tauri/tauri.release.conf.json -- --locked
       - name: Package distributables and checksums
-        run: ./scripts/package-windows.ps1
+        run: ./scripts/package-windows.ps1 -RequireUpdaterArtifacts:$${{ inputs.sign-updates && 'true' || 'false' }}
       - name: Upload Windows build
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

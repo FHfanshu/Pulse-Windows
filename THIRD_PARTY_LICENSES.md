@@ -938,6 +938,7 @@ Used by:
 - [windows-interface 0.59.3](https://github.com/microsoft/windows-rs)
 - [windows-link 0.2.1](https://github.com/microsoft/windows-rs)
 - [windows-numerics 0.3.1](https://github.com/microsoft/windows-rs)
+- [windows-registry 0.6.1](https://github.com/microsoft/windows-rs)
 - [windows-result 0.2.0](https://github.com/microsoft/windows-rs)
 - [windows-result 0.4.1](https://github.com/microsoft/windows-rs)
 - [windows-strings 0.1.0](https://github.com/microsoft/windows-rs)
@@ -1585,6 +1586,7 @@ Used by:
 
 Used by:
 
+- [rustls-platform-verifier 0.7.1](https://github.com/rustls/rustls-platform-verifier)
 - [serialize-to-javascript-impl 0.1.2](https://github.com/chippers/serialize-to-javascript)
 - [serialize-to-javascript 0.1.2](https://github.com/chippers/serialize-to-javascript)
 
@@ -2861,6 +2863,7 @@ Used by:
 
 - [futures-channel 0.3.34](https://github.com/rust-lang/futures-rs)
 - [futures-core 0.3.34](https://github.com/rust-lang/futures-rs)
+- [futures-macro 0.3.34](https://github.com/rust-lang/futures-rs)
 - [futures-sink 0.3.34](https://github.com/rust-lang/futures-rs)
 - [futures-task 0.3.34](https://github.com/rust-lang/futures-rs)
 - [futures-util 0.3.34](https://github.com/rust-lang/futures-rs)
@@ -3286,6 +3289,7 @@ limitations under the License.
 Used by:
 
 - [reqwest 0.12.28](https://github.com/seanmonstar/reqwest)
+- [reqwest 0.13.5](https://github.com/seanmonstar/reqwest)
 
 ```text
                               Apache License
@@ -4819,6 +4823,7 @@ Used by:
 - [socket2 0.6.5](https://github.com/rust-lang/socket2)
 - [stable_deref_trait 1.2.1](https://github.com/storyyeller/stable_deref_trait)
 - [string_cache 0.9.0](https://github.com/servo/string-cache)
+- [tempfile 3.27.0](https://github.com/Stebalien/tempfile)
 - [tendril 0.5.1](https://github.com/servo/html5ever)
 - [tray-icon 0.25.1](https://github.com/tauri-apps/tray-icon)
 - [ttf-parser 0.25.1](https://github.com/harfbuzz/ttf-parser)
@@ -7046,6 +7051,7 @@ Used by:
 - [tauri-plugin-global-shortcut 2.4.0](https://github.com/tauri-apps/plugins-workspace)
 - [tauri-plugin-notification 2.5.1](https://github.com/tauri-apps/plugins-workspace)
 - [tauri-plugin-single-instance 2.5.2](https://github.com/tauri-apps/plugins-workspace)
+- [tauri-plugin-updater 2.13.2](https://github.com/tauri-apps/plugins-workspace)
 - [tauri-runtime-wry 2.12.1](https://github.com/tauri-apps/tauri)
 - [tauri-runtime 2.12.1](https://github.com/tauri-apps/tauri)
 - [tauri-utils 2.10.1](https://github.com/tauri-apps/tauri)
@@ -9255,6 +9261,7 @@ Used by:
 
 - [brotli-decompressor 6.0.1](https://github.com/dropbox/rust-brotli-decompressor)
 - [dpi 0.1.2](https://github.com/rust-windowing/winit)
+- [minisign-verify 0.2.5](https://github.com/jedisct1/rust-minisign-verify)
 - [webview2-com-macros 0.8.1](https://github.com/wravery/webview2-rs)
 - [webview2-com-sys 0.39.1](https://github.com/wravery/webview2-rs)
 - [webview2-com 0.39.1](https://github.com/wravery/webview2-rs)
@@ -9435,6 +9442,39 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+```
+
+### MIT License
+
+Used by:
+
+- [zip 4.6.1](https://github.com/zip-rs/zip2.git)
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2014 Mathijs van de Nes
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Some files in the "tests/data" subdirectory of this repository are under other
+licences; see files named LICENSE.*.txt for details.
 ```
 
 ### MIT License

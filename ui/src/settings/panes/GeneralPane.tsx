@@ -30,6 +30,10 @@ export function GeneralPane({ settings }: { settings: AppSettings }) {
     invoke<ShortcutStatus>("shortcut_status").then(setStatus).catch(() => {});
   }, [settings.openSettingsShortcut, settings.togglePanelShortcut]);
 
+  // Windows can switch Pulse off at login behind its back (Settings > Apps > Startup, Task Manager); the
+  // switch should say so. The answer arrives as `settings-changed`.
+  useEffect(() => { invoke("sync_login_item").catch(() => {}); }, []);
+
   const shortcutSubtitle = (accepted: boolean | null, available: string) =>
     accepted === false ? t("Another app is already using this combination.") : t(available);
 
