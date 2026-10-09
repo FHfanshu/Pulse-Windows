@@ -18,7 +18,9 @@ html, body, #root {
 .ring { position: relative; flex: none; }
 .ring-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; }
 .ring-icon svg { display: block; }
-.percent { font-weight: 500; white-space: nowrap; text-align: center; transition: opacity 0.2s ease-out; }
+/* Windows difference (approved by the owner): Outfit instead of the rounded face upstream uses here;
+   Windows has no SF Rounded and the owner preferred Outfit's digits. Same 500 weight, monospaced digits. */
+.percent { font-family: "Outfit Variable", var(--font-rounded); font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; text-align: center; transition: opacity 0.2s ease-out; }
 .card { position: relative; }
 .card-surface { position: absolute; left: 0; top: 0; overflow: visible; }
 .card-content { display: flex; flex-direction: column; align-items: stretch; }
