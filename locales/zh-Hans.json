@@ -1022,5 +1022,6 @@
  "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.": "读取 Claude Code 保存在凭据文件里的登录信息，以及 Claude 桌面版的用量记录。不会弹出授权提示。",
  "Uses a browser session you import in Settings.": "使用你在设置里导入的浏览器登录信息。",
  "Nothing has been logged on this PC yet, so there is no history to add up.": "本机上还没有日志，无从统计。",
- "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.": "根据本机的 %@ 日志统计，按 models.dev 上公布的 API 价格折算。你用的是订阅套餐，这里显示的是同样的用量改走 API 要花的钱，并非实际扣款。"
+ "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.": "根据本机的 %@ 日志统计，按 models.dev 上公布的 API 价格折算。你用的是订阅套餐，这里显示的是同样的用量改走 API 要花的钱，并非实际扣款。",
+ "Couldn't save the login on this PC.": "无法在本机保存登录信息。"
 }

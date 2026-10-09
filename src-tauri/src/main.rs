@@ -11,6 +11,7 @@ mod panel;
 mod placement;
 mod recap_ipc;
 mod shell;
+mod signin_ipc;
 mod spend_ipc;
 mod state;
 mod status_ipc;
@@ -298,6 +299,12 @@ fn main() {
     let shared: SharedPanel = Arc::new(Mutex::new(PanelState::default()));
 
     tauri::Builder::default()
+        // One Pulse at a time: launching it again opens Settings in the one already running.
+        // `--pane=spend` (or `account:codex`) opens that pane.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let pane = args.iter().find_map(|a| a.strip_prefix("--pane=")).map(str::to_string);
+            show_settings(app, pane)
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
@@ -327,6 +334,7 @@ fn main() {
             console_ipc::console_remove,
             console_ipc::provider_history,
             spend_ipc::spend_overview,
+            spend_ipc::spend_release,
             spend_ipc::card_spend,
             spend_ipc::prompt_cache,
             recap_ipc::recap_report,
@@ -339,6 +347,13 @@ fn main() {
             detect_providers,
             open_chooser,
             shell::shortcut_status,
+            signin_ipc::signin_state,
+            signin_ipc::signin_start,
+            signin_ipc::signin_cancel,
+            signin_ipc::signin_sign_out,
+            signin_ipc::signin_remove_account,
+            signin_ipc::signin_open_page,
+            signin_ipc::signin_copy_code,
             shell::set_glass_region,
             save_file,
             dashboard::dashboard_resize,

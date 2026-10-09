@@ -137,11 +137,15 @@ export function DiagnosticsGroup({ id, provider, primary, settings, usage, enabl
         return;
       case "retry": return void invoke("refresh", { account: id });
       case "help": return void invoke("open_external", { url: helpUrl(provider) });
-      // TODO(opus): sign-in flow (signIn) and launching another program (openApp) have no Windows implementation yet.
+      // An added account signs in again through Pulse's own flow; the primary one belongs to its CLI.
+      case "signIn":
+        if (!primary) void invoke("signin_start", { provider, replacing: id });
+        return;
+      // Launching another program (openApp) has no Windows equivalent yet.
       default: return;
     }
   };
-  const unavailableRemedy = remedy && (remedy.type === "signIn" || remedy.type === "openApp");
+  const unavailableRemedy = remedy && ((remedy.type === "signIn" && primary) || remedy.type === "openApp");
 
   return (
     <Group title={t("Connection diagnostics")}>

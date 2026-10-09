@@ -73,6 +73,12 @@ impl SpendAgent {
         None
     }
 
+    /// Whether this agent has left a folder of records on this machine: installed, or at least
+    /// used once. An agent that is absent entirely is not named anywhere in the pane.
+    pub fn is_present(self, sources: &super::transcripts::Sources) -> bool {
+        sources.roots(self.provider()).iter().any(|root| root.is_dir())
+    }
+
     /// Whether the store records the prompt cache at all.
     pub fn reports_cache_reads(self) -> bool {
         true

@@ -6,23 +6,11 @@ import { useEffect, useState } from "react";
 import { windowName } from "../../shared/copy";
 import { t } from "../../shared/i18n";
 import type { ProviderUsage } from "../../shared/model";
-import { intlLocale } from "../../shared/spend";
+import { approximate, type WindowEstimate } from "../../shared/spend";
 import { Group, Row } from "../Group";
 import { pc } from "./meta";
 
-interface WindowEstimate { window: string; spent: number; full: number }
-
-/** "≈$220": whole dollars from a hundred up, because an estimate with cents claims a precision it does not have. */
-export function approximate(amount: number): string {
-  const digits = amount >= 100 ? 0 : 2;
-  const text = new Intl.NumberFormat(intlLocale(), {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(amount);
-  return `≈${text}`;
-}
+export { approximate };
 
 export function EstimatedValueGroup({ id, usage, readsTokenSpend }: {
   id: string;
@@ -38,7 +26,7 @@ export function EstimatedValueGroup({ id, usage, readsTokenSpend }: {
       return;
     }
     let live = true;
-    invoke<WindowEstimate[]>("estimated_value", { account: id })
+    invoke<WindowEstimate[]>("estimated_value", { account: id, card: false })
       .then((list) => { if (live) setEstimates(list); })
       .catch(() => { if (live) setEstimates([]); });
     return () => { live = false; };
@@ -48,19 +36,24 @@ export function EstimatedValueGroup({ id, usage, readsTokenSpend }: {
     const e = estimates.find((x) => x.window === w.id);
     return e ? [{ window: w, estimate: e }] : [];
   });
-  // TODO(opus): a window seen spent off this PC keeps its row, saying "Also used somewhere this Mac's logs can't
-  // see" beside "Not estimated" (upstream `UsageStore.usedElsewhere`, `ElsewhereWatch`); pulse-core has no such watch yet.
   if (rows.length === 0) return null;
 
   return (
     <div className="pane-stack tight">
       <Group title={t("Estimated value")}>
-        {rows.map(({ window, estimate }) => (
-          <Row key={window.id} title={windowName(window)} subtitle={t("%@ used so far", approximate(estimate.spent))}>
-            {/* Just what the whole window is worth: the remainder is only the other two numbers subtracted. */}
-            <span className="value-strong">{approximate(estimate.full)}</span>
-          </Row>
-        ))}
+        {rows.map(({ window, estimate }) =>
+          estimate.elsewhere ? (
+            // A window seen spent off this PC keeps its row, saying why there is no figure.
+            <Row key={window.id} title={windowName(window)} subtitle={pc("Also used somewhere this Mac's logs can't see")}>
+              <span className="value-text">{t("Not estimated")}</span>
+            </Row>
+          ) : (
+            <Row key={window.id} title={windowName(window)} subtitle={t("%@ used so far", approximate(estimate.spent))}>
+              {/* Just what the whole window is worth: the remainder is only the other two numbers subtracted. */}
+              <span className="value-strong">{approximate(estimate.full)}</span>
+            </Row>
+          ),
+        )}
       </Group>
       <p className="footnote">
         {pc("An estimate, not a reported figure: what this Mac spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this Mac spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.")}

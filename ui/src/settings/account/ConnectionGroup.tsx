@@ -12,6 +12,7 @@ import { Button, Select } from "../controls";
 import { Group, Row } from "../Group";
 import { BalanceBasisRow, BalanceBudgetRow, ServerAddressRow } from "./ConnectionRows";
 import { hasConnectionControls, metaOf, pc, type BrowserId, type CredentialKind, type UsageSourceId } from "./meta";
+import { CopilotSignInRows } from "./SignIn";
 import { StatusLineRow } from "./StatusLineRow";
 import { setSessionBrowser, setSource } from "./store";
 
@@ -71,7 +72,7 @@ export function ConnectionGroup({ id, provider, primary, settings, usage }: {
             />
           </Row>
         ) : meta.githubSignIn ? (
-          <GitHubRow id={id} />
+          <CopilotSignInRows id={id} />
         ) : null}
 
         {/* Above the key, because it is asked first: nothing can be sent anywhere until Pulse knows where. */}
@@ -114,33 +115,6 @@ export function ConnectionGroup({ id, provider, primary, settings, usage }: {
 /** An API account whose reading is money, not limits of its own (upstream `AccountEntryFields.hasBalanceRing`). */
 function hasBalanceRing(usage: ProviderUsage | undefined): boolean {
   return (usage?.windows ?? []).every((w) => w.estimate === "sinceTopUp" || w.estimate === "yourBudget");
-}
-
-/** Copilot's GitHub account: a sign-in, not a pasted token. */
-function GitHubRow({ id }: { id: string }) {
-  const [saved, setSaved] = useState(false);
-  useEffect(() => {
-    invoke<boolean>("has_secret", { id }).then(setSaved).catch(() => {});
-  }, [id]);
-  const signOut = async () => {
-    await invoke("set_secret", { id, value: null });
-    setSaved(false);
-  };
-  return (
-    <Row
-      title={t("GitHub account")}
-      subtitle={saved
-        ? pc("Signed in. Pulse holds a read-only token for this Mac.")
-        : t("Opens GitHub's own page. Pulse asks to read your profile, nothing else.")}
-    >
-      {saved ? (
-        <Button onClick={() => void signOut()}>{t("Sign out")}</Button>
-      ) : (
-        // TODO(opus): sign-in flow (GitHub device code: show the code, Copy and Open page rows while it waits).
-        <Button disabled onClick={() => {}}>{t("Sign in…")}</Button>
-      )}
-    </Row>
-  );
 }
 
 function credentialTitle(kind: CredentialKind): string {

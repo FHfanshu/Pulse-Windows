@@ -15,6 +15,7 @@ import { LiveUsageGroup } from "../account/LiveUsageGroup";
 import { accountParts, metaOf, pc, usageOf } from "../account/meta";
 import { PanelGroup } from "../account/PanelGroup";
 import { Group } from "../Group";
+import { PromptCacheSessionsGroup } from "../spend/PromptCacheSessions";
 
 let providerList: Promise<ProviderInfo[]> | null = null;
 /** `list_providers`, asked once for the window's lifetime. */
@@ -95,6 +96,11 @@ export function AccountPane({ id, settings, onNavigate }: {
       )}
 
       {/* Upstream places the OpenCode Go and DeepSeek console groups here. */}
+
+      {/* Live, so ahead of the history: which conversations still hold a prompt cache, and for how long. */}
+      {primary && meta.keepsLocalTranscripts && settings.readsTokenSpend && enabled && (
+        <PromptCacheSessionsGroup provider={provider} />
+      )}
 
       {/* The estimate is money, and money needs the token split only a transcript carries. */}
       {primary && meta.keepsLocalTranscripts && (

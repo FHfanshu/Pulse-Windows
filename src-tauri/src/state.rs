@@ -31,11 +31,10 @@ impl AppState {
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
         let secrets: Arc<dyn SecretStore> = Arc::new(FileSecrets::new(dir.join("keys.dat")));
-        let store = Arc::new(UsageStore::new(
-            pulse_core::providers::registry(),
-            secrets.clone(),
-            Some(dir.join("cache.json")),
-        ));
+        let store = Arc::new(
+            UsageStore::new(pulse_core::providers::registry(), secrets.clone(), Some(dir.join("cache.json")))
+                .with_elsewhere_file(dir.join("used-elsewhere.json")),
+        );
         Self {
             settings: RwLock::new(Arc::new(settings.normalized())),
             store,
