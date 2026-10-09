@@ -175,3 +175,71 @@ pub fn monitor_named(name: Option<&str>) -> Option<MonitorInfo> {
     let name = name?;
     all_monitors().into_iter().find(|m| m.name == name)
 }
+
+pub fn monitor_count() -> usize {
+    all_monitors().len()
+}
+
+/// The monitor a full-screen window in front covers, if any: the foreground
+/// window's rect contains the whole monitor (taskbar included, which a merely
+/// maximized window does not). The desktop and the taskbar don't count.
+pub fn fullscreen_monitor(except: Option<&WebviewWindow>) -> Option<String> {
+    use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONULL};
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetForegroundWindow};
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() || except.and_then(hwnd).is_some_and(|h| h == fg) {
+            return None;
+        }
+        let mut class = [0u16; 64];
+        let len = GetClassNameW(fg, &mut class) as usize;
+        let class = String::from_utf16_lossy(&class[..len]);
+        if matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd") {
+            return None;
+        }
+        let mut r = RECT::default();
+        GetWindowRect(fg, &mut r).ok()?;
+        let monitor = info(MonitorFromWindow(fg, MONITOR_DEFAULTTONULL))?;
+        let b = monitor.bounds;
+        (r.left <= b.left && r.top <= b.top && r.right >= b.right && r.bottom >= b.bottom).then_some(monitor.name)
+    }
+}
+
+/// `HKCU\…\Run\Pulse`: start at login.
+pub mod login_item {
+    use windows::core::{w, HSTRING, PCWSTR};
+    use windows::Win32::System::Registry::{
+        RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_SZ,
+    };
+
+    const KEY: PCWSTR = w!(r"Software\Microsoft\Windows\CurrentVersion\Run");
+    const NAME: PCWSTR = w!("Pulse");
+
+    pub fn command(exe: &std::path::Path) -> String {
+        format!("\"{}\"", exe.display())
+    }
+
+    pub fn current() -> Option<String> {
+        let mut buf = vec![0u16; 1024];
+        let mut size = (buf.len() * 2) as u32;
+        unsafe {
+            RegGetValueW(HKEY_CURRENT_USER, KEY, NAME, RRF_RT_REG_SZ, None, Some(buf.as_mut_ptr().cast()), Some(&mut size))
+                .ok()
+                .ok()?;
+        }
+        let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        Some(String::from_utf16_lossy(&buf[..len]))
+    }
+
+    pub fn set(enabled: bool, exe: &std::path::Path) {
+        unsafe {
+            if enabled {
+                let value = HSTRING::from(command(exe));
+                let bytes = std::slice::from_raw_parts(value.as_ptr().cast::<u8>(), (value.len() + 1) * 2);
+                let _ = RegSetKeyValueW(HKEY_CURRENT_USER, KEY, NAME, REG_SZ.0, Some(bytes.as_ptr().cast()), bytes.len() as u32);
+            } else {
+                let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, KEY, NAME);
+            }
+        }
+    }
+}

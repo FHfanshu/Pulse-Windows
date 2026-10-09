@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { setLanguage } from "../shared/i18n";
 import { useSettings, type AppSettings, type ProviderInfo } from "../shared/settings";
@@ -18,12 +19,19 @@ import { TokenSpendPane } from "./panes/TokenSpendPane";
 export function Shell() {
   const settings = useSettings();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [selected, setSelected] = useState<PaneId>("appearance");
+  // `settings.html?pane=spend` (or `account:codex`) opens on that pane; later requests arrive as `settings-navigate`.
+  const [selected, setSelected] = useState<PaneId>(
+    () => (new URLSearchParams(location.search).get("pane") as PaneId | null) ?? "appearance",
+  );
   const [query, setQuery] = useState("");
   const content = useRef<HTMLDivElement>(null);
 
   useEffect(() => { invoke<ProviderInfo[]>("list_providers").then(setProviders); }, []);
   useEffect(() => { content.current?.scrollTo({ top: 0 }); }, [selected]);
+  useEffect(() => {
+    const un = listen<string>("settings-navigate", (e) => setSelected(e.payload as PaneId));
+    return () => void un.then((f) => f());
+  }, []);
 
   // The language is applied while rendering so every `t()` below already reads the new table.
   if (settings) setLanguage(settings.language);

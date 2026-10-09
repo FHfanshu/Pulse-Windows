@@ -49,6 +49,11 @@ struct Press {
 
 pub type SharedPanel = Arc<Mutex<PanelState>>;
 
+/// The pointer is on the panel or a press is under way: not a moment to move it.
+pub fn is_busy(state: &PanelState) -> bool {
+    state.press.is_some() || state.last_pointer.is_some()
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct PointerEvent {

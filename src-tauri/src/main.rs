@@ -4,6 +4,7 @@ mod notify;
 mod panel;
 mod placement;
 mod recap_ipc;
+mod shell;
 mod spend_ipc;
 mod state;
 mod store;
@@ -15,9 +16,9 @@ use std::sync::{Arc, Mutex};
 use pulse_core::settings::AppSettings;
 use pulse_core::Provider;
 use serde::Serialize;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::Menu;
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, Wry};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 use panel::{PanelState, SharedPanel};
 use placement::{Geometry, Rect};
@@ -54,7 +55,7 @@ fn update_settings(app: AppHandle, state: State<AppState>, patch: serde_json::Va
     };
     let previous = state.settings();
     state.save_settings(settings.clone());
-    sync_tray_choice(&app, settings.needs_provider_selection());
+    shell::apply(&app, Some(&previous));
     notify::reconsider(&app, &previous);
     let _ = app.emit("settings-changed", &settings);
     state::emit_usage(&app);
@@ -132,7 +133,7 @@ fn set_geometry(app: AppHandle, shared: State<SharedPanel>, geometry: Geometry) 
         first
     };
     panel::place(&app, &shared);
-    if first && app.state::<AppState>().settings().is_panel_visible {
+    if first && shell::panel_should_show(&app.state::<AppState>().settings()) {
         if let Some(w) = app.get_webview_window(panel::LABEL) {
             let _ = w.show();
             // Tauri rewrites the extended style while showing; claim it back afterwards.
@@ -196,9 +197,10 @@ fn set_dock(app: AppHandle, shared: State<SharedPanel>, dock: placement::Dock) {
     let _ = app.emit("placement-changed", &placement);
 }
 
+/// Open Settings, optionally on one pane (`"spend"`, `"notifications"`, `"account:codex"`…).
 #[tauri::command]
-fn open_settings(app: AppHandle) {
-    show_settings(&app);
+fn open_settings(app: AppHandle, pane: Option<String>) {
+    show_settings(&app, pane);
 }
 
 /// Presence-only scan for the chooser: which providers left a folder on this PC.
@@ -211,12 +213,22 @@ fn detect_providers() -> Vec<&'static str> {
         .collect()
 }
 
+/// Write bytes the UI produced (a recap PNG) to a path the user picked in a save dialog.
+#[tauri::command]
+fn save_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    // Only images: this is not a general file-writing door for the webview.
+    if !path.to_ascii_lowercase().ends_with(".png") {
+        return Err("only .png files are written".into());
+    }
+    std::fs::write(path, bytes).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn open_chooser(app: AppHandle) {
     show_chooser(&app);
 }
 
-fn show_chooser(app: &AppHandle) {
+pub(crate) fn show_chooser(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("chooser") {
         let _ = w.unminimize();
         let _ = w.show();
@@ -231,37 +243,21 @@ fn show_chooser(app: &AppHandle) {
         .build();
 }
 
-/// The tray menu, kept so its leading "choose services" item can come and go.
-struct TrayMenu(Menu<Wry>);
-
-const CHOOSE_ITEM: &str = "choose";
-
-/// Nothing else on screen says why there is no rail, so while no service is
-/// chosen the tray menu leads with a way back to the chooser.
-fn sync_tray_choice(app: &AppHandle, needs_choice: bool) {
-    let Some(menu) = app.try_state::<TrayMenu>() else { return };
-    let existing = menu.0.get(CHOOSE_ITEM);
-    if needs_choice && existing.is_none() {
-        if let Ok(item) =
-            MenuItem::with_id(app, CHOOSE_ITEM, "Choose services to start monitoring…", true, None::<&str>)
-        {
-            let _ = menu.0.insert(&item, 0);
-        }
-    } else if !needs_choice {
-        if let Some(item) = existing {
-            let _ = menu.0.remove(&item);
-        }
-    }
-}
-
-fn show_settings(app: &AppHandle) {
+pub(crate) fn show_settings(app: &AppHandle, pane: Option<String>) {
     if let Some(w) = app.get_webview_window("settings") {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+        if let Some(pane) = pane {
+            let _ = app.emit_to("settings", "settings-navigate", pane);
+        }
         return;
     }
-    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+    let page = match pane {
+        Some(pane) => format!("settings.html?pane={}", pane.replace(':', "%3A")),
+        None => "settings.html".into(),
+    };
+    let _ = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(page.into()))
         .title("Pulse Settings")
         .inner_size(920.0, 680.0)
         .min_inner_size(720.0, 480.0)
@@ -280,7 +276,7 @@ fn main() {
             let result = match (connect, std::env::current_exe()) {
                 (true, Ok(exe)) => pulse_core::statusline::install(&home_dir(), &exe),
                 (false, _) => pulse_core::statusline::uninstall(&home_dir()),
-                (true, Err(_)) => return std::process::exit(1),
+                (true, Err(_)) => std::process::exit(1),
             };
             std::process::exit(if result.is_ok() { 0 } else { 1 });
         }
@@ -293,6 +289,8 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
@@ -317,7 +315,9 @@ fn main() {
             recap_ipc::open_recap,
             open_settings,
             detect_providers,
-            open_chooser
+            open_chooser,
+            shell::shortcut_status,
+            save_file
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -331,22 +331,14 @@ fn main() {
             state::start_refresh_loop(handle.clone());
             spend_ipc::start_price_refresh();
 
-            let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit Pulse", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&settings, &quit])?;
-            app.manage(TrayMenu(menu.clone()));
-            sync_tray_choice(&handle, needs_choice);
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().expect("icon"))
                 .tooltip("Pulse")
-                .menu(&menu)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "settings" => show_settings(app),
-                    CHOOSE_ITEM => show_chooser(app),
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
+                .menu(&Menu::new(app)?)
+                .on_menu_event(|app, event| shell::on_menu_event(app, event.id.as_ref()))
                 .build(app)?;
+            shell::apply(&handle, None);
+            shell::start_watcher(handle.clone());
 
             // First launch with nothing chosen: the provider chooser, not Settings.
             if needs_choice {
