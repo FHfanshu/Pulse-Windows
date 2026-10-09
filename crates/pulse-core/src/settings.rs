@@ -15,19 +15,6 @@ pub enum PanelSize {
     Large,
 }
 
-/// How the glass treats what is behind the panel (a Windows addition, after TranslucentTB).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum GlassStyle {
-    /// Blurred.
-    Blur,
-    /// Blurred, under a tint and a fine grain, like WinUI's acrylic. Also what an unknown stored
-    /// value reads as.
-    #[default]
-    #[serde(other)]
-    Acrylic,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum RailSpacing {
@@ -144,12 +131,8 @@ pub struct AppSettings {
     pub uses_round_ends: bool,
     pub uses_glass: bool,
     pub glass_transparency: f64,
-    pub glass_style: GlassStyle,
     /// Specks of glitter that slowly twinkle on the glass.
     pub glass_glitter: bool,
-    /// Blur the screen behind the panel live. It keeps the panel out of screen capture (so out of
-    /// screenshots, recordings and remote desktop); off, the glass is frost without the blur.
-    pub glass_live_blur: bool,
     /// A light solid surface with dark content, instead of black (upstream #74). Ignored while
     /// `uses_glass` is on, and kept rather than cleared so turning glass off brings it back.
     pub uses_light_panel: bool,
@@ -241,9 +224,7 @@ impl Default for AppSettings {
             uses_round_ends: false,
             uses_glass: false,
             glass_transparency: 0.5,
-            glass_style: GlassStyle::default(),
             glass_glitter: true,
-            glass_live_blur: true,
             uses_light_panel: false,
             auto_collapse: false,
             detailed_cards: BTreeSet::new(),

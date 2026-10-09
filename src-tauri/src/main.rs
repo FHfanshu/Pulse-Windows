@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod account_ipc;
-mod backdrop;
+mod wallpaper;
 mod codex_signals_ipc;
 mod console_ipc;
 mod dashboard;
@@ -394,7 +394,7 @@ fn main() {
             shell::apply(&handle, None);
             dashboard::sync(&handle, None);
             shell::start_watcher(handle.clone());
-            backdrop::start(handle.clone());
+            wallpaper::start(handle.clone());
 
             // First launch with nothing chosen: the provider chooser, not Settings.
             if needs_choice {

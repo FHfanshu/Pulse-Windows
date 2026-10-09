@@ -44,7 +44,6 @@ export function App() {
     warningAt: (stored?.warningThreshold ?? 75) / 100,
     usesGlass: stored?.usesGlass ?? false,
     glassTransparency: stored?.glassTransparency ?? 0.5,
-    glassStyle: stored?.glassStyle ?? "acrylic",
     glassGlitter: stored?.glassGlitter ?? true,
     // Light only for the solid surface: glass is always drawn dark (upstream `panelScheme`).
     light: (stored?.usesLightPanel ?? false) && !(stored?.usesGlass ?? false),
@@ -272,7 +271,7 @@ export function App() {
 
   return (
     <LightPanel.Provider value={settings.light}>
-    <GlassLook.Provider value={{ style: settings.glassStyle, glitter: settings.glassGlitter }}>
+    <GlassLook.Provider value={{ glitter: settings.glassGlitter }}>
     <div className={`panel${settings.light ? " light" : ""}`} onContextMenu={(e) => { e.preventDefault(); invoke("open_settings"); }}>
       <div
         className="rail"

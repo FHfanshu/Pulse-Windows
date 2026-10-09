@@ -35,7 +35,7 @@ export const apiProviders = new Set(["moonshot", "openAIPlatform", "deepSeek"]);
 function fixed(id: FixedPane): SidebarItem {
   switch (id) {
     case "appearance":
-      return { id, title: t("Appearance"), icon: { glyph: "appearance" }, terms: ["Size", "Spacing", "Round ends", "Panel colour", "Liquid Glass", "Effect", "Acrylic", "Live blur", "Glitter", "Transparency", "Ring activity animation"].map((k) => t(k)) };
+      return { id, title: t("Appearance"), icon: { glyph: "appearance" }, terms: ["Size", "Spacing", "Round ends", "Panel colour", "Liquid Glass", "Glitter", "Transparency", "Ring activity animation"].map((k) => t(k)) };
     case "rings":
       return { id, title: t("Rings and figures"), icon: { glyph: "rings" }, terms: ["Percentages at the side", "Percentages across", "Figures beside the rings", "Figure above the ring", "Show what's left", "Forecast", "Second limit inside the ring", "Time until reset", "Time ring direction", "Turn red at", "Alert colour when docked"].map((k) => t(k)) };
     case "placement":

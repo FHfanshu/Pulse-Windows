@@ -1,5 +1,5 @@
 import { t } from "../../shared/i18n";
-import { updateSettings, type AppSettings, type GlassStyle } from "../../shared/settings";
+import { updateSettings, type AppSettings } from "../../shared/settings";
 import { Segmented, Slider } from "../controls";
 import { Group, Row } from "../Group";
 import { ToggleRow } from "./ToggleRow";
@@ -65,29 +65,6 @@ export function AppearancePane({ settings }: { settings: AppSettings }) {
           onChange={(usesGlass) => updateSettings({ usesGlass })}
         />
         {settings.usesGlass && (
-          <Row title={t("Effect")} subtitle={glassStyleSubtitle(settings.glassStyle)} disabled={off}>
-            <Segmented
-              label={t("Effect")}
-              disabled={off}
-              value={settings.glassStyle}
-              options={[
-                { value: "blur", label: t("Blur (glass)") },
-                { value: "acrylic", label: t("Acrylic") },
-              ]}
-              onChange={(glassStyle) => updateSettings({ glassStyle })}
-            />
-          </Row>
-        )}
-        {settings.usesGlass && (
-          <ToggleRow
-            title="Live blur"
-            subtitle="Blurs what is behind the panel as it changes. While it is on, the panel does not appear in screenshots, recordings or remote desktop apps such as UU Remote or ToDesk; turn it off to see the panel there. Off by itself under Windows Remote Desktop."
-            checked={settings.glassLiveBlur}
-            disabled={off}
-            onChange={(glassLiveBlur) => updateSettings({ glassLiveBlur })}
-          />
-        )}
-        {settings.usesGlass && (
           <ToggleRow
             title="Glitter"
             subtitle="Specks of glitter that slowly twinkle."
@@ -116,9 +93,4 @@ export function AppearancePane({ settings }: { settings: AppSettings }) {
       </Group>
     </div>
   );
-}
-
-/** What the chosen glass lays over what is behind. */
-function glassStyleSubtitle(style: GlassStyle): string {
-  return style === "blur" ? t("A plain frost, barely tinted.") : t("Tinted and finely grained, like Windows acrylic.");
 }

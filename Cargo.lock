@@ -2931,7 +2931,6 @@ dependencies = [
  "ab_glyph",
  "base64 0.22.1",
  "chrono",
- "png 0.18.1",
  "pulse-core",
  "serde",
  "serde_json",
