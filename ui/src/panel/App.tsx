@@ -20,7 +20,7 @@ import { ink, LightPanel, Surface } from "./scheme";
 import { pulseColors, spring, usageColor } from "./tint";
 
 interface Rect { x: number; y: number; w: number; h: number }
-interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean; morph?: boolean }
+interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean; morph?: boolean; glide?: boolean }
 interface PointerEvent { point: [number, number] | null; pressed: boolean; dragging: boolean }
 
 const SLACK = 8;

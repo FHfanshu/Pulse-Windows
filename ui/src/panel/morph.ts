@@ -7,7 +7,7 @@
 // the window, how docked the outline is, and where each ring sits.
 import { animate } from "motion/react";
 import { useEffect, useReducer, useRef } from "react";
-import { axisOf, type Edge } from "./layout";
+import { type Edge } from "./layout";
 import { spring } from "./tint";
 
 export type Vec = [number, number];
@@ -20,6 +20,8 @@ export interface RailTarget {
   docked: boolean;
   /** Rust grew the window to hold the old shape too, so there is room to animate in. */
   morph?: boolean;
+  /** Windows difference: native origin animates separately; local offsets stay in the same canvas. */
+  glide?: boolean;
 }
 
 /** What to draw this frame. `x`/`y` are window-local; `items` are ring-item centres from the rail's centre. */
@@ -64,7 +66,7 @@ export function morphShape(from: { edge: Edge; d: number }, to: { edge: Edge; do
   return p < 0.5 ? { edge: from.edge, d: clamp(from.d * (1 - 2 * p)) } : { edge: to.edge, d: clamp(2 * p - 1) };
 }
 
-const shapeKey = (t: RailTarget) => `${axisOf(t.edge)}|${t.docked}`;
+const shapeKey = (t: RailTarget) => `${t.edge}|${t.docked}`;
 
 /**
  * The rail as it is drawn now. `size` and `items` are the target layout's; a change of shape starts a
@@ -89,8 +91,8 @@ export function useRailMorph(target: RailTarget | null, size: { w: number; h: nu
     progress.current = 1;
     if (target.morph && prev) {
       run.current = {
-        dx: prev.x + prev.origin[0] - (target.rail.x + target.frame.x),
-        dy: prev.y + prev.origin[1] - (target.rail.y + target.frame.y),
+        dx: target.glide ? prev.x - target.rail.x : prev.x + prev.origin[0] - (target.rail.x + target.frame.x),
+        dy: target.glide ? prev.y - target.rail.y : prev.y + prev.origin[1] - (target.rail.y + target.frame.y),
         dw: prev.w - size.w,
         dh: prev.h - size.h,
         d0: prev.d,
