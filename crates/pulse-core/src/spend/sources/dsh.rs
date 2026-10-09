@@ -83,7 +83,7 @@ impl SpendSource for Dsh {
 /// The transcript's bytes as JSONL: a plain file as it is, a zstd stream decoded. None when the stream
 /// is corrupt or over a ceiling, so such a file contributes nothing and is never read as a smaller
 /// figure.
-fn jsonl_bytes(raw: Vec<u8>) -> Option<Vec<u8>> {
+pub(super) fn jsonl_bytes(raw: Vec<u8>) -> Option<Vec<u8>> {
     if raw.len() < ZSTD_MAGIC.len() || raw[..ZSTD_MAGIC.len()] != ZSTD_MAGIC {
         return Some(raw);
     }

@@ -1,11 +1,13 @@
 // Ported from upstream Sources/Pulse/Usage/Readers/ZedReader.swift.
 //! Zed's thread database, `threads.db`.
 //!
-//! Each row's `data` blob is a thread as JSON, or a zstd frame that decodes to the same JSON.
-//! **Compressed rows are skipped here:** the workspace has no zstd crate, so a row whose
-//! `data_type` is `zstd`, or whose bytes carry the zstd magic, contributes nothing. Upstream
-//! decodes it with the system library and reports the rows it could not read; that note is not
-//! carried yet. Plain JSON rows (`data_type = 'json'`) are read in full.
+//! Each row's `data` blob is a thread as JSON, or a zstd frame that decodes to the same JSON. A
+//! compressed row is decoded with the same `ruzstd` path as DSH (`dsh::jsonl_bytes`) and then parsed
+//! exactly as the plain form is; a decoded payload over 32 MiB is refused either way. A row is
+//! compressed when its `data_type` says `zstd` **or** its bytes carry the zstd magic, so a mislabelled
+//! frame is still read; a `zstd`-labelled row whose bytes are not a frame contributes nothing.
+//! A corrupt frame contributes nothing; upstream also reports it as a note, which is not carried.
+//! Plain JSON rows (`data_type = 'json'`) are read in full.
 //!
 //! Only threads whose `model.provider` is `zed.dev` count; a thread driven by an external ACP agent
 //! is skipped so the provider behind it is not counted twice. A thread flagged `imported` is another
@@ -23,7 +25,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
-use super::{clamped, flexible, flexible_text, SpendSource};
+use super::{clamped, dsh, flexible, flexible_text, SpendSource};
 use crate::spend::logio;
 use crate::spend::record::AgentUsageRecord;
 use crate::spend::sqlite;
@@ -81,7 +83,6 @@ fn read(file: &Path) -> Vec<AgentUsageRecord> {
         let Some(id) = sqlite::text(row, 0) else { return };
         let Some(blob) = sqlite::blob(row, 3) else { return };
         let data_type = sqlite::text(row, 2).unwrap_or_default();
-        // Compressed rows are not decoded here (no zstd crate in the workspace).
         let Some(thread) = payload(&data_type, &blob) else { return };
         let Some(thread) = thread.as_object() else { return };
 
@@ -109,11 +110,18 @@ fn read(file: &Path) -> Vec<AgentUsageRecord> {
     records
 }
 
-/// The thread's JSON, for a plain row only. Compressed rows (`zstd` by type or by magic) and
-/// anything that is not `json` return None.
+/// The thread's JSON. A compressed row (`zstd` by type or by magic) is decoded first and must be a
+/// real frame; a corrupt frame, or a payload over the bound, returns None. A plain row must be `json`.
 fn payload(data_type: &str, blob: &[u8]) -> Option<Value> {
     if data_type == "zstd" || blob.starts_with(&ZSTD_MAGIC) {
-        return None;
+        if !blob.starts_with(&ZSTD_MAGIC) {
+            return None;
+        }
+        let decoded = dsh::jsonl_bytes(blob.to_vec())?;
+        if decoded.len() > MAXIMUM_PAYLOAD {
+            return None;
+        }
+        return serde_json::from_slice(&decoded).ok();
     }
     if data_type != "json" || blob.len() > MAXIMUM_PAYLOAD {
         return None;
@@ -261,6 +269,45 @@ mod tests {
         ];
         database(&store(home.path()), &sql.iter().map(String::as_str).collect::<Vec<_>>());
         assert!(run(home.path()).is_empty());
+    }
+
+    /// A zstd frame holding `data` as one raw block (the frame shape the DSH tests build too).
+    fn zstd_frame(data: &[u8]) -> Vec<u8> {
+        let mut padded = data.to_vec();
+        while padded.len() < 256 {
+            padded.push(b'\n');
+        }
+        let len = padded.len();
+        let mut out = vec![0x28, 0xB5, 0x2F, 0xFD, 0x60];
+        out.extend(((len - 256) as u16).to_le_bytes());
+        out.extend(&(((len as u32) << 3) | 1).to_le_bytes()[..3]);
+        out.extend(padded);
+        out
+    }
+
+    #[test]
+    fn a_compressed_thread_is_decoded_like_a_plain_one_and_a_corrupt_frame_contributes_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        let body = thread("zed.dev", json!({}));
+        let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02X}")).collect::<String>();
+        let mut corrupt = ZSTD_MAGIC.to_vec();
+        corrupt.extend_from_slice(b"not a frame at all");
+        let sql = [
+            SCHEMA.to_string(),
+            format!("INSERT INTO threads VALUES ('packed','s','2026-09-14T09:00:00Z','zstd',X'{}','2026-09-14T10:00:00Z','','')", hex(&zstd_frame(body.as_bytes()))),
+            // A mislabelled frame (no `zstd` label) is still read; a corrupt one is not.
+            format!("INSERT INTO threads VALUES ('mislabelled','s','2026-09-14T09:00:00Z','json',X'{}','2026-09-14T10:00:00Z','','')", hex(&zstd_frame(body.as_bytes()))),
+            format!("INSERT INTO threads VALUES ('broken','s','2026-09-14T09:00:00Z','zstd',X'{}','2026-09-14T10:00:00Z','','')", hex(&corrupt)),
+            // Labelled zstd but not a frame: nothing to decode, nothing read.
+            row("unframed", "zstd", &body, "2026-09-14T10:00:00Z", "", ""),
+        ];
+        database(&store(home.path()), &sql.iter().map(String::as_str).collect::<Vec<_>>());
+
+        let mut ids: Vec<String> = run(home.path()).iter().filter_map(|r| r.session_id.clone()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["mislabelled".to_string(), "packed".to_string()]);
+        let packed = run(home.path()).into_iter().find(|r| r.session_id.as_deref() == Some("packed")).unwrap();
+        assert_eq!(packed.tally, TokenTally::new(150, 2, 5, 10));
     }
 
     #[test]
