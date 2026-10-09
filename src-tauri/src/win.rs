@@ -246,3 +246,55 @@ pub mod login_item {
         }
     }
 }
+
+/// Keep the window out of screen captures (and so out of [`capture_screen`]'s own reading of
+/// what is behind it). Windows 10 2004 or later; earlier builds ignore it.
+pub fn exclude_from_capture(window: &WebviewWindow, exclude: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE};
+    let Some(hwnd) = hwnd(window) else { return };
+    unsafe {
+        let _ = SetWindowDisplayAffinity(hwnd, if exclude { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE });
+    }
+}
+
+/// The screen inside `rect` (physical pixels: left, top, right, bottom), shrunk to `w` x `h` with
+/// halftone averaging. BGRA rows, top row first.
+pub fn capture_screen(rect: (i32, i32, i32, i32), w: i32, h: i32) -> Option<Vec<u8>> {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::Graphics::Gdi::{
+        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject, SetBrushOrgEx,
+        SetStretchBltMode, StretchBlt, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HALFTONE, SRCCOPY,
+    };
+    unsafe {
+        let screen = GetDC(HWND::default());
+        let memory = CreateCompatibleDC(screen);
+        let info = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: w,
+                biHeight: -h,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut out = None;
+        if let Ok(bitmap) = CreateDIBSection(memory, &info, DIB_RGB_COLORS, &mut bits, HANDLE::default(), 0) {
+            let previous = SelectObject(memory, bitmap);
+            SetStretchBltMode(memory, HALFTONE);
+            let _ = SetBrushOrgEx(memory, 0, 0, None);
+            let copied = StretchBlt(memory, 0, 0, w, h, screen, rect.0, rect.1, rect.2 - rect.0, rect.3 - rect.1, SRCCOPY);
+            if copied.as_bool() && !bits.is_null() {
+                out = Some(std::slice::from_raw_parts(bits as *const u8, (w * h * 4) as usize).to_vec());
+            }
+            SelectObject(memory, previous);
+            let _ = DeleteObject(bitmap);
+        }
+        let _ = DeleteDC(memory);
+        ReleaseDC(HWND::default(), screen);
+        out
+    }
+}

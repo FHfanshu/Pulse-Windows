@@ -2,10 +2,12 @@
 // glass variant (nearly see-through) under a dim set by the transparency slider. Windows has no
 // backdrop that follows an arbitrary shape (DWM's backdrop and the acrylic accent both ignore window
 // regions and fill the whole transparent window), and a transparent WebView's `backdrop-filter`
-// never sees the desktop. So what is behind stays sharp, and the frost is drawn on top, inside the
-// shape: the dim, a milky haze, a fine grain, a sheen along the top, a sprinkle of glitter that
-// slowly twinkles, and a faint edge so the outline still reads over a busy background.
-import { useId } from "react";
+// never sees the desktop. So the app reads what is behind the panel itself (src-tauri/src/backdrop.rs,
+// a small live image of the screen under the window) and each shape draws it blurred, then the frost
+// on top: the dim, a smoky tint, a milky haze, a fine grain, a sheen along the top, a sprinkle of
+// glitter that slowly twinkles, and a faint edge so the outline still reads over a busy background.
+import { listen } from "@tauri-apps/api/event";
+import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 
 /** Upstream `PanelGlass.maximumDim`: the darkest the dimming goes, at transparency 0. */
 const MAXIMUM_DIM = 0.6;
@@ -31,9 +33,61 @@ const GLITTER_THRESHOLD = 0.66;
 /** Alpha = (noise - threshold) scaled to reach 1 at the brightest, so only the peaks show. */
 const glitterSlope = 1 / (1 - GLITTER_THRESHOLD);
 
+/** How far the backdrop is blurred, in DIPs. */
+const BLUR = 14;
+
+// The latest backdrop frame, a data URL of the screen under the whole window (null while glass is
+// off or before the first frame). Outside React, so every shape shares one subscription.
+let backdrop: string | null = null;
+const subscribers = new Set<() => void>();
+void listen<string | null>("backdrop", (e) => {
+  backdrop = e.payload;
+  subscribers.forEach((f) => f());
+});
+const useBackdrop = () =>
+  useSyncExternalStore(
+    (f) => (subscribers.add(f), () => void subscribers.delete(f)),
+    () => backdrop,
+  );
+
+/** The backdrop is the whole window's; each shape draws it shifted back by where its own SVG sits
+ *  in the window. Followed frame by frame while the shape moves, then left alone. */
+function useWindowOrigin(image: React.RefObject<SVGImageElement>, frame: string | null) {
+  useEffect(() => {
+    const node = image.current;
+    if (!node) return;
+    let still = 0;
+    let last = "";
+    let request = 0;
+    const follow = () => {
+      const svg = node.ownerSVGElement;
+      if (!svg) return;
+      const r = svg.getBoundingClientRect();
+      const at = `${-r.left},${-r.top},${window.innerWidth},${window.innerHeight}`;
+      if (at !== last) {
+        last = at;
+        still = 0;
+        node.setAttribute("x", String(-r.left));
+        node.setAttribute("y", String(-r.top));
+        node.setAttribute("width", String(window.innerWidth));
+        node.setAttribute("height", String(window.innerHeight));
+      } else if (++still > 30) {
+        return;
+      }
+      request = requestAnimationFrame(follow);
+    };
+    follow();
+    return () => cancelAnimationFrame(request);
+  });
+  void frame;
+}
+
 export function FrostedGlass({ d, width, height, transparency }: { d: string; width: number; height: number; transparency: number }) {
   const id = useId().replace(/:/g, "");
   const box = { x: 0, y: 0, width, height };
+  const frame = useBackdrop();
+  const image = useRef<SVGImageElement>(null);
+  useWindowOrigin(image, frame);
   // Filters in user space, so the grain and the specks keep their size whatever the shape's size.
   const region = { x: 0, y: 0, width, height, filterUnits: "userSpaceOnUse" as const };
   const glitter = (seed: number) => (
@@ -49,6 +103,9 @@ export function FrostedGlass({ d, width, height, transparency }: { d: string; wi
   return (
     <>
       <defs>
+        <filter id={`${id}-blur`} x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation={BLUR} edgeMode="duplicate" />
+        </filter>
         <clipPath id={`${id}-shape`}>
           <path d={d} />
         </clipPath>
@@ -65,6 +122,11 @@ export function FrostedGlass({ d, width, height, transparency }: { d: string; wi
           <stop offset="1" stopColor="#fff" stopOpacity={0} />
         </linearGradient>
       </defs>
+      {frame && (
+        <g clipPath={`url(#${id}-shape)`} style={{ pointerEvents: "none" }}>
+          <image ref={image} href={frame} preserveAspectRatio="none" filter={`url(#${id}-blur)`} />
+        </g>
+      )}
       <path d={d} fill={`rgba(0,0,0,${glassDim(transparency)})`} />
       <path d={d} fill={TINT} />
       <g clipPath={`url(#${id}-shape)`} style={{ pointerEvents: "none" }}>
