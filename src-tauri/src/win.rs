@@ -4,7 +4,7 @@
 use std::sync::OnceLock;
 
 use tauri::WebviewWindow;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
+use windows::Win32::Foundation::{BOOL, COLORREF, HWND, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
     MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
@@ -12,8 +12,8 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetSystemMetrics, IsWindowVisible, GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW, SetWindowPos,
-    GWL_EXSTYLE, HWND_TOPMOST, SM_SWAPBUTTON, SWP_NOACTIVATE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_LAYERED,
+    GetCursorPos, GetSystemMetrics, IsWindowVisible, GetWindowLongPtrW, GetWindowRect, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos,
+    GWL_EXSTYLE, HWND_TOPMOST, LWA_ALPHA, SM_SWAPBUTTON, SWP_NOACTIVATE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 
@@ -73,6 +73,9 @@ pub fn make_panel_window(window: &WebviewWindow) {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
         let ex = (ex & !WS_EX_APPWINDOW.0) | WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0 | WS_EX_LAYERED.0;
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
+        // Windows difference: a layered window is invisible until its attributes are initialized.
+        // Keep global alpha opaque; the transparent WebView supplies the panel's per-pixel alpha.
+        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
     }
 }
 
