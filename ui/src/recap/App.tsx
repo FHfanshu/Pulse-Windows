@@ -252,6 +252,7 @@ function Window() {
   // MARK: Export
 
   const show = (outcome: Outcome) => {
+    if (outcome === "cancelled") return;
     const text = outcome === "saved" ? t("Saved") : outcome === "copied" ? t("Copied") : t("Couldn't make the image.");
     window.clearTimeout(noteTimer.current);
     setNote(text);
@@ -278,7 +279,7 @@ function Window() {
 
   // MARK: Stage
 
-  const openTokenSpend = () => void invoke("open_settings");
+  const openTokenSpend = () => void invoke("open_settings", { pane: "spend" });
 
   const stage = () => {
     if (phase === "needsReading") {
