@@ -1036,9 +1036,10 @@
  "Effect": "효과",
  "Blur (glass)": "흐림",
  "Acrylic": "아크릴",
- "Blurs what is behind, as it changes.": "뒤의 내용을 실시간으로 흐리게 합니다.",
- "Blurred, tinted and finely grained, like Windows acrylic.": "흐림에 색조와 고운 입자를 더합니다. Windows 아크릴과 같습니다.",
- "While it blurs, the panel stays out of screenshots and recordings.": "흐리게 하는 동안 패널은 스크린샷과 녹화에 나타나지 않습니다.",
  "Glitter": "반짝이",
- "Specks of glitter that slowly twinkle.": "천천히 반짝이는 작은 반짝이."
+ "Specks of glitter that slowly twinkle.": "천천히 반짝이는 작은 반짝이.",
+ "A plain frost, barely tinted.": "색이 거의 없는 젖빛 유리만.",
+ "Tinted and finely grained, like Windows acrylic.": "색조와 고운 입자를 더합니다. Windows 아크릴과 같습니다.",
+ "Live blur": "실시간 흐림",
+ "Blurs what is behind the panel as it changes. While it is on, the panel does not appear in screenshots, recordings or remote desktop apps such as UU Remote or ToDesk; turn it off to see the panel there. Off by itself under Windows Remote Desktop.": "패널 뒤의 내용을 실시간으로 흐리게 합니다. 켜져 있는 동안 패널은 스크린샷, 녹화, UU Remote나 ToDesk 같은 원격 데스크톱에 나타나지 않습니다. 그곳에서 패널을 보려면 끄세요. Windows 원격 데스크톱에서는 자동으로 꺼집니다."
 }

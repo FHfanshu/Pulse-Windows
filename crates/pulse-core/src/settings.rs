@@ -147,6 +147,9 @@ pub struct AppSettings {
     pub glass_style: GlassStyle,
     /// Specks of glitter that slowly twinkle on the glass.
     pub glass_glitter: bool,
+    /// Blur the screen behind the panel live. It keeps the panel out of screen capture (so out of
+    /// screenshots, recordings and remote desktop); off, the glass is frost without the blur.
+    pub glass_live_blur: bool,
     /// A light solid surface with dark content, instead of black (upstream #74). Ignored while
     /// `uses_glass` is on, and kept rather than cleared so turning glass off brings it back.
     pub uses_light_panel: bool,
@@ -240,6 +243,7 @@ impl Default for AppSettings {
             glass_transparency: 0.5,
             glass_style: GlassStyle::default(),
             glass_glitter: true,
+            glass_live_blur: true,
             uses_light_panel: false,
             auto_collapse: false,
             detailed_cards: BTreeSet::new(),

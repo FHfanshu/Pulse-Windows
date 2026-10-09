@@ -301,3 +301,10 @@ pub fn capture_screen(rect: (i32, i32, i32, i32), w: i32, h: i32) -> Option<Vec<
         out
     }
 }
+
+/// Whether this session is shown through Windows Remote Desktop (other remote tools that stream
+/// the screen cannot be told apart from a local session).
+pub fn is_remote_session() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::SM_REMOTESESSION;
+    unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
+}

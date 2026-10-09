@@ -35,6 +35,7 @@ export interface AppSettings {
   glassTransparency: number;
   glassStyle: GlassStyle;
   glassGlitter: boolean;
+  glassLiveBlur: boolean;
   usesLightPanel: boolean;
   autoCollapse: boolean;
   detailedCards: string[];

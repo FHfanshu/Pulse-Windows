@@ -3,7 +3,9 @@
 //! behind the panel itself: the screen under the window, with the panel kept out of the capture,
 //! shrunk to an eighth (the blur throws the detail away anyway), about fifteen times a second.
 //! The UI clips it to the rail and the card and blurs it (`ui/src/panel/glass.tsx`). A frame
-//! that has not changed is not sent; nothing runs while glass is off or the panel hidden.
+//! that has not changed is not sent; nothing runs while glass or its live blur is off, under Remote Desktop, or while the panel
+//! is hidden. Keeping the panel out of capture also keeps it out of screenshots, recordings and
+//! screen-streaming remote tools, which is why the live blur has its own switch.
 
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
@@ -25,7 +27,9 @@ pub fn start(app: AppHandle) {
         let mut excluded: Option<bool> = None;
         let mut last = 0u64;
         loop {
-            let glass = app.state::<AppState>().settings().uses_glass;
+            let settings = app.state::<AppState>().settings();
+            // Under Remote Desktop a panel kept out of capture would not be seen at all.
+            let glass = settings.uses_glass && settings.glass_live_blur && !win::is_remote_session();
             let Some(window) = app.get_webview_window(panel::LABEL) else {
                 std::thread::sleep(IDLE);
                 continue;

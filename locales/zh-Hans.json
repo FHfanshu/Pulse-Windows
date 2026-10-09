@@ -1036,9 +1036,10 @@
  "Effect": "效果",
  "Blur (glass)": "模糊",
  "Acrylic": "亚克力",
- "Blurs what is behind, as it changes.": "实时模糊背后的内容。",
- "Blurred, tinted and finely grained, like Windows acrylic.": "模糊、着色再加细颗粒，类似 Windows 的亚克力。",
- "While it blurs, the panel stays out of screenshots and recordings.": "模糊时，面板不会出现在截图和录屏里。",
  "Glitter": "闪粉",
- "Specks of glitter that slowly twinkle.": "缓慢闪烁的细小闪粉。"
+ "Specks of glitter that slowly twinkle.": "缓慢闪烁的细小闪粉。",
+ "A plain frost, barely tinted.": "纯磨砂，几乎不着色。",
+ "Tinted and finely grained, like Windows acrylic.": "着色并带细颗粒，类似 Windows 的亚克力。",
+ "Live blur": "实时模糊",
+ "Blurs what is behind the panel as it changes. While it is on, the panel does not appear in screenshots, recordings or remote desktop apps such as UU Remote or ToDesk; turn it off to see the panel there. Off by itself under Windows Remote Desktop.": "实时模糊面板后面的内容。开启时，面板不会出现在截图、录屏和 UU 远程、ToDesk 等远程桌面中；需要在这些地方看到面板时请关闭。在 Windows 远程桌面中会自动停用。"
 }

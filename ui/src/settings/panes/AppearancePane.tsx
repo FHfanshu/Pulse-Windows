@@ -80,6 +80,15 @@ export function AppearancePane({ settings }: { settings: AppSettings }) {
         )}
         {settings.usesGlass && (
           <ToggleRow
+            title="Live blur"
+            subtitle="Blurs what is behind the panel as it changes. While it is on, the panel does not appear in screenshots, recordings or remote desktop apps such as UU Remote or ToDesk; turn it off to see the panel there. Off by itself under Windows Remote Desktop."
+            checked={settings.glassLiveBlur}
+            disabled={off}
+            onChange={(glassLiveBlur) => updateSettings({ glassLiveBlur })}
+          />
+        )}
+        {settings.usesGlass && (
+          <ToggleRow
             title="Glitter"
             subtitle="Specks of glitter that slowly twinkle."
             checked={settings.glassGlitter}
@@ -109,8 +118,7 @@ export function AppearancePane({ settings }: { settings: AppSettings }) {
   );
 }
 
-/** What the chosen glass does, and what reading the screen behind costs. */
+/** What the chosen glass lays over what is behind. */
 function glassStyleSubtitle(style: GlassStyle): string {
-  const line = style === "blur" ? t("Blurs what is behind, as it changes.") : t("Blurred, tinted and finely grained, like Windows acrylic.");
-  return `${line} ${t("While it blurs, the panel stays out of screenshots and recordings.")}`;
+  return style === "blur" ? t("A plain frost, barely tinted.") : t("Tinted and finely grained, like Windows acrylic.");
 }

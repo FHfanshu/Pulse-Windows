@@ -1036,9 +1036,10 @@
  "Effect": "効果",
  "Blur (glass)": "ぼかし",
  "Acrylic": "アクリル",
- "Blurs what is behind, as it changes.": "後ろの内容をリアルタイムにぼかします。",
- "Blurred, tinted and finely grained, like Windows acrylic.": "ぼかしに色味と細かな粒子を重ねます。Windows のアクリルと同じです。",
- "While it blurs, the panel stays out of screenshots and recordings.": "ぼかしている間、パネルはスクリーンショットや録画に写りません。",
  "Glitter": "ラメ",
- "Specks of glitter that slowly twinkle.": "ゆっくりきらめく細かなラメ。"
+ "Specks of glitter that slowly twinkle.": "ゆっくりきらめく細かなラメ。",
+ "A plain frost, barely tinted.": "ほぼ色のない、すりガラスだけ。",
+ "Tinted and finely grained, like Windows acrylic.": "色味と細かな粒子を重ねます。Windows のアクリルと同じです。",
+ "Live blur": "リアルタイムぼかし",
+ "Blurs what is behind the panel as it changes. While it is on, the panel does not appear in screenshots, recordings or remote desktop apps such as UU Remote or ToDesk; turn it off to see the panel there. Off by itself under Windows Remote Desktop.": "パネルの後ろをリアルタイムにぼかします。オンの間、パネルはスクリーンショット、録画、UU Remote や ToDesk などのリモートデスクトップに写りません。そこでパネルを見たいときはオフにしてください。Windows リモートデスクトップでは自動的にオフになります。"
 }

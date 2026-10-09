@@ -1036,9 +1036,10 @@
  "Effect": "Effect",
  "Blur (glass)": "Blur",
  "Acrylic": "Acrylic",
- "Blurs what is behind, as it changes.": "Blurs what is behind, as it changes.",
- "Blurred, tinted and finely grained, like Windows acrylic.": "Blurred, tinted and finely grained, like Windows acrylic.",
- "While it blurs, the panel stays out of screenshots and recordings.": "While it blurs, the panel stays out of screenshots and recordings.",
  "Glitter": "Glitter",
- "Specks of glitter that slowly twinkle.": "Specks of glitter that slowly twinkle."
+ "Specks of glitter that slowly twinkle.": "Specks of glitter that slowly twinkle.",
+ "A plain frost, barely tinted.": "A plain frost, barely tinted.",
+ "Tinted and finely grained, like Windows acrylic.": "Tinted and finely grained, like Windows acrylic.",
+ "Live blur": "Live blur",
+ "Blurs what is behind the panel as it changes. While it is on, the panel does not appear in screenshots, recordings or remote desktop apps such as UU Remote or ToDesk; turn it off to see the panel there. Off by itself under Windows Remote Desktop.": "Blurs what is behind the panel as it changes. While it is on, the panel does not appear in screenshots, recordings or remote desktop apps such as UU Remote or ToDesk; turn it off to see the panel there. Off by itself under Windows Remote Desktop."
 }
