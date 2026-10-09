@@ -1,7 +1,7 @@
 // Ported from upstream Panel/UsageDetailCard.swift. A detailed card adds the plan, the "Updated" line and the
 // activity section (Activity.tsx).
-import { AnimatePresence, motion } from "motion/react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { animate, AnimatePresence, motion, type AnimationPlaybackControls } from "motion/react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { relativeTime, resetText, unavailableMessage, windowName } from "../shared/copy";
 import { t } from "../shared/i18n";
 import { accountId, isSpent, percentText, remainingFraction, type ProviderUsage, type UsageWindow } from "../shared/model";
@@ -13,7 +13,7 @@ import type { Edge } from "./layout";
 import { detailCardLayout, type PanelMetrics } from "./layout";
 import { glassDim } from "./glass";
 import { bubblePath } from "./shapes";
-import { PulseColor, usageColor } from "./tint";
+import { PulseColor, spring, usageColor } from "./tint";
 
 export interface CardProps {
   usage: ProviderUsage;
@@ -59,21 +59,47 @@ export function Card(p: CardProps) {
   // offsetHeight, not getBoundingClientRect: the reveal animation scales the
   // card, and a transformed measurement would size the outline too short.
   const [contentH, setContentH] = useState<number>(L.estimatedHeight);
+  // The outline's height. Hovering from one ring to another swaps the content under the same card,
+  // and the bubble grows or shrinks to the new content on the spring that moves the card (upstream
+  // animates the shape with the selection), rather than snapping while the card is still sliding.
+  const [shownH, setShownH] = useState<number>(L.estimatedHeight);
+  const shownRef = useRef(shownH);
+  const measured = useRef(false);
+  const running = useRef<AnimationPlaybackControls | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const report = () => {
-      setContentH((old) => (Math.abs(old - el.offsetHeight) < 0.5 ? old : el.offsetHeight));
-      p.onHeight(el.offsetHeight);
+      const h = el.offsetHeight;
+      // The first measurement is the card appearing: it is drawn at its size straight away.
+      if (!measured.current) {
+        measured.current = true;
+        shownRef.current = h;
+        setShownH(h);
+      }
+      setContentH((old) => (Math.abs(old - h) < 0.5 ? old : h));
+      p.onHeight(h);
     };
     report();
     const ro = new ResizeObserver(report);
     ro.observe(el);
     return () => ro.disconnect();
   });
+  useEffect(() => {
+    if (Math.abs(shownRef.current - contentH) < 0.5) return;
+    running.current?.stop();
+    running.current = animate(shownRef.current, contentH, {
+      ...spring(0.28, 0.84),
+      onUpdate: (v) => {
+        shownRef.current = v;
+        setShownH(v);
+      },
+    });
+  }, [contentH]);
+  useEffect(() => () => running.current?.stop(), []);
 
   const totalW = L.width + (vertical ? L.pointerWidth : 0);
-  const totalH = contentH + (vertical ? 0 : L.pointerWidth);
+  const totalH = shownH + (vertical ? 0 : L.pointerWidth);
   const path = bubblePath(totalW, totalH, p.edge, p.pointerCenter, {
     cornerRadius: L.cornerRadius,
     pointerWidth: L.pointerWidth,
