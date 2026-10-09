@@ -95,8 +95,10 @@ export function App() {
   const C = detailCardLayout(metrics);
 
   // Hand Rust the sizes for every axis/docking so it can place and drag the window.
+  // Windows difference: not before the settings are known. The first geometry is what shows the window,
+  // and one computed from default metrics (standard size, no detailed card) sized it for the wrong panel.
   useEffect(() => {
-    if (!slots.length) return;
+    if (!slots.length || !stored) return;
     const shapes = (edge: Edge, docked: boolean) => {
       const panel = panelSize(metrics, edge, docked);
       const rail = D.size(slots.length, axisOf(edge), docked);
@@ -110,7 +112,7 @@ export function App() {
         horizontalFree: shapes("top", false),
       },
     });
-  }, [metrics, slots.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [metrics, slots.length, stored !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const edge = layout?.edge ?? "right";
   const axis = axisOf(edge);
