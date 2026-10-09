@@ -21,7 +21,7 @@ use super::prices::PriceTable;
 /// The number in `agent-<n>-<agent>.json`. Part of the contract: also versions the readers'
 /// semantics (a valid old shape can hold totals from old pricing or dedup rules), so bump it
 /// whenever a reader's output changes for an unchanged store.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// Whether the stores' real inputs, and the money behind their cost, are the same as when the
 /// ledger was kept.

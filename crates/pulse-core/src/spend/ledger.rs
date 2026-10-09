@@ -237,6 +237,9 @@ pub struct Ledger {
     /// price.
     #[serde(default)]
     pub has_partial_counts: bool,
+    /// Some compressed local history could not be decoded.
+    #[serde(default)]
+    pub has_read_limitations: bool,
     /// Whether the records say anything about the prompt cache. False for a store with no cache
     /// column.
     #[serde(default = "yes")]
@@ -275,6 +278,7 @@ impl Ledger {
             currency: None,
             has_aggregate_timing: false,
             has_partial_counts: false,
+            has_read_limitations: false,
             reports_cache_reads: true,
             days: Vec::new(),
             earliest: None,
@@ -599,9 +603,12 @@ impl Ledger {
     /// models' names, and the quarter-hours the value estimate reads. The finer detail (sessions)
     /// is left behind.
     pub fn adding(ledgers: &[Ledger], calendar: &Calendar) -> Ledger {
+        let has_read_limitations = ledgers.iter().any(|l| l.has_read_limitations);
         let present: Vec<&Ledger> = ledgers.iter().filter(|l| !l.days.is_empty()).collect();
         if present.len() <= 1 {
-            return present.first().map(|l| (*l).clone()).unwrap_or_else(Ledger::empty);
+            let mut ledger = present.first().map(|l| (*l).clone()).unwrap_or_else(Ledger::empty);
+            ledger.has_read_limitations = has_read_limitations;
+            return ledger;
         }
         let mut merged: HashMap<DateTime<Utc>, LedgerDay> = HashMap::new();
         for day in present.iter().flat_map(|l| l.days.iter()) {
@@ -646,6 +653,7 @@ impl Ledger {
         ledger.origin = if present.iter().any(|l| l.origin == Origin::ImportedRecords) { Origin::ImportedRecords } else { Origin::LocalTranscripts };
         // One agent that cannot vouch for its counts leaves the sum unvouched.
         ledger.has_partial_counts = present.iter().any(|l| l.has_partial_counts);
+        ledger.has_read_limitations = has_read_limitations;
         ledger
     }
 }

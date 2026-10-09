@@ -47,6 +47,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
+use serde::de::{IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};
 
 use super::{int, list, push_unique, SpendSource};
@@ -57,6 +59,64 @@ use crate::spend::tally::TokenTally;
 use crate::spend::transcripts::Sources;
 
 pub struct OpenCode;
+
+/// Keep only usage and identity. OpenCode 2 embeds replay state and tool output in `data`;
+/// building a Value for that history dominated scans of multi-gigabyte stores. Unknown fields
+/// are validated and skipped without allocating their strings, arrays or objects.
+struct UsageMessage(Value);
+
+impl<'de> Deserialize<'de> for UsageMessage {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Fields;
+        impl<'de> Visitor<'de> for Fields {
+            type Value = UsageMessage;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a message object")
+            }
+            fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+                let mut kept = Map::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "id" | "sessionID" | "role" | "modelID" | "model" | "tokens" | "time" => {
+                            kept.insert(key, map.next_value::<Value>()?);
+                        }
+                        _ => {
+                            map.next_value::<IgnoredAny>()?;
+                        }
+                    }
+                }
+                Ok(UsageMessage(Value::Object(kept)))
+            }
+        }
+        deserializer.deserialize_map(Fields)
+    }
+}
+
+fn usage_message(bytes: &[u8]) -> Option<Value> {
+    serde_json::from_slice::<UsageMessage>(bytes).ok().map(|m| m.0)
+}
+
+/// Borrow SQLite's text instead of copying the entire message before inspecting it.
+fn message_data<'a>(row: &'a rusqlite::Row<'_>) -> Option<&'a str> {
+    match row.get_ref(2).ok()? {
+        rusqlite::types::ValueRef::Text(bytes) | rusqlite::types::ValueRef::Blob(bytes) => {
+            std::str::from_utf8(bytes).ok()
+        }
+        _ => None,
+    }
+}
+
+// Extract in SQLite too: replay histories never need to cross into Rust. Invalid JSON
+// still yields an empty object, so its id is claimed before falling back to an older copy.
+const USAGE_DATA: &str = r#"CASE
+    WHEN data IS NULL THEN NULL
+    WHEN json_valid(data) THEN json_object(
+        'role', json_extract(data, '$.role'),
+        'modelID', json_extract(data, '$.modelID'),
+        'model', json_extract(data, '$.model'),
+        'tokens', json_extract(data, '$.tokens'),
+        'time', json_extract(data, '$.time'))
+    ELSE '{}' END"#;
 
 impl SpendSource for OpenCode {
     fn raw(&self) -> &'static str {
@@ -180,14 +240,14 @@ impl Reader<'_> {
 
     /// A row of a database: the id is claimed first, so a copy is never read twice, even one
     /// whose first copy turned out to carry no usage.
-    fn row(&mut self, id: Option<String>, session: Option<String>, data: Option<String>, role: Option<String>) {
+    fn row(&mut self, id: Option<String>, session: Option<String>, data: Option<&str>, role: Option<String>) {
         let (Some(session), Some(data)) = (session, data) else { return };
         if let Some(id) = &id {
             if !self.seen.insert(id.clone()) {
                 return;
             }
         }
-        let Ok(root) = serde_json::from_str::<Value>(&data) else { return };
+        let Some(root) = usage_message(data.as_bytes()) else { return };
         self.message(session, root, role);
     }
 }
@@ -293,16 +353,17 @@ pub(crate) fn store_records(roots: &[PathBuf]) -> Vec<AgentUsageRecord> {
     // The new table of every database first, then the old, then the JSON files, so the newest
     // shape of a message is the one that is read whichever store it was found in first.
     for connection in &databases {
-        sqlite::each(connection, "SELECT id, session_id, data, type FROM session_message WHERE type = 'assistant'", |row| {
-            reader.row(sqlite::text(row, 0), sqlite::text(row, 1), sqlite::text(row, 2), sqlite::text(row, 3));
+        let sql = format!("SELECT id, session_id, {USAGE_DATA}, type FROM session_message WHERE type = 'assistant'");
+        sqlite::each(connection, &sql, |row| {
+            reader.row(sqlite::text(row, 0), sqlite::text(row, 1), message_data(row), sqlite::text(row, 3));
         });
     }
     for connection in &databases {
         // A row without an id (a store with no `id` column) cannot have been copied, so it is
         // never a repeat.
         let id = if sqlite::columns(connection, "message").contains("id") { "id" } else { "NULL" };
-        sqlite::each(connection, &format!("SELECT {id}, session_id, data FROM message"), |row| {
-            reader.row(sqlite::text(row, 0), sqlite::text(row, 1), sqlite::text(row, 2), None);
+        sqlite::each(connection, &format!("SELECT {id}, session_id, {USAGE_DATA} FROM message"), |row| {
+            reader.row(sqlite::text(row, 0), sqlite::text(row, 1), message_data(row), None);
         });
     }
     for folder in folders("message") {
@@ -313,7 +374,7 @@ pub(crate) fn store_records(roots: &[PathBuf]) -> Vec<AgentUsageRecord> {
             if stem.as_ref().is_some_and(|stem| reader.seen.contains(stem)) {
                 continue;
             }
-            let Some(root) = crate::spend::logio::json(&file) else { continue };
+            let Some(root) = std::fs::read(&file).ok().and_then(|bytes| usage_message(&bytes)) else { continue };
             let text = |key: &str| root.get(key).and_then(Value::as_str).map(str::to_string);
             let id = text("id").or(stem);
             if let Some(id) = &id {
@@ -500,7 +561,7 @@ pub(crate) mod tests {
         let table: PriceTable = HashMap::from([
             (crate::spend::prices::vendor_key("opencode-go", "plan-only"), ModelPrice::new(2.0, 3.0, None, None, Some("Plan model"))),
         ]);
-        let go = build_ledger(&[record.clone()], &table, "openCode", SpendAgent::OpenCode.price_vendor(), &Calendar::utc(2), Default::default());
+        let go = build_ledger(std::slice::from_ref(&record), &table, "openCode", SpendAgent::OpenCode.price_vendor(), &Calendar::utc(2), Default::default());
         assert_eq!(go.days[0].cost, 2.0);
         let kilo = build_ledger(&[record], &table, "kiloCLI", SpendAgent::KiloCli.price_vendor(), &Calendar::utc(2), Default::default());
         assert_eq!(kilo.days[0].cost, 0.0);
@@ -587,5 +648,51 @@ pub(crate) mod tests {
         assert_eq!(output(&counts(json!({"output":5,"reasoning":20})), true), 25);
         // A total written as zero says nothing either way.
         assert_eq!(output(&counts(json!({"output":10,"reasoning":5,"total":0})), true), 15);
+    }
+    #[test]
+    fn replay_bodies_are_skipped_and_usage_matches_the_full_json_shape() {
+        let root = json!({
+            "id":"m","sessionID":"s","role":"assistant","modelID":"priced",
+            "time":{"created":CREATED},"tokens":{"input":10,"output":2},
+            "replayState":{"messages":[{"text":"x".repeat(2_000_000)}]},
+            "parts":[{"tool":"output","text":"ignored"}]
+        });
+        let bytes = serde_json::to_vec(&root).unwrap();
+        let small = usage_message(&bytes).unwrap();
+        assert!(small.get("parts").is_none());
+        assert!(small.get("replayState").is_none());
+        for key in ["id", "sessionID", "role", "modelID", "time", "tokens"] {
+            assert_eq!(small[key], root[key]);
+        }
+        let sessions = HashMap::new();
+        let mut full = Reader { sessions: &sessions, seen: HashSet::new(), records: Vec::new() };
+        let mut projected = Reader { sessions: &sessions, seen: HashSet::new(), records: Vec::new() };
+        full.message("s".to_string(), root, None);
+        projected.message("s".to_string(), small, None);
+        assert_eq!(projected.records[0].tally, full.records[0].tally);
+        assert_eq!(projected.records[0].timestamp, full.records[0].timestamp);
+        assert!(usage_message(br#"{"role":"assistant","ignored":bad}"#).is_none());
+        assert!(usage_message(b"[]").is_none());
+    }
+
+    #[test]
+    fn sql_projection_skips_bad_json_without_aborting_or_reviving_old_duplicates() {
+        let home = tempfile::tempdir().unwrap();
+        let path = data_folder(home.path(), "opencode").join("opencode.db");
+        let good = json!({"model":{"id":"priced"},"time":{"created":CREATED},"tokens":{"input":10,"output":2}});
+        let old = json!({"role":"assistant","modelID":"priced","time":{"created":CREATED},"tokens":{"input":999}});
+        database(
+            &path,
+            &[
+                "CREATE TABLE session_message (id TEXT, session_id TEXT, data TEXT, type TEXT)",
+                "CREATE TABLE message (id TEXT, session_id TEXT, data TEXT)",
+                "INSERT INTO session_message VALUES ('bad','s','{broken','assistant')",
+                &format!("INSERT INTO session_message VALUES ('good','s','{good}','assistant')"),
+                &format!("INSERT INTO message VALUES ('bad','s','{old}')"),
+            ],
+        );
+        let records = store_records(&[path]);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].tally, TokenTally::new(10, 0, 0, 2));
     }
 }
