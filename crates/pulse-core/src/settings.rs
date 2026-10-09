@@ -88,6 +88,21 @@ pub struct GlobalShortcut {
     pub accelerator: String,
 }
 
+/// Hours of the day the window starter may act in, by this PC's clock (upstream `PrimerHours`;
+/// the logic is in `window_starter::primer`). 0-23; equal start and end means all day.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrimerHours {
+    pub start: u8,
+    pub end: u8,
+}
+
+impl Default for PrimerHours {
+    fn default() -> Self {
+        Self { start: 7, end: 23 }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppSettings {
@@ -158,6 +173,15 @@ pub struct AppSettings {
     /// The month ("2026-09") whose "recap is ready" notification was already sent.
     pub recap_announced_month: Option<String>,
 
+    // Window starter (`window_starter`): off or empty by default, switched on only through the
+    // pane's risk confirmation. Provider raw values ("claudeCode", "codex") throughout.
+    pub primed_providers: BTreeSet<String>,
+    pub primer_hours: PrimerHours,
+    /// The last attempt's outcome per provider (`WindowStarter::Outcome` raw value).
+    pub primer_run_outcomes: BTreeMap<String, String>,
+    /// The last attempt's time per provider, seconds since 1970.
+    pub primer_run_times: BTreeMap<String, f64>,
+
     // Notifications (all off by default)
     pub low_balance_alerts: BTreeMap<String, f64>,
     pub alert_threshold: Option<u8>,
@@ -216,6 +240,10 @@ impl Default for AppSettings {
             recap_monthly_price: None,
             recap_hides_projects: false,
             recap_announced_month: None,
+            primed_providers: BTreeSet::new(),
+            primer_hours: PrimerHours::default(),
+            primer_run_outcomes: BTreeMap::new(),
+            primer_run_times: BTreeMap::new(),
             low_balance_alerts: BTreeMap::new(),
             alert_threshold: None,
             alerts_on_reset: false,
@@ -249,6 +277,10 @@ impl AppSettings {
             self.glass_transparency = 0.5;
         }
         self.glass_transparency = self.glass_transparency.clamp(0.0, 1.0);
+        // Hours are 0-23, as upstream's restore insists; anything else falls back to the default.
+        if self.primer_hours.start > 23 || self.primer_hours.end > 23 {
+            self.primer_hours = PrimerHours::default();
+        }
         self
     }
 }
@@ -263,6 +295,16 @@ mod tests {
         assert_eq!(s.panel_size, PanelSize::Large);
         assert!(s.side_rail_shows_percentages);
         assert_eq!(s.warning_threshold, 75);
+    }
+
+    #[test]
+    fn the_window_starter_is_off_by_default_and_hours_stay_in_a_day() {
+        let s = AppSettings::default();
+        assert!(s.primed_providers.is_empty());
+        assert_eq!(s.primer_hours, PrimerHours { start: 7, end: 23 });
+        let s: AppSettings = serde_json::from_str(r#"{"primedProviders":["codex"],"primerHours":{"start":30,"end":2}}"#).unwrap();
+        assert!(s.primed_providers.contains("codex"));
+        assert_eq!(s.normalized().primer_hours, PrimerHours::default());
     }
 
     #[test]

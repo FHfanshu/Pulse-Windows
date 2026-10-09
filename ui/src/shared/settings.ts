@@ -59,6 +59,12 @@ export interface AppSettings {
   recapMonthlyPrice: number | null;
   recapHidesProjects: boolean;
   recapAnnouncedMonth: string | null;
+  /** Window starter (off by default): provider ids, the hours it may act in, and its last attempt per provider. */
+  primedProviders: string[];
+  primerHours: { start: number; end: number };
+  primerRunOutcomes: Record<string, string>;
+  /** Seconds since 1970. */
+  primerRunTimes: Record<string, number>;
   lowBalanceAlerts: Record<string, number>;
   alertThreshold: number | null;
   alertsOnReset: boolean;
