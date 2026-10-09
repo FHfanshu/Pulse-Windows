@@ -98,7 +98,7 @@ fn sample(window: &tauri::WebviewWindow) -> Option<Vec<[u8; 3]>> {
 }
 
 /// The outlines to clip the native layers to, as the UI last sent them.
-static SHAPES: Mutex<Shapes> = Mutex::new(Shapes { seq: 0, rail: None, card: None });
+static SHAPES: Mutex<Shapes> = Mutex::new(Shapes { seq: 0, epoch: 0, rail: None, card: None });
 /// A pass on the UI thread is already queued; it will read `SHAPES` when it runs.
 static QUEUED: AtomicBool = AtomicBool::new(false);
 /// What the UI is told: the native layers are showing, so draw only the tint over them.
@@ -111,6 +111,12 @@ static EFFECTS: AtomicBool = AtomicBool::new(true);
 #[tauri::command]
 pub fn get_native_backdrop() -> bool {
     NATIVE_ACTIVE.load(Ordering::Relaxed)
+}
+
+/// Windows difference: retain clips while a new producer starts, and reject delayed old commands.
+#[tauri::command]
+pub fn begin_backdrop_shapes() -> u64 {
+    SHAPES.lock().unwrap().begin()
 }
 
 /// The WebView shows what it was told about a frame later than a native layer is moved (its picture
@@ -127,10 +133,9 @@ pub async fn set_backdrop_shapes(app: AppHandle, shapes: Shapes) {
     tokio::time::sleep(WEBVIEW_LAG).await;
     {
         let mut latest = SHAPES.lock().unwrap();
-        if shapes.seq < latest.seq {
+        if !latest.accept(shapes) {
             return;
         }
-        *latest = shapes;
     }
     sync_native(&app);
 }
@@ -166,7 +171,9 @@ fn apply(app: &AppHandle) {
         && std::env::var_os("PULSE_NO_NATIVE_ACRYLIC").is_none();
     let shapes = SHAPES.lock().unwrap().clone();
     let active = match win::host_backdrop(&window, wanted, &shapes) {
-        Ok(active) => active,
+        // The UI keeps its fallback until an actual rail clip is installed. Outlines are sent even
+        // before activation, so this readiness condition cannot deadlock the initial handshake.
+        Ok(active) => active && shapes.rail.as_ref().is_some_and(|o| crate::outline::parse(&o.d).is_some()),
         Err(error) => {
             // An unsupported OS or a failed target keeps the strip-sampled glass, not a clear hole.
             eprintln!("native acrylic unavailable: {error}");
@@ -175,6 +182,10 @@ fn apply(app: &AppHandle) {
             false
         }
     };
+    if std::env::var_os("PULSE_BACKDROP_TRACE").is_some() {
+        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+        eprintln!("BACKDROP {at} epoch={} seq={} active={active} rail={:?} card={:?}", shapes.epoch, shapes.seq, shapes.rail, shapes.card);
+    }
     if NATIVE_ACTIVE.swap(active, Ordering::Relaxed) != active {
         let _ = app.emit_to(panel::LABEL, "native-backdrop", active);
     }

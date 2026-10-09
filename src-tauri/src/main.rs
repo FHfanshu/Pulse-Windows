@@ -334,6 +334,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             backdrop::get_native_backdrop,
+            backdrop::begin_backdrop_shapes,
             backdrop::set_backdrop_shapes,
             get_settings,
             update_settings,

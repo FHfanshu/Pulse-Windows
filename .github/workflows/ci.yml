@@ -67,6 +67,8 @@ jobs:
         run: npm ci
       - name: Typecheck and build frontend
         run: npm run build
+      - name: Check native backdrop snapshots
+        run: node scripts/check-native-shapes.mjs
       - name: Test Rust workspace
         run: cargo test --workspace --all-targets --locked
       - name: Build Windows installer
