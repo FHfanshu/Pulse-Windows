@@ -91,13 +91,38 @@ export interface UsagePayload {
 
 export const updateSettings = (patch: Partial<AppSettings>) => invoke<AppSettings>("update_settings", { patch });
 
-/** Live settings: loaded once, then kept current from `settings-changed`. */
+/** Live settings: loaded once, then kept current from `settings-changed`.
+ *
+ *  Windows difference: the first read is retried until it succeeds. A panel that started before the
+ *  backend answered used to keep its defaults for good (the standard size, no detailed card) and push
+ *  those to Rust as its geometry; it stays `null` instead, which callers treat as "not known yet". */
 export function useSettings(): AppSettings | null {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   useEffect(() => {
-    invoke<AppSettings>("get_settings").then(setSettings);
-    const un = listen<AppSettings>("settings-changed", (e) => setSettings(e.payload));
-    return () => void un.then((f) => f());
+    let live = true;
+    let retry: number | undefined;
+    // A newer `settings-changed` payload must not be overwritten by a read that was slower than it.
+    let heard = false;
+    const load = (attempt: number) => {
+      invoke<AppSettings>("get_settings").then(
+        (loaded) => {
+          if (live && !heard) setSettings(loaded);
+        },
+        () => {
+          if (live) retry = window.setTimeout(() => load(attempt + 1), Math.min(100 * 2 ** attempt, 2000));
+        },
+      );
+    };
+    const un = listen<AppSettings>("settings-changed", (e) => {
+      heard = true;
+      setSettings(e.payload);
+    });
+    load(0);
+    return () => {
+      live = false;
+      window.clearTimeout(retry);
+      void un.then((f) => f());
+    };
   }, []);
   return settings;
 }
