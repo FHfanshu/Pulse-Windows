@@ -11,6 +11,7 @@ import { useCardLedger, useEstimatedValues } from "./cardLedgers";
 import { ProviderIcon } from "./Icon";
 import type { Edge } from "./layout";
 import { detailCardLayout, type PanelMetrics } from "./layout";
+import { glassDim } from "./glass";
 import { bubblePath } from "./shapes";
 import { PulseColor, usageColor } from "./tint";
 
@@ -23,6 +24,7 @@ export interface CardProps {
   showsRemaining: boolean;
   warningAt: number;
   usesGlass: boolean;
+  glassTransparency: number;
   /** The detailed card: the plan, how fresh the figures are and (below) recent activity. Set per account. */
   detailed: boolean;
   /** Whether this account has records to show: detailed, a primary account, Token spend on. */
@@ -100,8 +102,8 @@ export function Card(p: CardProps) {
     p.detailed && p.showsSpend && u.state.kind === "live",
   );
   const valueText = (w: UsageWindow): string | null => {
-    const v = values.find((x) => x.windowId === w.id);
-    return v && !v.elsewhere && v.full !== null && v.spent !== null
+    const v = values.find((x) => x.window === w.id);
+    return v && !v.elsewhere
       ? t("Estimated value %@ · %@ used", approximate(v.full), approximate(v.spent))
       : null;
   };
@@ -120,7 +122,7 @@ export function Card(p: CardProps) {
   return (
     <div className={`card ${p.usesGlass ? "glass" : ""}`} style={{ width: totalW, height: totalH, [pointerSide]: L.pointerWidth } as React.CSSProperties}>
       <svg className="card-surface" width={totalW} height={totalH}>
-        <path d={path} fill={p.usesGlass ? "rgba(0,0,0,var(--glass-dim))" : "#000"} />
+        <path d={path} fill={p.usesGlass ? `rgba(0,0,0,${glassDim(p.glassTransparency)})` : "#000"} />
       </svg>
       <div className="card-clip" style={{ clipPath: `path("${path}")`, width: totalW, height: totalH, position: "absolute", left: 0, top: 0 }}>
         <div

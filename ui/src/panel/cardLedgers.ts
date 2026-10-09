@@ -5,7 +5,7 @@
 // Lives outside React on purpose. A read started from a component's effect is cancelled by the next ring's
 // card and would come back as "no history"; here the request always runs to the end and lands in the store.
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { cardSpend, estimatedValues, promptCache, type CardSpend, type PromptCacheReading, type WindowValue } from "../shared/spend";
+import { cardSpend, estimatedValue, promptCache, type CardSpend, type PromptCacheReading, type WindowEstimate } from "../shared/spend";
 
 /** Providers whose records the card reads (`spend::supports`): Claude Code's transcripts and Codex's rollouts. */
 export const spendProviders: ReadonlySet<string> = new Set(["claudeCode", "codex"]);
@@ -59,11 +59,11 @@ export function readPromptCache(provider: string) {
  * reading's percentages and the moment they were read, so it is asked once per reading and kept: sweeping the
  * rail past a ring again does not scan its records again.
  */
-const valueAnswers = new Map<string, WindowValue[]>();
+const valueAnswers = new Map<string, WindowEstimate[]>();
 const valueAsked = new Set<string>();
 const valueListeners = new Set<() => void>();
 
-export function useEstimatedValues(account: string, reading: string, enabled: boolean): WindowValue[] {
+export function useEstimatedValues(account: string, reading: string, enabled: boolean): WindowEstimate[] {
   const key = `${account}|${reading}`;
   const [, bump] = useState(0);
   useEffect(() => {
@@ -75,7 +75,7 @@ export function useEstimatedValues(account: string, reading: string, enabled: bo
     if (!enabled || valueAnswers.has(key) || valueAsked.has(key)) return;
     valueAsked.add(key);
     const asked = generation;
-    estimatedValues(account, true)
+    estimatedValue(account, true)
       .then((values) => {
         if (asked !== generation) return;
         valueAnswers.set(key, values);

@@ -6,9 +6,10 @@
 // painted on a canvas. Everything about a card is inline style and inline SVG, so the serialised
 // copy needs no stylesheet.
 //
-// TODO: files are handed to the webview's own download (the browser's Downloads folder) rather
-// than a Tauri save dialog, which would need the dialog and fs plugins; "Share image" is not
-// ported (there is no share sheet on Windows to anchor to).
+// Files go where the reader picks in a save (or folder) dialog and are written by the
+// `save_file` command. "Share image" is not ported (there is no share sheet on Windows to anchor to).
+import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { CardView } from "./cards/CardView";
@@ -63,35 +64,34 @@ export async function renderPng(deck: Deck, card: CardId): Promise<Blob> {
   }
 }
 
-function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+async function write(blob: Blob, path: string) {
+  const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+  await invoke("save_file", { path, bytes });
 }
 
-export type Outcome = "saved" | "copied" | "failed";
+/** "cancelled": the reader closed the dialog; nothing is said. */
+export type Outcome = "saved" | "copied" | "failed" | "cancelled";
 
 /** The card on screen to a PNG file, `pulse-recap-2026-09-02-opener.png`. */
 export async function saveCard(deck: Deck, card: CardId): Promise<Outcome> {
   try {
-    download(await renderPng(deck, card), fileName(card, deck));
+    const path = await save({ defaultPath: fileName(card, deck), filters: [{ name: "PNG", extensions: ["png"] }] });
+    if (!path) return "cancelled";
+    await write(await renderPng(deck, card), path.toLowerCase().endsWith(".png") ? path : `${path}.png`);
     return "saved";
   } catch {
     return "failed";
   }
 }
 
-/** Every card of the deck, poster included, in deck order. A file of the same name is replaced by
- *  the download, nothing else is touched. */
+/** Every card of the deck, poster included, in deck order, into a folder the reader picks. A file of
+ *  the same name is replaced, nothing else is touched. */
 export async function saveAll(deck: Deck): Promise<Outcome> {
   try {
+    const folder = await open({ directory: true, multiple: false });
+    if (!folder || Array.isArray(folder)) return "cancelled";
     for (const card of deck.cards) {
-      download(await renderPng(deck, card), fileName(card, deck));
+      await write(await renderPng(deck, card), `${folder.replace(/[\\/]+$/, "")}\\${fileName(card, deck)}`);
       // Let the window draw between cards.
       await pause(150);
     }

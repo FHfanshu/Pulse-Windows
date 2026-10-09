@@ -167,14 +167,6 @@ export interface SpendProgress {
   total: number;
 }
 
-/** What one limit is worth, by this PC's reckoning; `elsewhere` limits have no figure. */
-export interface WindowValue {
-  windowId: string;
-  elsewhere: boolean;
-  full: number | null;
-  spent: number | null;
-}
-
 export interface SpendFigure {
   tokens: number;
   cost: number;
@@ -222,8 +214,16 @@ export interface PromptCacheReading {
 export const spendOverview = (overLast: number | null, agent: SpendAgent | null, model: string | null, rescan: boolean) =>
   invoke<SpendOverview | null>("spend_overview", { overLast, agent, model, rescan });
 /** Lets the kept scan go: Token spend was switched off, or the Settings window closed. */
+/** What one limit is worth by this PC's reckoning (`estimated_value`); `elsewhere` limits have no figure. */
+export interface WindowEstimate {
+  window: string;
+  spent: number;
+  full: number;
+  elsewhere: boolean;
+}
+/** `card` is the detailed card's asking: it leaves out windows seen spent elsewhere and providers that state their limits in money. */
+export const estimatedValue = (account: string, card: boolean) => invoke<WindowEstimate[]>("estimated_value", { account, card });
 export const spendRelease = () => invoke<void>("spend_release");
-export const estimatedValues = (account: string, card: boolean) => invoke<WindowValue[]>("estimated_values", { account, card });
 export const cardSpend = (provider: string) => invoke<CardSpend | null>("card_spend", { provider });
 export const promptCache = (provider: string) => invoke<PromptCacheReading | null>("prompt_cache", { provider });
 

@@ -8,10 +8,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
-use pulse_core::model::AccountKey;
 use pulse_core::recap::periods;
 use pulse_core::spend::{
-    self, activity::TokenActivity, budget, model_summary::ModelSpendSummary, summary::SpendSummary, transcripts::Sources, Calendar, Ledger,
+    self, activity::TokenActivity, model_summary::ModelSpendSummary, summary::SpendSummary, transcripts::Sources, Calendar, Ledger,
     LedgerDay, PromptCacheReading, SpendAgent,
 };
 use pulse_core::Provider;
@@ -295,55 +294,6 @@ pub async fn card_spend(state: State<'_, AppState>, provider: String) -> Result<
         })
     })
     .await
-    .map_err(|e| e.to_string())
-}
-
-/// What one limit is worth in money, by this PC's reckoning (upstream `BudgetEstimate`).
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WindowValue {
-    pub window_id: String,
-    /// Seen spent where this PC's logs cannot see: no figure, and the settings pane says why.
-    pub elsewhere: bool,
-    pub full: Option<f64>,
-    pub spent: Option<f64>,
-}
-
-/// The estimated value of each limit of one account: the percentage the provider reports against
-/// what this PC spent since the window opened. `card` applies the detailed card's own rule (not
-/// for a provider that states its limits in money); the settings pane lists every window that has
-/// a figure or was spent elsewhere. Empty with Token spend off or for a provider whose records
-/// are not read here.
-#[tauri::command]
-pub async fn estimated_values(state: State<'_, AppState>, account: String, card: bool) -> Result<Vec<WindowValue>, String> {
-    let Some(key) = AccountKey::from_id(&account) else { return Ok(Vec::new()) };
-    if !state.settings().reads_token_spend || !spend::supports(key.provider) || (card && !budget::estimates_value(key.provider)) {
-        return Ok(Vec::new());
-    }
-    let Some(usage) = state.store.snapshot(std::slice::from_ref(&account)).into_iter().next() else { return Ok(Vec::new()) };
-    let elsewhere: Vec<bool> = usage.windows.iter().map(|w| state.store.used_elsewhere(w, &key)).collect();
-    tauri::async_runtime::spawn_blocking(move || {
-        let now = Utc::now();
-        let ledger = spend::read_ledger(key.provider, &home(), now).ok()?;
-        Some(
-            usage
-                .windows
-                .iter()
-                .zip(elsewhere)
-                .filter_map(|(window, elsewhere)| {
-                    // A window seen spent off this PC keeps its row, saying why there is no
-                    // figure: a value that quietly vanished would read as a bug.
-                    if elsewhere {
-                        return Some(WindowValue { window_id: window.id.clone(), elsewhere, full: None, spent: None });
-                    }
-                    budget::estimate(window, &ledger, usage.observed_at, now)
-                        .map(|e| WindowValue { window_id: window.id.clone(), elsewhere, full: Some(e.full), spent: Some(e.spent) })
-                })
-                .collect::<Vec<_>>(),
-        )
-    })
-    .await
-    .map(Option::unwrap_or_default)
     .map_err(|e| e.to_string())
 }
 

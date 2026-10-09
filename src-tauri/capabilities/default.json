@@ -1,6 +1,19 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "windows": ["panel", "settings", "chooser", "recap"],
-  "permissions": ["core:default", "core:window:allow-start-dragging", "core:window:allow-close", "core:window:allow-set-title", "notification:default"]
+  "windows": [
+    "panel",
+    "settings",
+    "chooser",
+    "recap",
+    "dashboard"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "core:window:allow-set-title",
+    "notification:default",
+    "dialog:default"
+  ]
 }

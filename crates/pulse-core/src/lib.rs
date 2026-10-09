@@ -4,8 +4,10 @@
 pub mod alerts;
 pub mod discovery;
 pub mod i18n;
+pub mod history;
 pub mod mock;
 pub mod model;
+pub mod outage;
 pub mod paths;
 pub mod provider;
 pub mod providers;
@@ -15,6 +17,7 @@ pub mod secrets;
 pub mod service;
 pub mod settings;
 pub mod spend;
+pub mod status;
 pub mod statusline;
 pub mod store;
 pub mod tray;

@@ -4,13 +4,15 @@ import { listen } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setLanguage } from "../shared/i18n";
-import { accountId, elapsedFraction, headlineWindow, isSpent, percentText, secondWindow } from "../shared/model";
+import { elapsedFraction, headlineWindow, isSpent, percentText, secondWindow } from "../shared/model";
 import { useSettings, useUsage } from "../shared/settings";
 import { Card } from "./Card";
 import { readCardSpend, readPromptCache, resetCardLedgers, spendProviders } from "./cardLedgers";
 import { providerNames } from "./Icon";
 import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelSizeScale, RailSpacingScale, type Edge, type PanelMetrics } from "./layout";
 import { Ring } from "./Ring";
+import { glassDim, useGlassRegion } from "./glass";
+import { railSlots } from "./slots";
 import { berthPath } from "./shapes";
 import { PulseColor, spring, usageColor } from "./tint";
 
@@ -31,13 +33,16 @@ export function App() {
   const [cardHeight, setCardHeight] = useState<number | null>(null);
   const refreshing = useMemo(() => new Set(refreshingIds), [refreshingIds]);
   const hoveredItem = useRef<string | null>(null);
-  const usagesRef = useRef(usages);
-  usagesRef.current = usages;
+  // One ring per account, or per model group for a split account (upstream `RailSlot.rail`).
+  const slots = useMemo(() => railSlots(usages, stored?.splitAccounts ?? []), [usages, stored?.splitAccounts]);
+  const slotsRef = useRef(slots);
+  slotsRef.current = slots;
 
   const settings = {
     showsRemaining: stored?.showsRemaining ?? false,
     warningAt: (stored?.warningThreshold ?? 75) / 100,
     usesGlass: stored?.usesGlass ?? false,
+    glassTransparency: stored?.glassTransparency ?? 0.5,
     autoCollapse: stored?.autoCollapse ?? false,
     dockShowsAlertColor: stored?.dockShowsAlertColor ?? true,
     showsSecondRing: stored?.showsSecondRing ?? false,
@@ -75,19 +80,19 @@ export function App() {
       showsWindowClock: stored?.showsWindowClock ?? false,
       showsForecast: stored?.showsForecast ?? false,
       showsDetailedCard: (stored?.detailedCards.length ?? 0) > 0,
-      railCapacity: Math.max(usages.length, 1),
+      railCapacity: Math.max(slots.length, 1),
     }),
-    [stored, usages.length],
+    [stored, slots.length],
   );
   const D = dockLayout(metrics);
   const C = detailCardLayout(metrics);
 
   // Hand Rust the sizes for every axis/docking so it can place and drag the window.
   useEffect(() => {
-    if (!usages.length) return;
+    if (!slots.length) return;
     const shapes = (edge: Edge, docked: boolean) => {
       const panel = panelSize(metrics, edge, docked);
-      const rail = D.size(usages.length, axisOf(edge), docked);
+      const rail = D.size(slots.length, axisOf(edge), docked);
       return { panel: { w: panel.w, h: panel.h }, rail: { w: rail.w, h: rail.h } };
     };
     invoke("set_geometry", {
@@ -98,7 +103,7 @@ export function App() {
         horizontalFree: shapes("top", false),
       },
     });
-  }, [metrics, usages.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [metrics, slots.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const edge = layout?.edge ?? "right";
   const axis = axisOf(edge);
@@ -106,10 +111,9 @@ export function App() {
   const vertical = axis === "vertical";
   const rail = layout?.rail ?? { x: 0, y: 0, w: 0, h: 0 };
 
-  const entries = usages.map((u) => {
-    const id = accountId(u.account);
-    const pin = settings.pinned[id];
-    return { id, usage: u, title: providerNames[u.account.provider] ?? u.account.provider, headline: headlineWindow(u, pin), second: settings.showsSecondRing ? secondWindow(u, pin) : null };
+  const entries = slots.map(({ id, account, usage: u }) => {
+    const pin = settings.pinned[account];
+    return { id, account, usage: u, title: providerNames[u.account.provider] ?? u.account.provider, headline: headlineWindow(u, pin), second: settings.showsSecondRing ? secondWindow(u, pin) : null };
   });
   const selectedIndex = entries.findIndex((e) => e.id === selected);
   const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] : null;
@@ -118,7 +122,7 @@ export function App() {
   // provider whose records are read here, and Token spend is on (upstream `showsSpend`).
   const readsSpend = stored?.readsTokenSpend ?? false;
   const selectedProvider = selectedEntry?.usage.account.provider ?? null;
-  const selectedIsDetailed = !!selectedEntry && (stored?.detailedCards.includes(selectedEntry.id) ?? false);
+  const selectedIsDetailed = !!selectedEntry && (stored?.detailedCards.includes(selectedEntry.account) ?? false);
   const selectedShowsSpend =
     selectedIsDetailed && readsSpend && !!selectedProvider && selectedEntry?.usage.account.slot === "" && spendProviders.has(selectedProvider);
   // Fetched on selection and at most every five minutes per provider; the store lives outside React, so a
@@ -193,6 +197,8 @@ export function App() {
     hoveredItem.current = id;
   }, [pointer, dragging, layout]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useGlassRegion(settings.usesGlass);
+
   // Tell Rust where input belongs; everything else stays click-through.
   useEffect(() => {
     if (!layout) return;
@@ -205,7 +211,7 @@ export function App() {
       if (!current) return current;
       // Ring hit test: within 1.08 × radius of a ring centre (upstream PanelHitArea.slot).
       {
-        const list = usagesRef.current;
+        const list = slotsRef.current;
         const ax = axisOf(current.edge);
         const radius = (D.ringDiameter / 2) * 1.08;
         const across = D.ringCentreAcross(ax, current.docked);
@@ -214,7 +220,7 @@ export function App() {
           const cx = current.rail.x + (ax === "vertical" ? across : along);
           const cy = current.rail.y + (ax === "vertical" ? along : across);
           if ((x - cx) ** 2 + (y - cy) ** 2 <= radius * radius) {
-            invoke("refresh", { account: accountId(u.account) });
+            invoke("refresh", { account: u.account });
           }
         });
       }
@@ -231,7 +237,7 @@ export function App() {
   }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
   void alert; // used by the collapsed sliver (auto-collapse), phase 1b
 
-  if (!layout || !usages.length) return null;
+  if (!layout || !slots.length) return null;
 
   const railSize = D.size(entries.length, axis, docked);
   const berth = berthPath(railSize.w, railSize.h, edge, docked, 1, {
@@ -268,7 +274,7 @@ export function App() {
         onPointerDown={(e) => { if (e.button === 0) invoke("rail_press", { x: e.clientX, y: e.clientY }); }}
       >
         <svg className="berth" width={railSize.w} height={railSize.h}>
-          <path d={berth} fill={settings.usesGlass ? "rgba(0,0,0,var(--glass-dim))" : "#000"} />
+          <path d={berth} fill={settings.usesGlass ? `rgba(0,0,0,${glassDim(settings.glassTransparency)})` : "#000"} />
         </svg>
         <div
           className="rings"
@@ -292,7 +298,7 @@ export function App() {
                   height: D.percentTextHeight,
                   lineHeight: `${D.percentTextHeight}px`,
                   color: isSpent(e.headline) ? PulseColor.exhausted : `rgba(255,255,255,${e.headline ? 1 : 0.4})`,
-                  opacity: refreshing.has(e.id) ? 0.4 : 1,
+                  opacity: refreshing.has(e.account) ? 0.4 : 1,
                 }}
               >
                 {e.headline ? percentText(e.headline, settings.showsRemaining) : "—"}
@@ -319,9 +325,9 @@ export function App() {
                     diameter={D.ringDiameter}
                     lineWidth={D.ringLineWidth}
                     scale={metrics.scale}
-                    isRefreshing={refreshing.has(e.id)}
+                    isRefreshing={refreshing.has(e.account)}
                     animatesActivity={settings.animatesActivity}
-                    chosenTint={settings.tints[e.id] ?? null}
+                    chosenTint={settings.tints[e.account] ?? null}
                     windowClockFraction={clock == null ? null : settings.clockRemaining ? 1 - clock : clock}
                     highlight={isSel}
                     secondFraction={second?.usedFraction ?? null}
@@ -358,6 +364,7 @@ export function App() {
               showsRemaining={settings.showsRemaining}
               warningAt={settings.warningAt}
               usesGlass={settings.usesGlass}
+              glassTransparency={settings.glassTransparency}
               detailed={selectedIsDetailed}
               showsSpend={selectedShowsSpend}
               onHeight={(h) => setCardHeight((old) => (old != null && Math.abs(old - h) < 0.5 ? old : h))}

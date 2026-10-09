@@ -17,6 +17,7 @@ pub mod budget;
 pub mod burn;
 pub mod calendar;
 pub mod elsewhere;
+pub mod dashboard;
 pub mod ledger;
 pub mod logio;
 pub mod loglines;
