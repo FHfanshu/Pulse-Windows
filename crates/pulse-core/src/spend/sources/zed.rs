@@ -2,11 +2,12 @@
 //! Zed's thread database, `threads.db`.
 //!
 //! Each row's `data` blob is a thread as JSON, or a zstd frame that decodes to the same JSON. A
-//! compressed row is decoded with the same `ruzstd` path as DSH (`dsh::jsonl_bytes`) and then parsed
+//! compressed row is decoded with the same bounded `zstd` decoder as DSH (`dsh::decode_zstd`) and then parsed
 //! exactly as the plain form is; a decoded payload over 32 MiB is refused either way. A row is
 //! compressed when its `data_type` says `zstd` **or** its bytes carry the zstd magic, so a mislabelled
 //! frame is still read; a `zstd`-labelled row whose bytes are not a frame contributes nothing.
-//! A corrupt frame contributes nothing; upstream also reports it as a note, which is not carried.
+//! A corrupt frame contributes nothing and marks the ledger as having read limitations (upstream
+//! reports it as a note).
 //! Plain JSON rows (`data_type = 'json'`) are read in full.
 //!
 //! Only threads whose `model.provider` is `zed.dev` count; a thread driven by an external ACP agent
@@ -25,7 +26,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
-use super::{clamped, dsh, flexible, flexible_text, SpendSource};
+use super::{clamped, dsh, flexible, flexible_text, SourceRead, SpendSource};
 use crate::spend::logio;
 use crate::spend::record::AgentUsageRecord;
 use crate::spend::sqlite;
@@ -58,7 +59,14 @@ impl SpendSource for Zed {
         ]
     }
     fn records(&self, roots: &[PathBuf]) -> Vec<AgentUsageRecord> {
-        logio::files(roots, &[], &["threads.db"], &[]).iter().flat_map(|file| read(file)).collect()
+        self.read_records(roots).records
+    }
+    fn read_records(&self, roots: &[PathBuf]) -> SourceRead {
+        let mut read_all = SourceRead::default();
+        for file in logio::files(roots, &[], &["threads.db"], &[]) {
+            read(&file, &mut read_all);
+        }
+        read_all
     }
 }
 
@@ -68,22 +76,28 @@ const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 /// The bound on a plain JSON blob, as upstream has it.
 const MAXIMUM_PAYLOAD: usize = 32 * 1024 * 1024;
 
-fn read(file: &Path) -> Vec<AgentUsageRecord> {
-    let Some(connection) = sqlite::open(file) else { return Vec::new() };
+fn read(file: &Path, out: &mut SourceRead) {
+    let Some(connection) = sqlite::open(file) else { return };
     if sqlite::columns(&connection, "threads").is_empty() {
-        return Vec::new();
+        return;
     }
     let sql = sqlite::select(
         &connection,
         "threads",
         &["id", "updated_at", "data_type", "data", "created_at", "folder_paths", "folder_paths_order"],
     );
-    let mut records = Vec::new();
     sqlite::each(&connection, &sql, |row| {
         let Some(id) = sqlite::text(row, 0) else { return };
         let Some(blob) = sqlite::blob(row, 3) else { return };
         let data_type = sqlite::text(row, 2).unwrap_or_default();
-        let Some(thread) = payload(&data_type, &blob) else { return };
+        let thread = match payload(&data_type, &blob) {
+            Ok(Some(thread)) => thread,
+            Ok(None) => return,
+            Err(Undecodable) => {
+                out.has_read_limitations = true;
+                return;
+            }
+        };
         let Some(thread) = thread.as_object() else { return };
 
         if thread.get("imported").and_then(Value::as_bool) == Some(true) {
@@ -105,28 +119,27 @@ fn read(file: &Path) -> Vec<AgentUsageRecord> {
         let mut record = AgentUsageRecord::new(at, name, tally).session(&id).aggregate(true);
         record.project = project(sqlite::text(row, 5).as_deref(), sqlite::text(row, 6).as_deref());
         record.deduplication_id = Some(format!("zed:{id}"));
-        records.push(record);
+        out.records.push(record);
     });
-    records
 }
 
+/// A compressed row whose frame did not decode.
+struct Undecodable;
+
 /// The thread's JSON. A compressed row (`zstd` by type or by magic) is decoded first and must be a
-/// real frame; a corrupt frame, or a payload over the bound, returns None. A plain row must be `json`.
-fn payload(data_type: &str, blob: &[u8]) -> Option<Value> {
+/// real frame; a corrupt frame, or a payload over the bound, is Undecodable. A plain row must be `json`.
+fn payload(data_type: &str, blob: &[u8]) -> Result<Option<Value>, Undecodable> {
     if data_type == "zstd" || blob.starts_with(&ZSTD_MAGIC) {
         if !blob.starts_with(&ZSTD_MAGIC) {
-            return None;
+            return Ok(None);
         }
-        let decoded = dsh::jsonl_bytes(blob.to_vec())?;
-        if decoded.len() > MAXIMUM_PAYLOAD {
-            return None;
-        }
-        return serde_json::from_slice(&decoded).ok();
+        let decoded = dsh::decode_zstd(blob).filter(|d| d.len() <= MAXIMUM_PAYLOAD).ok_or(Undecodable)?;
+        return Ok(serde_json::from_slice(&decoded).ok());
     }
     if data_type != "json" || blob.len() > MAXIMUM_PAYLOAD {
-        return None;
+        return Ok(None);
     }
-    serde_json::from_slice(blob).ok()
+    Ok(serde_json::from_slice(blob).ok())
 }
 
 /// `created_at`, else `updated_at`, else the payload's own `updated_at`.
@@ -308,6 +321,25 @@ mod tests {
         assert_eq!(ids, vec!["mislabelled".to_string(), "packed".to_string()]);
         let packed = run(home.path()).into_iter().find(|r| r.session_id.as_deref() == Some("packed")).unwrap();
         assert_eq!(packed.tally, TokenTally::new(150, 2, 5, 10));
+        assert!(
+            Zed.read_records(&Zed.inputs(&Sources::new(home.path()))).has_read_limitations,
+            "the corrupt frame is reported"
+        );
+    }
+
+    #[test]
+    fn readable_rows_report_no_read_limitations() {
+        let home = tempfile::tempdir().unwrap();
+        let body = thread("zed.dev", json!({}));
+        let sql = [
+            SCHEMA.to_string(),
+            row("plain", "json", &body, "2026-09-14T10:00:00Z", "", ""),
+            row("unframed", "zstd", &body, "2026-09-14T10:00:00Z", "", ""),
+        ];
+        database(&store(home.path()), &sql.iter().map(String::as_str).collect::<Vec<_>>());
+        let read = Zed.read_records(&Zed.inputs(&Sources::new(home.path())));
+        assert_eq!(read.records.len(), 1);
+        assert!(!read.has_read_limitations);
     }
 
     #[test]

@@ -455,3 +455,23 @@ fn a_skipped_partial_record_makes_nothing_partial_and_produces_no_usage() {
     assert!(!SpendSummary::of(&ledgers, Some(7), now(), &calendar()).has_partial_counts);
     assert!(!ModelSpendSummary::of(&ledgers, "Priced", Some(7), now(), &calendar()).has_partial_counts);
 }
+
+#[test]
+fn repeated_quarters_keep_day_and_session_totals_across_midnight_and_dst() {
+    let calendar = Calendar::with_zone(chrono_tz::America::New_York, 2);
+    let utc = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc);
+    let records = [
+        rec("priced", tally(1), utc("2026-11-01T03:59:00Z")).session("s"), // Oct 31 locally
+        rec("priced", tally(2), utc("2026-11-01T05:15:00Z")).session("s"), // first 01:15
+        rec("priced", tally(3), utc("2026-11-01T05:16:00Z")).session("s"), // same quarter
+        rec("priced", tally(4), utc("2026-11-01T06:15:00Z")).session("s"), // repeated 01:15
+    ];
+    let ledger = build_ledger(&records, &prices(), "openCode", None, &calendar, Origin::LocalTranscripts);
+    assert_eq!(ledger.all_time().tokens, 10);
+    assert_eq!(ledger.days.len(), 2);
+    assert_eq!(ledger.days[0].tokens, 1);
+    assert_eq!(ledger.days[1].tokens, 9);
+    assert_eq!(ledger.sessions[0].days.iter().map(|d| d.tokens).sum::<i64>(), 10);
+    assert_eq!(ledger.sessions[0].slots.iter().map(|s| s.tokens).sum::<i64>(), 10);
+    assert_eq!(ledger.slots.iter().map(|s| s.tokens).sum::<i64>(), 10);
+}
