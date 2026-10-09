@@ -117,7 +117,7 @@ Remove-Item Env:PULSE_MOCK
 ```powershell
 npm run build
 cargo test --workspace --all-targets --locked
-npm run tauri build -- --locked --target x86_64-pc-windows-msvc
+npm run tauri build -- --target x86_64-pc-windows-msvc -- --locked
 pwsh -File scripts/package-windows.ps1
 ```
 
