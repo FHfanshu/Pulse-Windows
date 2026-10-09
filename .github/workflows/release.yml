@@ -35,6 +35,8 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
       - name: Download tested build
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -50,12 +52,19 @@ jobs:
           $tag = "v$env:PULSE_VERSION"
           $notes = "docs/releases/$tag.md"
           if (-not (Test-Path -LiteralPath $notes)) { throw "Missing release notes: $notes" }
+          git show-ref --verify --quiet "refs/tags/$tag"
+          if ($LASTEXITCODE -eq 0) {
+            $tagCommit = git rev-list -n 1 $tag
+            if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $env:GITHUB_SHA) {
+              throw "Existing tag $tag points to different code; select that tag or use a new version"
+            }
+          } elseif ($LASTEXITCODE -ne 1) { throw 'Could not check existing release tag' }
           $json = gh release list --limit 100 --json tagName,isDraft
           if ($LASTEXITCODE -ne 0) { throw 'Could not list releases' }
           $existing = @($json | ConvertFrom-Json) | Where-Object tagName -EQ $tag
           if ($existing -and -not $existing.isDraft) { throw "Release $tag is already published; use a new version" }
           if ($existing) {
-            gh release edit $tag --title "Pulse for Windows $tag" --notes-file $notes
+            gh release edit $tag --target $env:GITHUB_SHA --title "Pulse for Windows $tag" --notes-file $notes
           } else {
             gh release create $tag --draft --target $env:GITHUB_SHA --title "Pulse for Windows $tag" --notes-file $notes
           }
