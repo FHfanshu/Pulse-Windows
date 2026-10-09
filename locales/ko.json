@@ -1020,5 +1020,7 @@
  "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.": "Kimi Open Platform 콘솔(국제판 또는 중국판)에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
  "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.": "요금제 이름과 숫자를 읽은 시각을 더하고, ‘토큰 사용량’을 켜면 이 PC의 최근 사용량도 표시합니다.",
  "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.": "인증 정보 파일에서 Claude Code의 로그인을, Claude 데스크탑의 사용량 기록을 읽습니다. 권한 요청은 없습니다.",
- "Uses a browser session you import in Settings.": "설정에서 가져온 브라우저 로그인 세션을 사용합니다."
+ "Uses a browser session you import in Settings.": "설정에서 가져온 브라우저 로그인 세션을 사용합니다.",
+ "Nothing has been logged on this PC yet, so there is no history to add up.": "이 PC에는 아직 로그가 없어 합산할 기록이 없습니다.",
+ "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.": "이 PC의 %@ 로그를 집계하고 models.dev에 공개된 API 요금으로 환산한 값입니다. 구독 요금제를 쓰고 있으므로, 같은 작업을 API로 했을 때의 비용이지 실제 청구액이 아닙니다."
 }

@@ -8,6 +8,7 @@ import { AccountsGroup } from "../account/AccountsGroup";
 import "../account/account.css";
 import { ConnectionGroup } from "../account/ConnectionGroup";
 import { LowBalanceRow } from "../account/ConnectionRows";
+import { AccountHistoryGroup, ServiceStatusGroup } from "../account";
 import { DiagnosticsGroup } from "../account/DiagnosticsGroup";
 import { EstimatedValueGroup } from "../account/EstimatedValueGroup";
 import { LiveUsageGroup } from "../account/LiveUsageGroup";
@@ -82,7 +83,7 @@ export function AccountPane({ id, settings, onNavigate }: {
         </>
       )}
 
-      {/* Upstream places the service status here. */}
+      {enabled && <ServiceStatusGroup id={id} provider={provider} settings={settings} />}
 
       {/* Its own group rather than a row under Connection, which is about credentials and routes. This is a
           notification, and the figure is per account: the providers that report a balance do not price in the same
@@ -100,7 +101,9 @@ export function AccountPane({ id, settings, onNavigate }: {
         <EstimatedValueGroup id={id} usage={usage} readsTokenSpend={settings.readsTokenSpend} />
       )}
 
-      {/* mount: history, status, starter, signals, console */}
+      {primary && <AccountHistoryGroup id={id} provider={provider} settings={settings} />}
+
+      {/* mount: starter, signals, console */}
     </div>
   );
 }

@@ -2,6 +2,8 @@
 
 mod account_ipc;
 mod dashboard;
+mod history_ipc;
+mod notifications_ipc;
 mod notify;
 mod panel;
 mod placement;
@@ -9,6 +11,7 @@ mod recap_ipc;
 mod shell;
 mod spend_ipc;
 mod state;
+mod status_ipc;
 mod store;
 mod tray_icon;
 mod win;
@@ -320,6 +323,10 @@ fn main() {
             recap_ipc::recap_report,
             recap_ipc::open_recap,
             open_settings,
+            history_ipc::account_history,
+            status_ipc::service_status,
+            status_ipc::open_status_page,
+            notifications_ipc::reports_spendable_balance,
             detect_providers,
             open_chooser,
             shell::shortcut_status,
@@ -342,6 +349,8 @@ fn main() {
             panel::start_sampler(handle.clone(), shared.clone());
             state::start_refresh_loop(handle.clone());
             spend_ipc::start_price_refresh();
+            status_ipc::start(&handle);
+            notifications_ipc::start(&handle);
 
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().expect("icon"))

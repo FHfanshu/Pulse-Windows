@@ -1020,5 +1020,7 @@
  "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.": "在 Kimi 開放平台主控台（國際站或中國站）取得。加密儲存在本機。",
  "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.": "加上方案名稱、數字的更新時間；開啟「Token 用量支出」後，還會顯示這台電腦 最近的用量。",
  "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.": "讀取 Claude Code 存在憑證檔案中的登入資訊，以及 Claude 桌面版的用量記錄。不會跳出授權提示。",
- "Uses a browser session you import in Settings.": "使用你在設定中匯入的瀏覽器登入資訊。"
+ "Uses a browser session you import in Settings.": "使用你在設定中匯入的瀏覽器登入資訊。",
+ "Nothing has been logged on this PC yet, so there is no history to add up.": "本機上還沒有紀錄，無從統計。",
+ "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.": "依本機的 %@ 紀錄統計，按 models.dev 公布的 API 價格換算。你用的是訂閱方案，這裡顯示的是同樣用量改走 API 要花的錢，並非實際扣款。"
 }
