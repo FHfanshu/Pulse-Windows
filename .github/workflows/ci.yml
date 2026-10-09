@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      expected-tag:
+        description: Optional release tag that must match the app version
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: Validated application version
+        value: ${{ jobs.windows.outputs.version }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  windows:
+    name: Windows x64 checks and packaging
+    runs-on: windows-2022
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate application version
+        id: version
+        env:
+          PULSE_RELEASE_TAG: ${{ inputs.expected-tag }}
+        run: node scripts/check-release-version.mjs
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Typecheck and build frontend
+        run: npm run build
+      - name: Test Rust workspace
+        run: cargo test --workspace --all-targets --locked
+      - name: Build Windows installer
+        run: npm run tauri build -- --locked --target x86_64-pc-windows-msvc
+      - name: Package distributables and checksums
+        run: ./scripts/package-windows.ps1
+      - name: Upload Windows build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pulse-windows-x64
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 14

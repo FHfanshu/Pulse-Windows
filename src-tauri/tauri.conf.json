@@ -18,6 +18,11 @@
   },
   "bundle": {
     "active": true,
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../NOTICE": "NOTICE",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
     "targets": [
       "nsis"
     ],
