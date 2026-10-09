@@ -128,6 +128,8 @@ pub fn start_watcher(app: AppHandle) {
         let shared = app.state::<SharedPanel>().inner().clone();
         let Some(window) = app.get_webview_window(panel::LABEL) else { continue };
 
+        panel::reconcile_display(&app, &shared);
+
         let panel_display = shared.lock().unwrap().monitor.as_ref().map(|m| m.name.clone());
         let covered = settings.hides_in_full_screen
             && panel_display.is_some()
