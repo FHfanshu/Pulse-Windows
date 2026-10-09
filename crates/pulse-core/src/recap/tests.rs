@@ -754,3 +754,35 @@ fn the_serialised_recap_leaves_a_missing_figure_out_rather_than_printing_a_zero(
     assert_eq!(json["agents"][0]["activeDates"], serde_json::json!(["2026-10-02"]));
     assert_eq!(json["agents"][0]["activeDays"], 1);
 }
+
+#[test]
+fn a_year_whose_records_begin_in_may_counts_from_may_not_january() {
+    let recap = build_with(
+        Period::Year(2026),
+        vec![(SpendAgent::ClaudeCode, ledger(vec![event(noon(2026, 5, 14), 100), event(noon(2026, 9, 2), 300)]))],
+        noon(2026, 10, 9),
+    );
+    assert_eq!(recap.records_begin, Some(date(2026, 5, 14)));
+    // January 1 to October 9 has been 282 days; May 14 to October 9, 149.
+    assert_eq!(recap.elapsed_days, 282);
+    assert_eq!(recap.observed_days(), 149);
+    assert!(recap.is_before_records(date(2026, 5, 13)));
+    assert!(!recap.is_before_records(date(2026, 5, 14)));
+
+    let insights = super::insights::RecapInsights::new(&recap);
+    assert!((0..4).all(|i| insights.is_month_before_records(i)));
+    assert!(!insights.is_month_before_records(4), "May holds the first record");
+    assert!(insights.is_month_unrecorded(11), "December is still to come");
+    let split = insights.work_split().unwrap();
+    assert_eq!(split.weekday_days + split.weekend_days, 149);
+
+    // The plan price runs from the first record too.
+    assert!((super::deck::paid_months(&recap) - 12.0 * 149.0 / 365.0).abs() < 1e-9);
+}
+
+#[test]
+fn records_reaching_back_before_the_period_leave_it_whole() {
+    let recap = october(vec![event(noon(2026, 9, 20), 100), event(noon(2026, 10, 2), 100)]);
+    assert_eq!(recap.records_begin, None);
+    assert_eq!(recap.observed_days(), recap.elapsed_days);
+}

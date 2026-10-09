@@ -64,7 +64,7 @@ export function CalendarCard({ deck }: { deck: Deck }) {
       </div>
       <Spacer min={24} />
       <V gap={12} align="stretch" style={{ flex: "none" }}>
-        <SectionHead title={F.monthYear(recap.start)} note={t("Darker days used more · grey is the weekend")} />
+        <SectionHead title={F.monthYear(recap.start)} note={t("Darker days used more · dashed days had none")} />
         <V gap={8} align="stretch">
           <H gap={8} equal>
             {F.weekdayHeadings().map((heading, i) => (
@@ -94,11 +94,10 @@ export function CalendarCard({ deck }: { deck: Deck }) {
   );
 }
 
-function Cell({ day, column, maximum, busiest, height }: { day: Day | null; column: number; maximum: number; busiest?: string; height: number }) {
+function Cell({ day, maximum, busiest, height }: { day: Day | null; column: number; maximum: number; busiest?: string; height: number }) {
   const box = { flex: "1 1 0", minWidth: 0, height } as const;
   if (!day) return <div style={box} />;
   const quiet = day.tokens === 0;
-  const weekend = column >= 5;
   // Only the one day the report names, not every tie.
   const isBusiest = !quiet && day.date === busiest;
   const foreground = isBusiest ? C.lime : quiet ? C.faint : C.ink;
@@ -111,8 +110,11 @@ function Cell({ day, column, maximum, busiest, height }: { day: Day | null; colu
         padding: "10px 8px 10px 12px",
         display: "flex",
         flexDirection: "column",
-        background: isBusiest ? C.ink : quiet ? (weekend ? C.heatZero : "transparent") : heatColor(day.tokens, maximum),
-        border: quiet && !weekend ? "1.5px dashed #D6D6CF" : undefined,
+        // Every day without work alike, weekend or not: a grey weekend beside a dashed weekday
+        // read as two different things, and the legend could name only one of them. The column
+        // headings already say which days are the weekend.
+        background: isBusiest ? C.ink : quiet ? "transparent" : heatColor(day.tokens, maximum),
+        border: quiet ? "1.5px dashed #D6D6CF" : undefined,
       }}
     >
       <T size={20} w={600} color={foreground} lines={1}>
@@ -216,8 +218,8 @@ function ActiveTile({ deck }: { deck: Deck }) {
   const recap = deck.recap;
   // A month's own days are the ring's segments; a year's are too many to draw, so its ring is a
   // fixed 36 in proportion.
-  const segments = deck.isYear ? 36 : Math.max(recap.elapsedDays, 1);
-  const share = recap.activeDays / Math.max(recap.elapsedDays, 1);
+  const segments = deck.isYear ? 36 : Math.max(recap.observedDays, 1);
+  const share = recap.activeDays / Math.max(recap.observedDays, 1);
   const filled = deck.isYear ? (recap.activeDays > 0 ? Math.max(Math.round(share * 36), 1) : 0) : recap.activeDays;
   return (
     <Tile>
@@ -232,7 +234,7 @@ function ActiveTile({ deck }: { deck: Deck }) {
               {String(recap.activeDays)}
             </T>
             <T size={22} color={C.tertiary} lines={1}>
-              {`/ ${recap.elapsedDays}`}
+              {`/ ${recap.observedDays}`}
             </T>
           </H>
         </V>
@@ -374,10 +376,13 @@ export function YearCalendarCard({ deck }: { deck: Deck }) {
         <CalendarHero deck={deck} numberSize={190} unitSize={92} />
       </div>
       <Spacer min={20} />
-      <SectionHead title={F.yearName(year)} note={t("Darker days used more")} />
+      <SectionHead
+        title={F.yearName(year)}
+        note={recap.recordsBegin ? t("Darker days used more · dashed days had none") : t("Darker days used more")}
+      />
       <div style={{ paddingTop: 20, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", columnGap: 30, rowGap: 18, alignItems: "start", flex: "none" }}>
         {starts.map((first) => (
-          <MonthBlock key={first} first={first} days={recap.days} maximum={maximum} />
+          <MonthBlock key={first} first={first} days={recap.days} maximum={maximum} recordsBegin={recap.recordsBegin} />
         ))}
       </div>
       <Spacer min={20} />
@@ -386,7 +391,7 @@ export function YearCalendarCard({ deck }: { deck: Deck }) {
   );
 }
 
-function MonthBlock({ first, days, maximum }: { first: string; days: Day[]; maximum: number }) {
+function MonthBlock({ first, days, maximum, recordsBegin }: { first: string; days: Day[]; maximum: number; recordsBegin?: string }) {
   const grid = monthGrid(first, days);
   const cell = 33;
   const gap = 5;
@@ -402,6 +407,10 @@ function MonthBlock({ first, days, maximum }: { first: string; days: Day[]; maxi
           <H key={row} gap={gap}>
             {Array.from({ length: 7 }, (_, column) => {
               const day = grid.cells[row * 7 + column];
+              if (day && recordsBegin && day.date < recordsBegin) {
+                // Not seen, so not a quiet grey day: the dashed outline the month calendar uses.
+                return <div key={column} style={{ width: cell, height: cell, flex: "none", borderRadius: 8, boxSizing: "border-box", border: `1.5px dashed ${C.rule}` }} />;
+              }
               return day ? (
                 <div key={column} style={{ width: cell, height: cell, flex: "none", borderRadius: 8, background: heatColor(day.tokens, maximum) }} />
               ) : (

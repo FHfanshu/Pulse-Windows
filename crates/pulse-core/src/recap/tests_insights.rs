@@ -73,6 +73,7 @@ fn recap_of(days: Vec<Day>, spec: Spec) -> Recap {
         busiest_day: None,
         currency: "USD".to_string(),
         is_partial: false,
+        records_begin: None,
         days,
     }
 }

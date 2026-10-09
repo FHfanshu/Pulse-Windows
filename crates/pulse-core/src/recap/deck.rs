@@ -64,8 +64,6 @@ impl Payback {
     }
 }
 
-/// The share of tokens without a price at which the payback card is dropped.
-pub const MAXIMUM_UNPRICED_SHARE: f64 = 0.01;
 /// The cache's saving worth saying: nothing below fifty cents, where "about $0.00" would be the
 /// sentence.
 pub const MINIMUM_SAVINGS: f64 = 0.5;
@@ -73,32 +71,41 @@ pub const MINIMUM_SAVINGS: f64 = 0.5;
 /// Months of subscription the period spans: one for a month, twelve for a year. A period still
 /// running is prorated by days (the days so far over the days in the month or the year), not by
 /// whole months started.
+///
+/// **Nor from before the first record.** The price is counted from `Recap::records_begin` when
+/// the records start inside the period, and the card says so: Pulse cannot know the plan was paid
+/// for months it saw no work in, and charging January for a year whose records begin in May
+/// shrank the multiple by a third.
 pub fn paid_months(recap: &Recap) -> f64 {
     let whole = if recap.period.is_year() { 12.0 } else { 1.0 };
-    if !recap.is_in_progress {
+    if !recap.is_in_progress && recap.records_begin.is_none() {
         return whole;
     }
     let total = recap.period.bounds().map_or(0, |(start, end)| (end - start).num_days());
     if total <= 0 {
         return whole;
     }
-    whole * (recap.elapsed_days as i64).min(total) as f64 / total as f64
+    whole * (recap.observed_days() as i64).min(total) as f64 / total as f64
 }
 
 /// The months a payback card divides a price by, or `None` when no price could give this recap a
-/// payback card: it needs a priced period, and one priced nearly whole (below one percent of its
-/// tokens unpriced).
+/// payback card: it needs a priced period.
+///
+/// **Unpriced work does not take the card away.** It once did, from 1% of the tokens, and a heavy
+/// month with a model nobody publishes a price for (swe-2-high was 1.2% of five billion tokens
+/// upstream) lost the card every month, with nothing on screen saying why. The money is then a
+/// floor, so the multiple is too: the card carries the floor note (`cost_is_floor`), and a floor
+/// never overstates what the plan returned.
 pub fn payback_months(recap: &Recap) -> Option<f64> {
     recap.cost.filter(|c| *c > 0.0)?;
-    if recap.tokens <= 0 || recap.unpriced_tokens as f64 / recap.tokens as f64 >= MAXIMUM_UNPRICED_SHARE {
+    if recap.tokens <= 0 {
         return None;
     }
     let months = paid_months(recap);
     (months > 0.0).then_some(months)
 }
 
-/// A payback needs a priced period, a price, and a period that is priced nearly whole. A price of
-/// nothing is not a subscription.
+/// A payback needs a priced period and a price. A price of nothing is not a subscription.
 pub fn payback(recap: &Recap, monthly_price: Option<f64>) -> Option<Payback> {
     let used = recap.cost.filter(|c| *c > 0.0)?;
     let price = monthly_price.filter(|p| *p > 0.0)?;
@@ -160,7 +167,7 @@ pub fn cost_series(recap: &Recap) -> Vec<f64> {
             .months
             .iter()
             .enumerate()
-            .filter(|(index, _)| !insights.is_month_to_come(*index))
+            .filter(|(index, _)| !insights.is_month_unrecorded(*index))
             .map(|(_, m)| (m.tokens, m.cost))
             .collect()
     } else {
@@ -235,9 +242,9 @@ pub fn score_bars(recap: &Recap) -> Vec<ScoreBar> {
             .iter()
             .enumerate()
             .map(|(index, month)| {
-                // A month that begins after today has not happened; a past month with nothing
-                // is quiet.
-                if insights.is_month_to_come(index) {
+                // A month that begins after today has not happened, and one that ended before
+                // the first record was not seen: neither is quiet. A past month with nothing is.
+                if insights.is_month_unrecorded(index) {
                     future
                 } else if month.tokens > 0 && maximum > 0 {
                     ScoreBar { slot: Slot::Active, fraction: month.tokens as f64 / maximum as f64, is_busiest: Some(index) == busiest }

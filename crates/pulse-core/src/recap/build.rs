@@ -71,6 +71,9 @@ pub fn build(
 
     let summary = SpendSummary::of_range(ledgers, start_at, end_at, now, calendar);
     let elapsed_days = summary.days.len();
+    // Only a first record inside the span moves anything: one before the start leaves the whole
+    // period observed.
+    let records_begin = super::periods::earliest(ledgers, calendar).filter(|first| *first > start && *first < end);
     let in_span = |at: DateTime<Utc>| at >= start_at && at < end_at;
 
     // The previous period, as long as this one has run.
@@ -247,6 +250,7 @@ pub fn build(
         previous_tokens,
         active_days: summary.active_days(),
         elapsed_days,
+        records_begin,
         sessions: summary.sessions.len(),
         days,
         months,

@@ -6,6 +6,7 @@ import { Deck, personaTitle } from "../deck";
 import * as F from "../format";
 import { C, FigureText, H, Hairline, Pill, SectionHead, Spacer, StoryPage, T, Tile, V } from "../kit";
 import { DayGlyph, DayKind } from "../marks";
+import { bandEnd, rhythmBand } from "../rhythm";
 
 export function TimetableCard({ deck }: { deck: Deck }) {
   const recap = deck.recap;
@@ -52,9 +53,10 @@ export function TimetableCard({ deck }: { deck: Deck }) {
 function Stats({ deck }: { deck: Deck }) {
   const recap = deck.recap;
   const first = recap.insights.firstHour;
+  const band = rhythmBand(recap);
   return (
     <V align="stretch" style={{ flex: "1 1 0", minWidth: 0 }}>
-      {first !== undefined ? <Stat label={t("Usually starts")} value={F.hourLabel(first)} note={t("The earliest hour of the day with any work")} /> : null}
+      {first !== undefined ? <Stat label={t("Earliest start")} value={F.hourLabel(first)} note={t("The earliest hour after 5 AM with any work")} /> : null}
       {recap.latestMinute !== undefined ? (
         <Stat
           label={t("Finishes latest")}
@@ -62,7 +64,7 @@ function Stats({ deck }: { deck: Deck }) {
           note={recap.lateNights > 0 ? F.Words.nightsPastMidnight(recap.lateNights) : null}
         />
       ) : null}
-      {recap.lateShare !== undefined ? <Stat label={t("9 PM to 5 AM")} value={F.percent(recap.lateShare)} note={t("of your usage fell in these hours")} /> : null}
+      {band ? <Stat label={t("%@ to %@", F.hourLabel(band.from), F.hourLabel(bandEnd(band)))} value={F.percent(band.share)} note={t("of your usage fell in these hours")} /> : null}
     </V>
   );
 }

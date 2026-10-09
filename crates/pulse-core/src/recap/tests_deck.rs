@@ -95,16 +95,13 @@ fn payback_divides_the_estimate_by_the_price() {
 }
 
 #[test]
-fn payback_is_left_out_when_1_percent_or_more_of_the_tokens_had_no_price_and_floor_noted_below_that() {
+fn unpriced_work_keeps_the_payback_card_with_the_floor_noted() {
     let with = |share| samples::month(MonthSpec { unpriced_share: share, ..MonthSpec::default() });
 
     let tenth = with(0.1);
-    assert!(deck::payback(&tenth, PRICE).is_none());
-    assert!(!cards(&tenth, PRICE).contains(&Card::Payback));
+    assert!(deck::payback(&tenth, PRICE).is_some());
+    assert!(cards(&tenth, PRICE).contains(&Card::Payback));
     assert!(deck::cost_is_floor(&tenth));
-
-    // 1% is not below 1%.
-    assert!(deck::payback(&with(0.01), PRICE).is_none());
 
     let sliver = with(0.004);
     assert!(deck::payback(&sliver, PRICE).is_some());
@@ -121,6 +118,10 @@ fn running(period: super::Period, now: DateTime<Utc>) -> Recap {
     let prices: PriceTable = HashMap::from([("claude".to_string(), ModelPrice::new(3.0, 15.0, Some(0.3), Some(3.75), Some("Claude")))]);
     let mut buckets: Buckets = HashMap::new();
     buckets.entry(slot_key(now, &calendar)).or_default().insert("claude".to_string(), TokenTally::new(1_000, 0, 0, 0));
+    // A record a year back as well, so the records reach before the period and these test the
+    // proration by days gone, not `records_begin`.
+    let year_back = now - chrono::Duration::days(366);
+    buckets.entry(slot_key(year_back, &calendar)).or_default().insert("claude".to_string(), TokenTally::new(1, 0, 0, 0));
     let ledger = price_buckets(&buckets, &prices, &calendar, None, &HashMap::new());
     super::build(period, &[(SpendAgent::ClaudeCode, ledger)].into_iter().collect(), &prices, now, &calendar).unwrap()
 }

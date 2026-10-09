@@ -168,7 +168,9 @@ impl<'a> RecapInsights<'a> {
             weekday_active: 0,
             weekend_active: 0,
         };
-        for day in &self.recap.days {
+        // Days before the first record were not seen, so they are not days the period "had" of
+        // either kind.
+        for day in self.recap.days.iter().filter(|d| !self.recap.is_before_records(d.date)) {
             let active = usize::from(day.tokens > 0);
             if is_weekend(weekday_index(day.date)) {
                 split.weekend_tokens += day.tokens;
@@ -374,7 +376,7 @@ impl<'a> RecapInsights<'a> {
                 .iter()
                 .enumerate()
                 .map(|(index, month)| {
-                    if self.is_month_to_come(index) {
+                    if self.is_month_unrecorded(index) {
                         None
                     } else {
                         Some(if month.tokens > 0 { month.cost.unwrap_or(0.0) } else { 0.0 })
@@ -395,8 +397,27 @@ impl<'a> RecapInsights<'a> {
         recap.month_starts().get(index).is_some_and(|start| *start > last)
     }
 
+    /// Whether month `index` of a year ended before this PC's first record: nothing was seen in
+    /// it, so it is not a quiet month either.
+    pub fn is_month_before_records(&self, index: usize) -> bool {
+        let recap = self.recap;
+        let (true, Some(begin)) = (recap.period.is_year(), recap.records_begin) else { return false };
+        recap
+            .month_starts()
+            .get(index)
+            .and_then(|start| start.checked_add_months(chrono::Months::new(1)))
+            .is_some_and(|next| next <= begin)
+    }
+
+    /// A month with nothing to show: still to come, or before the records.
+    pub fn is_month_unrecorded(&self, index: usize) -> bool {
+        self.is_month_to_come(index) || self.is_month_before_records(index)
+    }
+
+    /// Per month, whether it has nothing to show (the months card draws such a month as one to
+    /// come).
     pub fn months_to_come(&self) -> Vec<bool> {
-        (0..self.recap.months.len()).map(|i| self.is_month_to_come(i)).collect()
+        (0..self.recap.months.len()).map(|i| self.is_month_unrecorded(i)).collect()
     }
 
     // Who worked when.
@@ -429,7 +450,7 @@ impl<'a> RecapInsights<'a> {
             .iter()
             .enumerate()
             .map(|(index, month)| {
-                if self.is_month_to_come(index) {
+                if self.is_month_unrecorded(index) {
                     Mark::ToCome
                 } else if used.contains(&month.month) {
                     Mark::Used

@@ -194,6 +194,7 @@ pub fn month(spec: MonthSpec) -> Recap {
         busiest_day: busiest.cloned(),
         currency: "USD".to_string(),
         is_partial: false,
+        records_begin: None,
         days,
     }
 }
@@ -297,6 +298,7 @@ pub fn year(priced: bool, through_month: Option<u32>) -> Recap {
         busiest_day: busiest.cloned(),
         currency: "USD".to_string(),
         is_partial: false,
+        records_begin: None,
         days,
     }
 }
@@ -333,5 +335,6 @@ pub fn empty() -> Recap {
         busiest_day: None,
         currency: "USD".to_string(),
         is_partial: false,
+        records_begin: None,
     }
 }
