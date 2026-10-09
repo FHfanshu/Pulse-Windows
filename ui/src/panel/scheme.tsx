@@ -1,7 +1,7 @@
 // Ported from upstream Panel/PanelSurface.swift (PanelLight) and FloatingUsagePanelContent.swift
 // (`panelScheme`): the light panel (#74), a light solid surface with dark content.
 import { createContext, useContext, useId } from "react";
-import { GLASS_EDGE, glassDim } from "./glass";
+import { FrostedGlass } from "./glass";
 import type { Edge } from "./layout";
 
 /**
@@ -43,15 +43,11 @@ export function Surface(p: {
   screenEdge?: Edge | null;
 }) {
   const clip = useId();
-  if (p.usesGlass || !p.light) {
-    return (
-      <path
-        d={p.d}
-        fill={p.usesGlass ? `rgba(0,0,0,${glassDim(p.glassTransparency)})` : "#000"}
-        stroke={p.usesGlass ? GLASS_EDGE : "none"}
-        strokeWidth={1}
-      />
-    );
+  if (p.usesGlass) {
+    return <FrostedGlass d={p.d} width={p.width} height={p.height} transparency={p.glassTransparency} />;
+  }
+  if (!p.light) {
+    return <path d={p.d} fill="#000" />;
   }
   const w = PanelLight.edgeWidth;
   const keep = {
