@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 try {
     Copy-Item -LiteralPath $installer[0].FullName -Destination (Join-Path $output "Pulse_${version}_x64-setup.exe")
     Copy-Item -LiteralPath $executable -Destination (Join-Path $stage 'pulse.exe')
-    foreach ($name in @('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md')) {
+    foreach ($name in @('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_LICENSES.md')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot $name) -Destination (Join-Path $stage $name)
     }
     @"
