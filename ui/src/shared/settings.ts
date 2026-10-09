@@ -32,6 +32,7 @@ export interface AppSettings {
   usesRoundEnds: boolean;
   usesGlass: boolean;
   glassTransparency: number;
+  usesLightPanel: boolean;
   autoCollapse: boolean;
   detailedCards: string[];
   showsWindowClock: boolean;

@@ -43,9 +43,23 @@ export function AppearancePane({ settings }: { settings: AppSettings }) {
           disabled={off}
           onChange={(usesRoundEnds) => updateSettings({ usesRoundEnds })}
         />
+        {/* Always shown, and greyed out under glass rather than hidden: glass is always drawn dark,
+            and a row that vanishes is one nobody finds again. */}
+        <Row title={t("Panel colour")} subtitle={t("Light suits a bright screen. Not available with Liquid Glass.")} disabled={off || settings.usesGlass}>
+          <Segmented
+            label={t("Panel colour")}
+            disabled={off || settings.usesGlass}
+            value={settings.usesLightPanel ? "light" : "black"}
+            options={[
+              { value: "black", label: t("Black") },
+              { value: "light", label: t("Light") },
+            ]}
+            onChange={(choice) => updateSettings({ usesLightPanel: choice === "light" })}
+          />
+        </Row>
         <ToggleRow
           title="Liquid Glass"
-          subtitle="Clear glass that shows what is behind the panel, instead of solid black."
+          subtitle="Clear glass that shows what is behind the panel, instead of a solid surface."
           checked={settings.usesGlass}
           disabled={off}
           onChange={(usesGlass) => updateSettings({ usesGlass })}

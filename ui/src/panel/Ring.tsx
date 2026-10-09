@@ -2,6 +2,7 @@
 import { motion } from "motion/react";
 import { useId } from "react";
 import { ProviderIcon } from "./Icon";
+import { ink, useLightPanel } from "./scheme";
 import { spring, usageColor } from "./tint";
 
 const CENTRE_GAP = 4;
@@ -61,10 +62,11 @@ function Arc({ r, fraction, color, width, transition, opacity = 1 }: { r: number
 
 export function Ring(p: RingProps) {
   const id = useId().replace(/:/g, "");
+  const light = useLightPanel();
   const d = p.diameter;
   const r = d / 2;
   const spent = p.isSpent || (p.usedFraction ?? 0) >= 1;
-  const automatic = usageColor(p.usedFraction ?? 0, spent, p.warningAt);
+  const automatic = usageColor(p.usedFraction ?? 0, spent, p.warningAt, light);
   const arcColour = p.chosenTint && !spent ? p.chosenTint : automatic;
 
   let arcFraction = 0;
@@ -88,11 +90,11 @@ export function Ring(p: RingProps) {
     const used = Math.min(Math.max(p.secondFraction!, 0), 1);
     const sSpent = !!p.secondIsSpent || used >= 1;
     const shown = p.showsRemaining && !sSpent ? 1 - used : used;
-    const colour = (p.chosenTint && !sSpent ? p.chosenTint : null) ?? usageColor(used, sSpent, p.warningAt);
+    const colour = (p.chosenTint && !sSpent ? p.chosenTint : null) ?? usageColor(used, sSpent, p.warningAt, light);
     const sr = p.secondDiameter / 2;
     second = (
       <g>
-        <circle r={sr} fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth={p.secondLineWidth} />
+        <circle r={sr} fill="none" stroke={ink(light, 0.18)} strokeWidth={p.secondLineWidth} />
         <Arc r={sr} fraction={sSpent ? 1 : shown} color={colour} width={p.secondLineWidth} transition={{ duration: 0.35, ease: "easeOut" }} />
       </g>
     );
@@ -116,7 +118,7 @@ export function Ring(p: RingProps) {
           </mask>
         </defs>
 
-        <circle r={r} fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth={p.lineWidth} />
+        <circle r={r} fill="none" stroke={ink(light, 0.18)} strokeWidth={p.lineWidth} />
         <motion.g animate={{ opacity: refreshing ? 0.3 : 1 }} transition={{ duration: 0.2, ease: "easeOut" }} mask={`url(#mask-${id})`} filter={`url(#halo-${id})`}>
           <Arc r={r} fraction={arcFraction} color={arcColour} width={p.lineWidth} />
         </motion.g>
@@ -131,14 +133,14 @@ export function Ring(p: RingProps) {
 
         {p.isBusy && p.animatesActivity !== false && (
           <motion.g initial={{ rotate: 0 }} animate={{ rotate: 360 }} transition={{ duration: 1.0, ease: "linear", repeat: Infinity }}>
-            <Arc r={busyDiameter / 2} fraction={BUSY_SWEEP} color="rgba(255,255,255,1)" width={Math.max(p.lineWidth * 0.5, 1.5)} transition={{ duration: 0 }} />
+            <Arc r={busyDiameter / 2} fraction={BUSY_SWEEP} color={ink(light, 1)} width={Math.max(p.lineWidth * 0.5, 1.5)} transition={{ duration: 0 }} />
           </motion.g>
         )}
 
         {p.windowClockFraction != null && (
           <g>
-            <circle r={clockDiameter / 2} fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth={CLOCK_LINE_WIDTH * p.scale} />
-            <Arc r={clockDiameter / 2} fraction={p.windowClockFraction} color="rgba(255,255,255,0.7)" width={CLOCK_LINE_WIDTH * p.scale} transition={{ duration: 0.35, ease: "easeOut" }} />
+            <circle r={clockDiameter / 2} fill="none" stroke={ink(light, 0.16)} strokeWidth={CLOCK_LINE_WIDTH * p.scale} />
+            <Arc r={clockDiameter / 2} fraction={p.windowClockFraction} color={ink(light, 0.7)} width={CLOCK_LINE_WIDTH * p.scale} transition={{ duration: 0.35, ease: "easeOut" }} />
           </g>
         )}
       </svg>

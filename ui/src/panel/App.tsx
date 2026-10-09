@@ -11,10 +11,10 @@ import { readCardSpend, readPromptCache, resetCardLedgers, useCardSpendProviders
 import { providerNames } from "./Icon";
 import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelSizeScale, RailSpacingScale, type Edge, type PanelMetrics } from "./layout";
 import { Ring } from "./Ring";
-import { GLASS_EDGE, glassDim } from "./glass";
 import { railSlots } from "./slots";
 import { berthPath } from "./shapes";
-import { PulseColor, spring, usageColor } from "./tint";
+import { ink, LightPanel, Surface } from "./scheme";
+import { pulseColors, spring, usageColor } from "./tint";
 
 interface Rect { x: number; y: number; w: number; h: number }
 interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean }
@@ -43,6 +43,8 @@ export function App() {
     warningAt: (stored?.warningThreshold ?? 75) / 100,
     usesGlass: stored?.usesGlass ?? false,
     glassTransparency: stored?.glassTransparency ?? 0.5,
+    // Light only for the solid surface: glass is always drawn dark (upstream `panelScheme`).
+    light: (stored?.usesLightPanel ?? false) && !(stored?.usesGlass ?? false),
     autoCollapse: stored?.autoCollapse ?? false,
     dockShowsAlertColor: stored?.dockShowsAlertColor ?? true,
     showsSecondRing: stored?.showsSecondRing ?? false,
@@ -232,7 +234,7 @@ export function App() {
     let worst: ReturnType<typeof headlineWindow> = null;
     for (const e of entries) if (e.headline && (!worst || e.headline.usedFraction > worst.usedFraction)) worst = e.headline;
     if (!worst || !(worst.isExhausted || worst.usedFraction >= settings.warningAt)) return null;
-    return usageColor(worst.usedFraction, worst.isExhausted, settings.warningAt);
+    return usageColor(worst.usedFraction, worst.isExhausted, settings.warningAt, settings.light);
   }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
   void alert; // used by the collapsed sliver (auto-collapse), phase 1b
 
@@ -266,18 +268,22 @@ export function App() {
   const slide = vertical ? { x: 10 * direction } : { y: 10 * direction };
 
   return (
-    <div className="panel" onContextMenu={(e) => { e.preventDefault(); invoke("open_settings"); }}>
+    <LightPanel.Provider value={settings.light}>
+    <div className={`panel${settings.light ? " light" : ""}`} onContextMenu={(e) => { e.preventDefault(); invoke("open_settings"); }}>
       <div
         className="rail"
         style={{ left: rail.x, top: rail.y, width: railSize.w, height: railSize.h }}
         onPointerDown={(e) => { if (e.button === 0) invoke("rail_press", { x: e.clientX, y: e.clientY }); }}
       >
         <svg className="berth" width={railSize.w} height={railSize.h}>
-          <path
+          <Surface
             d={berth}
-            fill={settings.usesGlass ? `rgba(0,0,0,${glassDim(settings.glassTransparency)})` : "#000"}
-            stroke={settings.usesGlass ? GLASS_EDGE : "none"}
-            strokeWidth={1}
+            width={railSize.w}
+            height={railSize.h}
+            usesGlass={settings.usesGlass}
+            glassTransparency={settings.glassTransparency}
+            light={settings.light}
+            screenEdge={docked ? edge : null}
           />
         </svg>
         <div
@@ -301,7 +307,7 @@ export function App() {
                   fontSize: D.percentFontSize,
                   height: D.percentTextHeight,
                   lineHeight: `${D.percentTextHeight}px`,
-                  color: isSpent(e.headline) ? PulseColor.exhausted : `rgba(255,255,255,${e.headline ? 1 : 0.4})`,
+                  color: isSpent(e.headline) ? pulseColors(settings.light).exhausted : ink(settings.light, e.headline ? 1 : 0.4),
                   opacity: refreshing.has(e.account) ? 0.4 : 1,
                 }}
               >
@@ -378,5 +384,6 @@ export function App() {
       </AnimatePresence>
       <span hidden>{ringCentreAcross}</span>
     </div>
+    </LightPanel.Provider>
   );
 }

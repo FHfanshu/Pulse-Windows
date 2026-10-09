@@ -131,6 +131,9 @@ pub struct AppSettings {
     pub uses_round_ends: bool,
     pub uses_glass: bool,
     pub glass_transparency: f64,
+    /// A light solid surface with dark content, instead of black (upstream #74). Ignored while
+    /// `uses_glass` is on, and kept rather than cleared so turning glass off brings it back.
+    pub uses_light_panel: bool,
     pub auto_collapse: bool,
     pub detailed_cards: BTreeSet<String>,
 
@@ -219,6 +222,7 @@ impl Default for AppSettings {
             uses_round_ends: false,
             uses_glass: false,
             glass_transparency: 0.5,
+            uses_light_panel: false,
             auto_collapse: false,
             detailed_cards: BTreeSet::new(),
             shows_window_clock: false,
