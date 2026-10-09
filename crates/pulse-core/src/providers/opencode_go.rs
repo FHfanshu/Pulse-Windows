@@ -9,10 +9,11 @@
 //! `percent` is how much is gone (no inversion), `status` other than "ok"
 //! means spent, and the window the reply calls "rolling" is the five-hour one.
 //!
-//! TODO: the console routes are not ported: the cookie-session fallback
-//! (`/console/api/go/status` after resolving the workspace) and the request-log
-//! history (`OpenCodeConsole*.swift`). Only the console reply's parsing,
-//! `console_windows`, is here, ready for that route.
+//! **A third way in: the console's session** (`opencode_console`), signed in once from Settings.
+//! The console answers the same three limits at `GET /console/api/go/status`, in money rather than
+//! in percent. It is asked when there is no key at all, or when the key route turned the key away
+//! or did not answer, never instead of a key that works, so nobody who set one up is moved off it.
+//! The request-log history is `opencode_console`'s.
 
 use std::path::PathBuf;
 
@@ -21,7 +22,8 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::profile::{self, Fail};
-use crate::model::{AccountKey, ProviderUsage, Unavailability, UsageWindow, WindowKind};
+use super::opencode_console as console;
+use crate::model::{AccountKey, ProviderUsage, Unavailability, UsageRoute, UsageState, UsageWindow, WindowKind};
 use crate::provider::Provider;
 use crate::service::{FetchContext, UsageService};
 
@@ -37,14 +39,31 @@ impl UsageService for OpenCodeGo {
     }
 
     async fn fetch(&self, ctx: &FetchContext, account: &AccountKey) -> ProviderUsage {
-        // TODO: with no key, or one the service turned away, upstream asks the console session.
+        let cookie = ctx.secrets.get(&console::secret_id()).filter(|c| !c.trim().is_empty());
         let Some(key) = ctx.api_key(account).or_else(|| stored_key(ctx)) else {
-            return ProviderUsage::unavailable(account.clone(), Unavailability::ApiKeyMissing);
+            return match cookie {
+                Some(cookie) => fetch_console(ctx, account, &cookie).await,
+                None => ProviderUsage::unavailable(account.clone(), Unavailability::ApiKeyMissing),
+            };
         };
-        match profile::get_bearer(ctx, ENDPOINT, key.trim()).await {
+        let by_key = match profile::get_bearer(ctx, ENDPOINT, key.trim()).await {
             Ok(body) => reading(&body, ctx, account).unwrap_or_else(|reason| ProviderUsage::unavailable(account.clone(), reason)),
             Err(reason) => ProviderUsage::unavailable(account.clone(), reason),
+        };
+        // The console stands in only where the key could not answer. A reading the key did get,
+        // even one with no limits in it, stands.
+        if let (UsageState::Unavailable(reason), Some(cookie)) = (by_key.state, cookie) {
+            if matches!(
+                reason,
+                Unavailability::ApiKeyRefused | Unavailability::Unreachable | Unavailability::ServerError | Unavailability::UnreadableReply
+            ) {
+                let by_console = fetch_console(ctx, account, &cookie).await;
+                if by_console.state == UsageState::Live {
+                    return by_console;
+                }
+            }
         }
+        by_key
     }
 }
 
@@ -121,7 +140,63 @@ fn window(reported: Option<&Reported>, id: &str, kind: WindowKind, seconds: i64,
     Some(window)
 }
 
-// MARK: the console's reply (route not wired yet, see the module TODO)
+// MARK: the console
+
+const CONSOLE_STATUS: &str = "https://opencode.ai/console/api/go/status";
+
+/// The plan's limits from the console's session. The workspace is resolved first
+/// (`WorkspaceCache`), because every console route wants it in `x-org-id`.
+pub async fn fetch_console(ctx: &FetchContext, account: &AccountKey, cookie: &str) -> ProviderUsage {
+    let org = match console::WorkspaceCache::shared().resolve(&ctx.http, cookie).await {
+        console::Resolved::Workspace(workspace) => workspace.id,
+        console::Resolved::SignedOut => return ProviderUsage::unavailable(account.clone(), Unavailability::SessionExpired),
+        console::Resolved::Failed => return ProviderUsage::unavailable(account.clone(), Unavailability::ServerError),
+    };
+    let request = ctx
+        .http
+        .get(CONSOLE_STATUS)
+        .header("Cookie", cookie)
+        .header("x-org-id", org)
+        .header("Accept", "application/json");
+    let body = match profile::send(ctx, request, Unavailability::SessionExpired).await {
+        Ok(body) => body,
+        Err(reason) => return ProviderUsage::unavailable(account.clone(), reason),
+    };
+    console_reading(&body, ctx, account)
+}
+
+/// The console's reply as a reading; a sign-in page in place of JSON is a lapsed session.
+fn console_reading(body: &[u8], ctx: &FetchContext, account: &AccountKey) -> ProviderUsage {
+    let Ok(status) = serde_json::from_slice::<ConsoleStatus>(body) else {
+        let signed_out = body[..body.len().min(64)].contains(&b'<');
+        return ProviderUsage::unavailable(
+            account.clone(),
+            if signed_out { Unavailability::SessionExpired } else { Unavailability::UnreadableReply },
+        );
+    };
+    let windows = console_windows(&status);
+    if windows.is_empty() {
+        let reason = if status.access.is_none() { Unavailability::NoPlan } else { Unavailability::NoLimitsReported };
+        return ProviderUsage::unavailable(account.clone(), reason);
+    }
+    // The console names the product it bills; the key's reply names none.
+    profile::reading(account, windows, ctx)
+        .with_plan((status.product.as_deref() == Some("go")).then(|| "Go".to_string()))
+        .with_origin(UsageRoute::BrowserSession)
+}
+
+/// Whether a workspace holds a Go subscription, for choosing among several.
+pub async fn has_go_access(http: &reqwest::Client, cookie: &str, org: &str) -> bool {
+    let request = http.get(CONSOLE_STATUS).header("Cookie", cookie).header("x-org-id", org).timeout(std::time::Duration::from_secs(15));
+    let Ok(reply) = request.send().await else { return false };
+    if reply.status().as_u16() != 200 {
+        return false;
+    }
+    let Ok(bytes) = reply.bytes().await else { return false };
+    serde_json::from_slice::<ConsoleStatus>(&bytes).is_ok_and(|s| s.access.is_some())
+}
+
+// MARK: the console's reply
 
 /// The console's answer: three meters, each in micro-cents used against a limit.
 /// Only these fields are read; the reply also names the payment method and account.
@@ -294,6 +369,20 @@ mod tests {
         // The month starts with the billing period, which ends with it.
         assert!(w[2].reports_length);
         assert_eq!(w[2].window_seconds, 30 * 86_400);
+    }
+
+    #[test]
+    fn a_console_reading_names_the_plan_and_the_route_and_a_sign_in_page_is_a_lapsed_session() {
+        let ctx = context();
+        let account = AccountKey::primary(Provider::OpenCodeGo);
+        let json = br#"{"product":"go","access":{"meters":{"fiveHour":{"resetsAt":"2026-10-01T15:06:17.039Z","limitMicroCents":"100","usedMicroCents":"50"}}}}"#;
+        let usage = console_reading(json, &ctx, &account);
+        assert_eq!(usage.state, UsageState::Live);
+        assert_eq!(usage.plan.as_deref(), Some("Go"));
+        assert_eq!(usage.origin, Some(UsageRoute::BrowserSession));
+        assert_eq!(console_reading(b"<!doctype html>", &ctx, &account).state, UsageState::Unavailable(Unavailability::SessionExpired));
+        assert_eq!(console_reading(br#"{"product":null}"#, &ctx, &account).state, UsageState::Unavailable(Unavailability::NoPlan));
+        assert_eq!(console_reading(b"nonsense", &ctx, &account).state, UsageState::Unavailable(Unavailability::UnreadableReply));
     }
 
     #[test]

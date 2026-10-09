@@ -56,6 +56,9 @@ impl FetchContext {
     }
 }
 
+/// The HTTP client type, for crates that build requests by passing one around (the Tauri shell).
+pub use reqwest::Client as HttpClient;
+
 pub fn http_client(settings: &AppSettings) -> reqwest::Client {
     let mut builder = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))

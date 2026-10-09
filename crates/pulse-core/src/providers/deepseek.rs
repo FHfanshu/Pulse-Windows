@@ -7,8 +7,8 @@
 //! top-up (default), none at all, or a budget they typed. Every ring drawn this
 //! way carries an `Estimate` saying so.
 //!
-//! TODO: the web-console route (sign-in token, wallets, spend history) is not
-//! ported yet; the key route is the only one. The reader's preferred currency
+//! The web-console route (`deepseek_console`: sign-in token, wallets, spend history) answers the
+//! balance when there is no key or the key route could not. The reader's preferred currency
 //! (`deepSeekCurrency` upstream) has no settings field here, so the ring follows
 //! the first currency with money in it.
 
@@ -20,7 +20,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::profile;
-use crate::model::{AccountKey, CreditAmount, Estimate, ProviderUsage, Unavailability, UsageWindow, WindowKind};
+use crate::model::{AccountKey, CreditAmount, Estimate, ProviderUsage, Unavailability, UsageRoute, UsageState, UsageWindow, WindowKind};
 use crate::provider::Provider;
 use crate::service::{FetchContext, UsageService};
 
@@ -120,19 +120,67 @@ impl UsageService for DeepSeek {
     }
 
     async fn fetch(&self, ctx: &FetchContext, account: &AccountKey) -> ProviderUsage {
-        // TODO: with no key, upstream falls back to the console sign-in.
         let Some(key) = ctx.api_key(account) else {
-            return ProviderUsage::unavailable(account.clone(), Unavailability::ApiKeyMissing);
+            // No key: the console's sign-in is the only credential, if it is kept.
+            return match self.from_console(ctx, account).await {
+                ConsoleBalance::Read(usage) => usage,
+                // The sign-in has lapsed: say so, rather than asking for a key nobody needs.
+                ConsoleBalance::SignedOut => ProviderUsage::unavailable(account.clone(), Unavailability::SessionExpired),
+                ConsoleBalance::None => ProviderUsage::unavailable(account.clone(), Unavailability::ApiKeyMissing),
+            };
         };
-        let body = match profile::get_bearer(ctx, ENDPOINT, key.trim()).await {
-            Ok(body) => body,
-            Err(reason) => return ProviderUsage::unavailable(account.clone(), reason),
+        let keyed = match profile::get_bearer(ctx, ENDPOINT, key.trim()).await {
+            Ok(body) => match profile::decode::<Reply>(&body) {
+                Ok(reply) => self.reading(ctx, account, &reply),
+                Err(reason) => ProviderUsage::unavailable(account.clone(), reason),
+            },
+            Err(reason) => ProviderUsage::unavailable(account.clone(), reason),
         };
-        let reply: Reply = match profile::decode(&body) {
-            Ok(r) => r,
-            Err(reason) => return ProviderUsage::unavailable(account.clone(), reason),
+        // The console stands in only for a key route that did not answer.
+        if let UsageState::Unavailable(reason) = keyed.state {
+            if matches!(
+                reason,
+                Unavailability::ApiKeyRefused | Unavailability::Unreachable | Unavailability::ServerError | Unavailability::UnreadableReply
+            ) {
+                if let ConsoleBalance::Read(console) = self.from_console(ctx, account).await {
+                    return console;
+                }
+            }
+        }
+        keyed
+    }
+}
+
+enum ConsoleBalance {
+    Read(ProviderUsage),
+    SignedOut,
+    /// No console token kept, or the console did not answer: the key route's own reason is the one
+    /// worth showing then.
+    None,
+}
+
+impl DeepSeek {
+    /// The balance out of the console's wallets (`deepseek_console`), when its sign-in is kept.
+    async fn from_console(&self, ctx: &FetchContext, account: &AccountKey) -> ConsoleBalance {
+        let Some(token) = ctx.secrets.get(&super::deepseek_console::secret_id()).filter(|t| !t.trim().is_empty()) else {
+            return ConsoleBalance::None;
         };
-        let Some(purse) = purse_from(&reply, None) else {
+        match super::deepseek_console::balance(&ctx.http, token.trim()).await {
+            Ok(reply) => {
+                let usage = self.reading(ctx, account, &reply);
+                if usage.state != UsageState::Live {
+                    return ConsoleBalance::None;
+                }
+                ConsoleBalance::Read(usage.with_origin(UsageRoute::BrowserSession))
+            }
+            Err(super::deepseek_console::Failure::SignedOut) => ConsoleBalance::SignedOut,
+            Err(super::deepseek_console::Failure::Failed) => ConsoleBalance::None,
+        }
+    }
+
+    /// A reading from either route's reply, drawn by exactly the same rule.
+    fn reading(&self, ctx: &FetchContext, account: &AccountKey, reply: &Reply) -> ProviderUsage {
+        let Some(purse) = purse_from(reply, None) else {
             return ProviderUsage::unavailable(account.clone(), Unavailability::NoLimitsReported);
         };
 
@@ -150,18 +198,19 @@ impl UsageService for DeepSeek {
     }
 }
 
+/// The key route's reply, and the shape the console's wallets are turned into.
 #[derive(Deserialize)]
-struct Reply {
-    is_available: Option<bool>,
-    balance_infos: Option<Vec<Info>>,
+pub struct Reply {
+    pub is_available: Option<bool>,
+    pub balance_infos: Option<Vec<Info>>,
 }
 
 #[derive(Deserialize)]
-struct Info {
-    currency: Option<String>,
-    total_balance: Option<String>,
-    granted_balance: Option<String>,
-    topped_up_balance: Option<String>,
+pub struct Info {
+    pub currency: Option<String>,
+    pub total_balance: Option<String>,
+    pub granted_balance: Option<String>,
+    pub topped_up_balance: Option<String>,
 }
 
 /// One currency's money, strings turned into numbers.

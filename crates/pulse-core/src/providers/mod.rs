@@ -11,6 +11,7 @@ pub mod codex;
 pub mod copilot;
 pub mod cursor;
 pub mod deepseek;
+pub mod deepseek_console;
 pub mod factory;
 pub mod gemini;
 pub mod grok;
@@ -19,10 +20,13 @@ pub mod kiro;
 pub mod minimax;
 pub mod moonshot;
 pub mod openai_platform;
+pub mod opencode_console;
+pub mod opencode_console_history;
 pub mod opencode_go;
 pub mod warp;
 pub mod windsurf;
 pub mod zai;
+pub mod zai_history;
 
 use std::sync::Arc;
 

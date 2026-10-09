@@ -11,7 +11,7 @@
 //! The reply wraps its payload in an envelope of its own (`success`, `code`),
 //! so a refused key can arrive as HTTP 200 with `success: false`.
 //!
-//! TODO: token-history statistics (`/api/monitor/usage/model-usage`) are not ported.
+//! The token-history statistics (`/api/monitor/usage/model-usage`) are `zai_history`.
 
 use async_trait::async_trait;
 use serde::Deserialize;

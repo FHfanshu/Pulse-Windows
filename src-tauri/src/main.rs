@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod account_ipc;
+mod codex_signals_ipc;
+mod console_ipc;
 mod dashboard;
 mod history_ipc;
 mod notifications_ipc;
@@ -15,6 +17,7 @@ mod status_ipc;
 mod store;
 mod tray_icon;
 mod win;
+mod window_starter_ipc;
 
 use std::sync::{Arc, Mutex};
 
@@ -63,6 +66,7 @@ fn update_settings(app: AppHandle, state: State<AppState>, patch: serde_json::Va
     shell::apply(&app, Some(&previous));
     dashboard::sync(&app, Some(&previous));
     notify::reconsider(&app, &previous);
+    window_starter_ipc::poke();
     let _ = app.emit("settings-changed", &settings);
     state::emit_usage(&app);
     if refetch {
@@ -317,6 +321,11 @@ fn main() {
             account_ipc::estimated_value,
             account_ipc::installed_browsers,
             account_ipc::open_external,
+            codex_signals_ipc::codex_signals,
+            console_ipc::console_session,
+            console_ipc::console_read,
+            console_ipc::console_remove,
+            console_ipc::provider_history,
             spend_ipc::spend_overview,
             spend_ipc::card_spend,
             spend_ipc::prompt_cache,
@@ -351,6 +360,7 @@ fn main() {
             spend_ipc::start_price_refresh();
             status_ipc::start(&handle);
             notifications_ipc::start(&handle);
+            window_starter_ipc::start(&handle);
 
             TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().cloned().expect("icon"))
