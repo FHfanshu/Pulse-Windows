@@ -183,3 +183,62 @@ fn an_unreadable_archive_is_neither_used_nor_overwritten() {
     assert_eq!(AgentArchive::load(agent, dir.path()), None);
     assert!(!AgentArchive::keeps(SpendAgent::from_raw("devinDesktop").unwrap()));
 }
+
+
+#[test]
+fn a_failed_archive_write_keeps_the_previous_cache_for_a_retry() {
+    let home = tempfile::tempdir().unwrap();
+    let store = home.path().join(".workbuddy/projects");
+    let cache_dir = home.path().join("cache");
+    let agent = SpendAgent::from_raw("workBuddy").unwrap();
+    let day = 1_780_000_000_000;
+    write(&store.join("s1.jsonl"), &buddy("m1", "s1", day, 1_000));
+    write(&store.join("s2.jsonl"), &buddy("m2", "s2", day + 86_400_000, 400));
+    let before = workbuddy(home.path());
+    // Model first use after upgrade: a pre-existing cache, but no archive yet.
+    std::fs::remove_file(cache_dir.join(AgentArchive::file_name(agent))).unwrap();
+    // The archive's temporary output cannot be written; the live cache remains writable.
+    let blocker = cache_dir.join(AgentArchive::file_name(agent)).with_extension(format!("tmp-{}", std::process::id()));
+    std::fs::create_dir(&blocker).unwrap();
+    std::fs::remove_file(store.join("s1.jsonl")).unwrap();
+    assert_eq!(workbuddy(home.path()).all_time().tokens, before.all_time().tokens);
+    std::fs::remove_dir(&blocker).unwrap();
+    assert_eq!(workbuddy(home.path()).all_time().tokens, before.all_time().tokens,
+        "A failed archive write must leave the previous cache available for retry");
+}
+
+#[test]
+fn a_partial_cached_read_raises_no_marks() {
+    let home = tempfile::tempdir().unwrap();
+    let store = home.path().join(".workbuddy/projects");
+    let path = store.join("s1.jsonl");
+    let day = 1_780_000_000_000;
+    write(&path, &buddy("m1", "s1", day, 1_000));
+    let agent = SpendAgent::from_raw("workBuddy").unwrap();
+    let mut partial = ledger(&[record("s1", "m1", start(), 1_000)]);
+    partial.has_read_limitations = true;
+    let roots: Vec<_> = agent.source().inputs(&Sources::new(home.path())).into_iter().filter(|p| p.exists()).collect();
+    let cache_dir = home.path().join("cache");
+    agent_cache::save(agent, &cache_dir, &agent_cache::Stamp::of(&roots, &prices()), &partial);
+    let shown = workbuddy(home.path());
+    assert!(shown.has_read_limitations);
+    let archive = AgentArchive::load(agent, &cache_dir).unwrap();
+    assert_eq!(archive, AgentArchive::default(), "Incomplete cached reads must not create permanent high-water marks");
+}
+
+
+#[test]
+fn a_removed_store_root_still_shows_its_archived_history() {
+    let home = tempfile::tempdir().unwrap();
+    let root = home.path().join(".workbuddy");
+    let store = root.join("projects");
+    let path = store.join("s1.jsonl");
+    write(&path, &buddy("m1", "s1", 1_780_000_000_000, 1_000));
+    let before = workbuddy(home.path());
+    assert_eq!(before.all_time().tokens, 1200);
+    std::fs::remove_file(&path).unwrap();
+    std::fs::remove_dir(&store).unwrap();
+    std::fs::remove_dir(&root).unwrap();
+    assert_eq!(workbuddy(home.path()).all_time().tokens, before.all_time().tokens,
+        "Deleting the last store directory must not hide the durable archive");
+}

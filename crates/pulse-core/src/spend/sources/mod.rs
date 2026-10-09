@@ -344,14 +344,21 @@ pub fn read_agent(agent: SpendAgent, sources: &Sources, cache_directory: &Path, 
 
     let existing = |sources: &Sources| -> Vec<PathBuf> { source.inputs(sources).into_iter().filter(|p| p.exists()).collect() };
     let roots = existing(sources);
+    let saved = agent_cache::load(agent, cache_directory);
+    // Only a ledger that decoded in full may raise the marks, whether it was just read or cached.
+    let complete = |ledger: &Ledger| !ledger.has_read_limitations;
+    let previous = saved.as_ref().map(|(_, l)| l).filter(|l| complete(l));
     if roots.is_empty() {
-        return Ledger::empty();
+        // The whole store was removed: nothing is live, but what the last full read held and the
+        // marks already kept are still history. The stale cache is left; it is never served
+        // while there is nothing to stamp.
+        let (shown, _) = kept(agent, &Ledger::empty(), previous, true, cache_directory, calendar, prices);
+        return shown;
     }
     let before = Stamp::of(&roots, prices);
-    let saved = agent_cache::load(agent, cache_directory);
     if let Some((stamp, ledger)) = &saved {
         if *stamp == before {
-            return kept(agent, ledger, None, true, cache_directory, calendar, prices);
+            return kept(agent, ledger, None, complete(ledger), cache_directory, calendar, prices).0;
         }
     }
 
@@ -361,20 +368,22 @@ pub fn read_agent(agent: SpendAgent, sources: &Sources, cache_directory: &Path, 
     ledger.has_read_limitations = read.has_read_limitations;
     ledger.reports_cache_reads = source.reports_cache_reads();
 
-    let unchanged = Stamp::of(&existing(sources), prices) == before;
-    if unchanged {
-        agent_cache::save(agent, cache_directory, &before, &ledger);
-    }
     // Only a read of a store that held still, and that decoded in full, may raise the marks. The
     // cache this read replaces was itself such a read: what it held and this one does not is
     // what the store has deleted since.
-    let stable = unchanged && !read.has_read_limitations;
-    kept(agent, &ledger, saved.as_ref().map(|(_, l)| l), stable, cache_directory, calendar, prices)
+    let unchanged = Stamp::of(&existing(sources), prices) == before;
+    let (shown, archived) = kept(agent, &ledger, previous, unchanged && complete(&ledger), cache_directory, calendar, prices);
+    // The archive is written before the cache moves on: if the marks could not be saved, the old
+    // cache is still what the next read compares against, so nothing deleted is lost.
+    if unchanged && archived {
+        agent_cache::save(agent, cache_directory, &before, &ledger);
+    }
+    shown
 }
 
 /// A live ledger with the agent's kept history added in, after a stable read has raised the
-/// marks ([`AgentArchive`]). An archive that cannot be read leaves the ledger as read and is not
-/// written over.
+/// marks ([`AgentArchive`]), and whether the marks are safely on disk. An archive that cannot be
+/// read leaves the ledger as read and is not written over.
 fn kept(
     agent: SpendAgent,
     live: &Ledger,
@@ -383,15 +392,13 @@ fn kept(
     directory: &Path,
     calendar: &Calendar,
     prices: &PriceTable,
-) -> Ledger {
+) -> (Ledger, bool) {
     if !AgentArchive::keeps(agent) {
-        return live.clone();
+        return (live.clone(), true);
     }
-    let Some(mut archive) = AgentArchive::load(agent, directory) else { return live.clone() };
-    if stable && archive.absorb(live, previous, calendar) {
-        archive.save(agent, directory);
-    }
-    archive.merged(live, prices, agent.source().price_vendor(), calendar)
+    let Some(mut archive) = AgentArchive::load(agent, directory) else { return (live.clone(), false) };
+    let archived = !(stable && archive.absorb(live, previous, calendar)) || archive.save(agent, directory);
+    (archive.merged(live, prices, agent.source().price_vendor(), calendar), archived)
 }
 
 /// [`read_agent`] with the data folder, the local calendar and the price table on disk, stamped
