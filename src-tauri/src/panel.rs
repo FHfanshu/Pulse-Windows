@@ -111,7 +111,7 @@ pub fn start_sampler(app: AppHandle, shared: SharedPanel) {
 /// One sampler pass. Returns whether the pointer is over or near the window.
 fn tick(app: &AppHandle, shared: &SharedPanel) -> bool {
     let Some(window) = app.get_webview_window(LABEL) else { return false };
-    if !window.is_visible().unwrap_or(false) {
+    if !win::is_visible(&window) {
         return false;
     }
     let Some(cursor) = win::cursor_pos() else { return false };

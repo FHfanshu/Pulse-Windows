@@ -1,6 +1,8 @@
 //! Thin Win32 helpers for the panel window. Everything geometric is converted
 //! to DIPs here and nowhere else.
 
+use std::sync::OnceLock;
+
 use tauri::WebviewWindow;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
@@ -10,7 +12,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW, SetWindowPos,
+    GetCursorPos, GetSystemMetrics, IsWindowVisible, GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW, SetWindowPos,
     GWL_EXSTYLE, HWND_TOPMOST, SM_SWAPBUTTON, SWP_NOACTIVATE, SWP_NOZORDER, WS_EX_APPWINDOW, WS_EX_LAYERED,
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
@@ -43,8 +45,26 @@ impl MonitorInfo {
     }
 }
 
+/// The panel's HWND, read once on the main thread. `WebviewWindow::hwnd()` is a
+/// getter that round-trips through the main thread, so calling it from the
+/// sampler while a command on the main thread waits for the panel lock deadlocks.
+static PANEL_HWND: OnceLock<isize> = OnceLock::new();
+
 fn hwnd(window: &WebviewWindow) -> Option<HWND> {
+    if window.label() == crate::panel::LABEL {
+        if let Some(h) = PANEL_HWND.get() {
+            return Some(HWND(*h as _));
+        }
+        let h = window.hwnd().ok()?.0 as isize;
+        let _ = PANEL_HWND.set(h);
+        return Some(HWND(h as _));
+    }
     window.hwnd().ok().map(|h| HWND(h.0 as _))
+}
+
+/// Whether the window is shown, straight from Win32 (no main-thread round trip).
+pub fn is_visible(window: &WebviewWindow) -> bool {
+    hwnd(window).is_some_and(|h| unsafe { IsWindowVisible(h).as_bool() })
 }
 
 pub fn make_panel_window(window: &WebviewWindow) {
