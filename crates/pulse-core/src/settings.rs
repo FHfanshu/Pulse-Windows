@@ -117,6 +117,9 @@ pub struct AppSettings {
     pub toggle_panel_shortcut: Option<GlobalShortcut>,
     pub language: AppLanguage,
     pub launch_at_login: bool,
+    /// "Check automatically" (About): every two hours; updates are offered, never installed on
+    /// their own. Upstream keeps this in Sparkle (`SUEnableAutomaticChecks`, on by default).
+    pub checks_updates_automatically: bool,
 
     // Panel
     pub is_panel_visible: bool,
@@ -212,6 +215,7 @@ impl Default for AppSettings {
             toggle_panel_shortcut: None,
             language: AppLanguage::System,
             launch_at_login: true,
+            checks_updates_automatically: true,
             is_panel_visible: true,
             hides_in_full_screen: true,
             follows_active_display: false,
@@ -311,6 +315,15 @@ mod tests {
         assert_eq!(s.panel_size, PanelSize::Large);
         assert!(s.side_rail_shows_percentages);
         assert_eq!(s.warning_threshold, 75);
+    }
+
+    #[test]
+    fn automatic_update_checks_are_on_unless_switched_off() {
+        assert!(AppSettings::default().checks_updates_automatically);
+        let s: AppSettings = serde_json::from_str(r#"{"panelSize":"large"}"#).unwrap();
+        assert!(s.checks_updates_automatically, "a file from before the switch existed keeps the default");
+        let s: AppSettings = serde_json::from_str(r#"{"checksUpdatesAutomatically":false}"#).unwrap();
+        assert!(!s.checks_updates_automatically);
     }
 
     #[test]

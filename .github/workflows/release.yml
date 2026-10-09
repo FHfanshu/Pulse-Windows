@@ -6,10 +6,10 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag matching the checked-out app version (for example v0.1.0)
+        description: Release tag matching the checked-out app version (for example v0.1.1)
         required: true
         type: string
-        default: v0.1.0
+        default: v0.1.1
 
 permissions:
   contents: read
@@ -23,6 +23,8 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       expected-tag: ${{ inputs.tag || github.ref_name }}
+      sign-updates: true
+    secrets: inherit
   draft:
     name: Upload draft release
     needs: build
@@ -70,6 +72,7 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw 'Could not prepare draft release' }
           $assets = @(Get-ChildItem -LiteralPath release-artifacts -File | ForEach-Object FullName)
-          if ($assets.Count -lt 3) { throw 'Release assets are incomplete' }
+          # Installer, its signature, the update feed, the ZIP and the checksums.
+          if ($assets.Count -lt 5) { throw 'Release assets are incomplete' }
           gh release upload $tag @assets --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Could not upload release assets' }

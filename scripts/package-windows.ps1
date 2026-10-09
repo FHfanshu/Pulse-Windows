@@ -1,4 +1,7 @@
 # Run from the repository root after the x64 Tauri build.
+# -RequireUpdaterArtifacts: a release build, which must also carry the installer's signature and the
+# update feed (latest.json) the in-app updater reads.
+param([switch]$RequireUpdaterArtifacts)
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content -LiteralPath (Join-Path $repoRoot 'src-tauri/tauri.conf.json') -Raw | ConvertFrom-Json).version
@@ -12,7 +15,16 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("pulse-package-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $stage | Out-Null
 try {
-    Copy-Item -LiteralPath $installer[0].FullName -Destination (Join-Path $output "Pulse_${version}_x64-setup.exe")
+    $setupName = "Pulse_${version}_x64-setup.exe"
+    Copy-Item -LiteralPath $installer[0].FullName -Destination (Join-Path $output $setupName)
+    $signature = "$($installer[0].FullName).sig"
+    if (Test-Path -LiteralPath $signature) {
+        Copy-Item -LiteralPath $signature -Destination (Join-Path $output "$setupName.sig")
+        node (Join-Path $repoRoot 'scripts/make-latest-json.mjs') (Join-Path $output $setupName) (Join-Path $output "$setupName.sig") (Join-Path $output 'latest.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Could not write latest.json' }
+    } elseif ($RequireUpdaterArtifacts) {
+        throw "Missing updater signature: $signature (is TAURI_SIGNING_PRIVATE_KEY set?)"
+    }
     Copy-Item -LiteralPath $executable -Destination (Join-Path $stage 'pulse.exe')
     foreach ($name in @('LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_LICENSES.md')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot $name) -Destination (Join-Path $stage $name)

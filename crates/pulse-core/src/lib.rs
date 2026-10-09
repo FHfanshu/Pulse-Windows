@@ -9,6 +9,7 @@ pub mod codex_signals;
 pub mod discovery;
 pub mod i18n;
 pub mod history;
+pub mod login_item;
 pub mod mock;
 pub mod model;
 pub mod outage;
@@ -25,6 +26,7 @@ pub mod status;
 pub mod statusline;
 pub mod store;
 pub mod tray;
+pub mod update;
 pub mod window_starter;
 
 pub use model::*;

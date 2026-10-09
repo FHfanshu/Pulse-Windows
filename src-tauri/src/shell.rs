@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use pulse_core::i18n;
+use pulse_core::login_item::{self, Plan};
 use pulse_core::settings::AppSettings;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::{AppHandle, Emitter, Manager, Wry};
@@ -22,6 +23,7 @@ pub const CHOOSE: &str = "choose";
 pub const REFRESH: &str = "refresh";
 pub const TOGGLE_PANEL: &str = "panel";
 pub const SETTINGS: &str = "settings";
+pub const UPDATE: &str = "update";
 pub const QUIT: &str = "quit";
 
 /// A full-screen window covers the panel's display (and the setting says to hide there).
@@ -38,7 +40,9 @@ pub fn apply(app: &AppHandle, previous: Option<&AppSettings>) {
         apply_shortcuts(app, &settings);
     }
     if previous.is_none_or(|p| p.launch_at_login != settings.launch_at_login) {
-        apply_login_item(settings.launch_at_login);
+        // At launch Windows' Startup apps toggle may switch the setting off; a switch the user has
+        // just flipped is theirs.
+        apply_login_item(app, previous.is_none());
     }
 
     // Upstream `restoreMenuBarEntryPointIfNeeded`: hiding the tray icon must
@@ -77,16 +81,49 @@ pub fn shortcut_status(app: AppHandle) -> serde_json::Value {
 // Start at login
 // ---------------------------------------------------------------------------
 
-fn apply_login_item(enabled: bool) {
-    // A development build must not put itself in the Run key.
+/// Bring the Run value in line with the setting (decisions: `pulse_core::login_item::plan`).
+///
+/// An installed build only: a development build must never put itself in the Run key or take the
+/// installed one's place. `follow_windows` is whether Windows' own Startup toggle may switch the
+/// setting off (at launch, and when Settings > General is opened), as opposed to the user having
+/// just flipped the setting in Pulse.
+fn apply_login_item(app: &AppHandle, follow_windows: bool) {
     if cfg!(debug_assertions) {
         return;
     }
+    let state = app.state::<AppState>();
+    let settings = state.settings();
     let Ok(exe) = std::env::current_exe() else { return };
-    let wanted = enabled.then(|| win::login_item::command(&exe));
-    if win::login_item::current() != wanted {
-        win::login_item::set(enabled, &exe);
+    let wanted = login_item::command(&exe);
+
+    let mut disabled = login_item::startup_disabled(win::login_item::startup_approved().as_deref());
+    if settings.launch_at_login && disabled && !follow_windows {
+        // The user has just switched Pulse on here after switching it off in Windows.
+        win::login_item::clear_startup_approved();
+        disabled = false;
     }
+    let current = win::login_item::current();
+    match login_item::plan(settings.launch_at_login, current.as_deref(), &wanted, disabled, follow_windows) {
+        Plan::Nothing => {}
+        Plan::Write => {
+            win::login_item::write(&wanted);
+            // A record left from an earlier "off" would keep the new value off.
+            win::login_item::clear_startup_approved();
+        }
+        Plan::Remove => win::login_item::remove(),
+        Plan::SwitchOff => {
+            let mut off = (*settings).clone();
+            off.launch_at_login = false;
+            state.save_settings(off);
+            let _ = app.emit("settings-changed", &*state.settings());
+        }
+    }
+}
+
+/// Settings > General opening: has the user switched Pulse off in Windows since it started?
+#[tauri::command]
+pub fn sync_login_item(app: AppHandle) {
+    apply_login_item(&app, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +260,14 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     if settings.needs_provider_selection() {
         menu.append(&MenuItem::with_id(app, CHOOSE, t("Choose services to start monitoring…"), true, None::<&str>)?)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
-    } else {
+    }
+    // Upstream: "Pulse X is available", after the choice of services. Windows difference: it opens
+    // Settings > About, where "Update to X" is, instead of Sparkle's window.
+    if let Some(newer) = crate::update_ipc::newer_version(app) {
+        menu.append(&MenuItem::with_id(app, UPDATE, i18n::t(lang, "Pulse %@ is available", &[&newer]), true, None::<&str>)?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
+    if !settings.needs_provider_selection() {
         menu.append(&MenuItem::with_id(app, REFRESH, t("Refresh"), true, None::<&str>)?)?;
         menu.append(&PredefinedMenuItem::separator(app)?)?;
         menu.append(&CheckMenuItem::with_id(
@@ -244,6 +288,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 pub fn on_menu_event(app: &AppHandle, id: &str) {
     match id {
         SETTINGS => crate::show_settings(app, None),
+        UPDATE => crate::show_settings(app, Some("about".into())),
         CHOOSE => crate::show_chooser(app),
         REFRESH => app.state::<AppState>().wake.notify_one(),
         TOGGLE_PANEL => toggle_panel_setting(app),

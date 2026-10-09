@@ -20,6 +20,7 @@ export interface AppSettings {
   togglePanelShortcut: { accelerator: string } | null;
   language: AppLanguage;
   launchAtLogin: boolean;
+  checksUpdatesAutomatically: boolean;
   isPanelVisible: boolean;
   hidesInFullScreen: boolean;
   followsActiveDisplay: boolean;

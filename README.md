@@ -21,7 +21,7 @@ A Windows desktop monitor for AI coding plan limits, token usage and estimated s
 
 Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Windows 移植版。使用多个 AI 编程工具时，你可以通过常驻屏幕边缘的额度圆环，查看各账号已用比例；悬停打开详情卡片，查看不同额度窗口、重置时间、余额及可用的本地消耗记录。
 
-项目使用 **Rust + Tauri 2 + React + TypeScript**，保留上游的交互与视觉思路，接入 Windows 托盘、窗口管理和凭据加密。目前版本为 **0.1.0**，仍在持续完善；各服务的可用信息取决于账号权限、认证方式和服务接口。
+项目使用 **Rust + Tauri 2 + React + TypeScript**，保留上游的交互与视觉思路，接入 Windows 托盘、窗口管理和凭据加密。目前版本为 **0.1.1**，仍在持续完善；各服务的可用信息取决于账号权限、认证方式和服务接口。
 
 ## 功能
 
@@ -80,7 +80,7 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 当前流水线生成未签名的 Windows 安装包，系统可能显示 SmartScreen 提示。每次构建附带 `SHA256SUMS.txt`，可用 PowerShell 核对文件：
 
 ```powershell
-Get-FileHash .\Pulse_0.1.0_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Pulse_0.1.1_x64-setup.exe -Algorithm SHA256
 ```
 
 ### 数据与隐私
@@ -130,11 +130,11 @@ pwsh -File scripts/package-windows.ps1
 | 流程 | 触发条件 | 检查与产物 |
 | --- | --- | --- |
 | [CI](.github/workflows/ci.yml) | 推送到 `main`、Pull Request、手动运行 | 验证版本一致性 → `npm ci` → TypeScript / Vite 构建 → Rust workspace 测试 → Windows x64 NSIS 安装包与免安装包 → SHA-256 → 上传 artifact |
-| [Release](.github/workflows/release.yml) | 推送 `v*` 标签、手动运行 | 复用相同 CI 检查与打包流程，成功后创建或更新 Release 草稿并上传全部发行文件 |
+| [Release](.github/workflows/release.yml) | 推送 `v*` 标签、手动运行 | 复用相同 CI 检查与打包流程（并为应用内更新签名安装包、生成 `latest.json`），成功后创建或更新 Release 草稿并上传全部发行文件 |
 
 Actions 使用固定提交的第三方 action；普通 CI 只有读取仓库权限，发布任务单独申请 `contents: write`。构建不需要提供服务商账号、API Key 或自定义 GitHub Token。
 
-维护者操作、版本规则和发布说明模板见 [发布指南](docs/RELEASING.md)。当前流程提供 GitHub Releases 分发；应用内自动更新尚未接入。
+维护者操作、版本规则和发布说明模板见 [发布指南](docs/RELEASING.md)。发行通过 GitHub Releases 分发；0.1.1 起，设置 → 关于 可检查并安装更新（默认每两小时检查一次，只提示，点击后才下载安装）。
 
 ## 项目结构
 
