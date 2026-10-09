@@ -15,6 +15,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::archive::{claim_digest, is_inside, pack, unpack, Kept, TranscriptArchive};
 use super::calendar::Calendar;
 use super::ledger::{price_buckets, session_slots, slot_key, slot_start, Buckets, Ledger, Session};
 use super::loglines::{for_each_line, for_each_line_in};
@@ -951,6 +952,24 @@ impl FileCache {
 
 // MARK: - The reader
 
+fn file_name(path: &str) -> String {
+    Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// One file's counted quarter-hours and timings, added to the provider's.
+fn add_counted(buckets: &mut Buckets, timings: &mut Timings, days: &Buckets, file_timings: &Timings) {
+    for (slot, models) in days {
+        for (model, tally) in models {
+            add_to(buckets, slot, model, tally);
+        }
+    }
+    for (slot, models) in file_timings {
+        for (model, timing) in models {
+            add_timing(timings, slot, model, *timing);
+        }
+    }
+}
+
 /// One scan: every buckets-by-quarter-hour total, the timings, and each file's counted entry.
 pub struct Scan {
     pub buckets: Buckets,
@@ -978,16 +997,25 @@ impl TranscriptReader {
         ledger
     }
 
-    /// Parses what changed, counts each reply once across files, and writes the cache when a
-    /// file was added, changed or removed.
+    /// Parses what changed, counts each reply once across files, keeps the share of a file that
+    /// has gone (`archive`), and writes the cache when a file was added, changed or removed.
     pub fn scan(&self, provider: Provider) -> Scan {
         let mut cache = FileCache::load(provider, &self.cache_directory);
+        // None when the archive is there and cannot be read: nothing is moved into it, and the
+        // files it would have kept stay in the cache instead.
+        let mut archive = TranscriptArchive::load(provider, &self.cache_directory);
+        let mut archive_changed = false;
         let mut fresh: HashMap<String, Entry> = HashMap::new();
         let mut stale: Vec<(String, PathBuf, Stamp)> = Vec::new();
+        let mut names: HashSet<String> = HashSet::new();
         let mut changed = false;
 
-        for (path, stamp) in list_transcripts(&self.sources.roots(provider)) {
+        let roots = self.sources.roots(provider);
+        for (path, stamp) in list_transcripts(&roots) {
             let key = path.to_string_lossy().into_owned();
+            if provider == Provider::Codex {
+                names.insert(file_name(&key));
+            }
             match cache.files.remove(&key) {
                 Some(known) if known.stamp == stamp => {
                     fresh.insert(key, known);
@@ -1002,16 +1030,49 @@ impl TranscriptReader {
             }
         }
 
+        // A transcript back where the archive kept it (at its path, or, for Codex, under its
+        // name somewhere else) is read from the file again, not kept as well. A rollout's name
+        // carries its session id, so one cannot be another conversation's; Claude Code has
+        // same-named files in different folders and is matched by path only.
+        if let Some(archive) = archive.as_mut() {
+            let before = archive.files.len();
+            archive.files.retain(|path, _| !fresh.contains_key(path) && !names.contains(&file_name(path)));
+            archive_changed = archive.files.len() != before;
+        }
+
+        // Entries left in the old cache are files gone since the last scan. They are counted once
+        // more beside the live ones, so the dedupe below splits the replies exactly as it did
+        // while they existed, and then kept. Not kept: a Codex rollout whose name is still among
+        // the live ones, which was moved (Codex moves a session it archives) and is that file
+        // now; one already kept, by a scan that could not write the cache after it; and one
+        // outside the folders this reader reads, which is no transcript of this PC's (a cache
+        // another home's scan wrote).
+        let gone: HashMap<String, Entry> = cache
+            .files
+            .iter()
+            .filter(|(path, _)| {
+                !names.contains(&file_name(path))
+                    && archive.as_ref().is_none_or(|a| !a.files.contains_key(*path))
+                    && is_inside(path, &roots)
+            })
+            .map(|(path, entry)| (path.clone(), entry.clone()))
+            .collect();
+        let mut all = fresh.clone();
+        for (path, entry) in &gone {
+            all.entry(path.clone()).or_insert_with(|| entry.clone());
+        }
+
         // Each reply once, for the file it appeared in first: the original conversation, not a
         // resumed or forked copy of its history. Files are taken oldest work first, then by
         // name, then by path, so the choice is stable. A Codex fork goes after every session
         // that is not one: it can open in the quarter-hour its parent did, and its parent's
-        // readings must already be counted when its copies of them come by.
-        let mut ordered: Vec<(&String, &Entry, String, bool)> = fresh
+        // readings must already be counted when its copies of them come by. **Kept files go
+        // before all of them**: what they counted was settled while they existed, and their
+        // claims hold it.
+        let mut ordered: Vec<(&String, &Entry, String, bool)> = all
             .iter()
             .map(|(key, entry)| (key, entry, entry.first_slot().unwrap_or("").to_string(), entry.is_fork()))
             .collect();
-        let file_name = |key: &str| Path::new(key).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         ordered.sort_by(|a, b| {
             a.3.cmp(&b.3)
                 .then_with(|| a.2.cmp(&b.2))
@@ -1019,35 +1080,50 @@ impl TranscriptReader {
                 .then_with(|| a.0.cmp(b.0))
         });
 
+        let kept = archive.as_ref().map(|a| a.files.clone()).unwrap_or_default();
+        let kept_claims: HashSet<u64> = kept.values().flat_map(|k| unpack(k.claims.as_deref())).collect();
+        let kept_totals: HashSet<u64> = kept.values().flat_map(|k| unpack(k.totals.as_deref())).collect();
         let mut buckets = Buckets::new();
         let mut timings = Timings::new();
         let mut claimed: HashSet<&str> = HashSet::new();
         let mut totals: HashSet<&str> = HashSet::new();
         let mut counted: HashMap<String, Entry> = HashMap::new();
         for (key, entry, _, fork) in ordered {
+            let keeping = archive.is_some() && gone.contains_key(key);
             let mut days = entry.days.clone();
             // A fork's lines carry the instant it was made, not when its work ran, and its
             // replayed readings are dropped below: its timings would time nothing real.
             let mut file_timings: Timings = if fork { Timings::new() } else { entry.timings.clone().unwrap_or_default() };
+            let mut own_claims: Vec<u64> = Vec::new();
+            let mut own_totals: Vec<u64> = Vec::new();
             // An original session's totals are claimed before any fork is read: the forks come
             // after every file that is not one.
             if let Some(running) = &entry.running_totals {
                 totals.extend(running.iter().map(String::as_str));
+                if keeping {
+                    own_totals.extend(running.iter().map(|t| claim_digest(t)));
+                }
             }
             if let Some(replies) = &entry.replies {
                 for (id, reply) in replies {
                     if reply.from_fork == Some(true) {
                         if let Some(total) = &reply.running_total {
-                            if totals.contains(total.as_str()) {
+                            if totals.contains(total.as_str()) || kept_totals.contains(&claim_digest(total)) {
                                 continue;
                             }
                         }
                     }
-                    if !claimed.insert(id.as_str()) {
+                    if kept_claims.contains(&claim_digest(id)) || !claimed.insert(id.as_str()) {
                         continue;
                     }
                     if let Some(total) = &reply.running_total {
                         totals.insert(total.as_str());
+                        if keeping {
+                            own_totals.push(claim_digest(total));
+                        }
+                    }
+                    if keeping {
+                        own_claims.push(claim_digest(id));
                     }
                     add_to(&mut days, &reply.slot, &reply.model, &reply.tally);
                     if let Some(timing) = reply.timing {
@@ -1055,35 +1131,70 @@ impl TranscriptReader {
                     }
                 }
             }
+            if keeping {
+                if let Some(archive) = archive.as_mut() {
+                    archive.files.insert(
+                        key.clone(),
+                        Kept {
+                            days: days.clone(),
+                            timings: (!file_timings.is_empty()).then(|| file_timings.clone()),
+                            title: entry.title.clone(),
+                            cwd: entry.cwd.clone(),
+                            is_review: entry.is_review,
+                            claims: pack(&own_claims),
+                            totals: pack(&own_totals),
+                            kept: Some(Utc::now()),
+                        },
+                    );
+                    archive_changed = true;
+                }
+            }
+            add_counted(&mut buckets, &mut timings, &days, &file_timings);
             counted.insert(
                 key.clone(),
                 Entry {
                     stamp: entry.stamp,
-                    days: days.clone(),
+                    days,
                     title: entry.title.clone(),
                     cwd: entry.cwd.clone(),
                     is_review: entry.is_review,
-                    timings: Some(file_timings.clone()),
+                    timings: Some(file_timings),
                     replies: None,
                     running_totals: None,
                 },
             );
-            for (slot, models) in &days {
-                for (model, tally) in models {
-                    add_to(&mut buckets, slot, model, tally);
-                }
-            }
-            for (slot, models) in &file_timings {
-                for (model, timing) in models {
-                    add_timing(&mut timings, slot, model, *timing);
-                }
-            }
         }
 
-        // Entries left in the old cache are deleted files. Repricing unchanged transcripts does
-        // not change this raw-token cache or warrant a write.
+        // What was kept before this scan, added as it was counted.
+        for (path, file) in kept {
+            let file_timings = file.timings.unwrap_or_default();
+            add_counted(&mut buckets, &mut timings, &file.days, &file_timings);
+            counted.insert(
+                path,
+                Entry {
+                    stamp: Stamp { size: 0, modified: 0.0 },
+                    days: file.days,
+                    title: file.title,
+                    cwd: file.cwd,
+                    is_review: file.is_review,
+                    timings: Some(file_timings),
+                    replies: None,
+                    running_totals: None,
+                },
+            );
+        }
+
+        // The archive is written before the cache lets the gone files go, and if it cannot be,
+        // they stay in the cache to be kept by a later scan. Repricing unchanged transcripts
+        // does not change either file or warrant a write.
+        let kept_safely = !archive_changed || archive.as_ref().is_some_and(|a| a.save(provider, &self.cache_directory));
         if changed || !cache.files.is_empty() {
             cache.files = fresh;
+            if archive.is_none() || !kept_safely {
+                for (path, entry) in gone {
+                    cache.files.entry(path).or_insert(entry);
+                }
+            }
             cache.save(provider, &self.cache_directory);
         }
         // The sessions are cut from the counted entries, so a resumed conversation's row holds

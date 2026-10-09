@@ -666,11 +666,15 @@ fn unchanged_rescans_reprice_without_rewriting_edits_and_deletions_persist() {
     let restored = read(home.path(), &cache, ClaudeCode.provider().unwrap(), &prices);
     assert_eq!(restored.all_time().tokens, 220);
 
+    // A deleted transcript leaves the cache and is kept in the archive, so its work is still
+    // counted.
     std::fs::remove_file(&log).unwrap();
     let removed = read(home.path(), &cache, ClaudeCode.provider().unwrap(), &prices);
-    assert_eq!(removed.all_time().tokens, 0);
+    assert_eq!(removed.all_time().tokens, 220);
     let object: serde_json::Value = serde_json::from_slice(&std::fs::read(&saved).unwrap()).unwrap();
     assert!(object["files"].as_object().unwrap().is_empty());
+    let archive = crate::spend::archive::TranscriptArchive::load(ClaudeCode.provider().unwrap(), &cache).unwrap();
+    assert!(archive.files.keys().any(|k| k.ends_with("s.jsonl")));
 }
 
 #[test]

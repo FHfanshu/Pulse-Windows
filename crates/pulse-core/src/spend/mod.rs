@@ -18,6 +18,8 @@
 
 pub mod activity;
 pub mod agent;
+pub mod archive;
+pub mod agent_archive;
 pub mod agent_cache;
 pub mod budget;
 pub mod burn;
@@ -40,6 +42,10 @@ pub mod tally;
 pub mod titles;
 pub mod transcripts;
 
+#[cfg(test)]
+mod tests_archive;
+#[cfg(test)]
+mod tests_agent_archive;
 #[cfg(test)]
 mod tests_ledger;
 #[cfg(test)]

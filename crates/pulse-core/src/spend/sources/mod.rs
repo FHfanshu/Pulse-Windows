@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 
+use super::agent_archive::AgentArchive;
 use super::agent_cache::{self, Stamp};
 use super::calendar::Calendar;
 use super::ledger::{Ledger, Origin};
@@ -347,9 +348,10 @@ pub fn read_agent(agent: SpendAgent, sources: &Sources, cache_directory: &Path, 
         return Ledger::empty();
     }
     let before = Stamp::of(&roots, prices);
-    if let Some((stamp, ledger)) = agent_cache::load(agent, cache_directory) {
-        if stamp == before {
-            return ledger;
+    let saved = agent_cache::load(agent, cache_directory);
+    if let Some((stamp, ledger)) = &saved {
+        if *stamp == before {
+            return kept(agent, ledger, None, true, cache_directory, calendar, prices);
         }
     }
 
@@ -359,10 +361,37 @@ pub fn read_agent(agent: SpendAgent, sources: &Sources, cache_directory: &Path, 
     ledger.has_read_limitations = read.has_read_limitations;
     ledger.reports_cache_reads = source.reports_cache_reads();
 
-    if Stamp::of(&existing(sources), prices) == before {
+    let unchanged = Stamp::of(&existing(sources), prices) == before;
+    if unchanged {
         agent_cache::save(agent, cache_directory, &before, &ledger);
     }
-    ledger
+    // Only a read of a store that held still, and that decoded in full, may raise the marks. The
+    // cache this read replaces was itself such a read: what it held and this one does not is
+    // what the store has deleted since.
+    let stable = unchanged && !read.has_read_limitations;
+    kept(agent, &ledger, saved.as_ref().map(|(_, l)| l), stable, cache_directory, calendar, prices)
+}
+
+/// A live ledger with the agent's kept history added in, after a stable read has raised the
+/// marks ([`AgentArchive`]). An archive that cannot be read leaves the ledger as read and is not
+/// written over.
+fn kept(
+    agent: SpendAgent,
+    live: &Ledger,
+    previous: Option<&Ledger>,
+    stable: bool,
+    directory: &Path,
+    calendar: &Calendar,
+    prices: &PriceTable,
+) -> Ledger {
+    if !AgentArchive::keeps(agent) {
+        return live.clone();
+    }
+    let Some(mut archive) = AgentArchive::load(agent, directory) else { return live.clone() };
+    if stable && archive.absorb(live, previous, calendar) {
+        archive.save(agent, directory);
+    }
+    archive.merged(live, prices, agent.source().price_vendor(), calendar)
 }
 
 /// [`read_agent`] with the data folder, the local calendar and the price table on disk, stamped
