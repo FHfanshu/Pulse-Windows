@@ -321,10 +321,36 @@ pub fn plan_name(root: &Value) -> Option<String> {
         "Pro".to_string()
     } else if tier.contains("free") {
         "Free".to_string()
+    } else if let Some(named) = plan_from_account(root) {
+        named
+    } else if tier == "default_claude_ai" {
+        // Windows difference (upstream shows this tier tidied as "Default Claude Ai"): it is the tier
+        // Pro accounts carry, and Claude Code's sign-in needs a paid plan, so it is Pro here.
+        "Pro".to_string()
     } else {
         tidy(&tier)
     };
     Some(with_multiplier(base))
+}
+
+/// The plan from the profile's other plan-shaped fields, for a tier that does not name one:
+/// `organization.organization_type` (`claude_pro`, `claude_max`, …) and `account.has_claude_max` /
+/// `has_claude_pro`.
+fn plan_from_account(root: &Value) -> Option<String> {
+    let kind = root
+        .get("organization")
+        .and_then(|o| o.get("organization_type"))
+        .and_then(Value::as_str)
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let flag = |name: &str| root.get("account").and_then(|a| a.get(name)).and_then(Value::as_bool) == Some(true);
+    if kind.contains("max") || flag("has_claude_max") {
+        Some("Max".to_string())
+    } else if kind.contains("pro") || flag("has_claude_pro") {
+        Some("Pro".to_string())
+    } else {
+        None
+    }
 }
 
 fn tidy(raw: &str) -> String {
@@ -486,6 +512,13 @@ mod tests {
         assert_eq!(plan_name(&json!({"organization": {"rate_limit_tier": "default_claude_max_5x"}})).as_deref(), Some("Max 5x"));
         assert_eq!(plan_name(&json!({"organization": {"subscription_type": "claude_pro"}})).as_deref(), Some("Claude Pro"));
         assert_eq!(plan_name(&json!({})), None);
+        // The tier Pro accounts carry names no plan; the other fields do, and failing those it is Pro.
+        let pro = json!({"account": {"has_claude_pro": true}, "organization": {"rate_limit_tier": "default_claude_ai"}});
+        assert_eq!(plan_name(&pro).as_deref(), Some("Pro"));
+        let typed = json!({"organization": {"rate_limit_tier": "default_claude_ai", "organization_type": "claude_max"}});
+        assert_eq!(plan_name(&typed).as_deref(), Some("Max"));
+        assert_eq!(plan_name(&json!({"organization": {"rate_limit_tier": "default_claude_ai"}})).as_deref(), Some("Pro"));
+        assert_eq!(plan_name(&json!({"organization": {"rate_limit_tier": "some_new_tier"}})).as_deref(), Some("Some New Tier"));
     }
 
     #[test]
