@@ -1005,5 +1005,20 @@
  "Spent by month": "月ごとの支出",
  "Unclassified": "未分類",
  "These records do not report this token category separately.": "この種類のトークンは個別に記録されていません。",
- "Reported tokens without a usable category breakdown.": "トークン数は記録されていますが、利用できる分類の内訳がありません。"
+ "Reported tokens without a usable category breakdown.": "トークン数は記録されていますが、利用できる分類の内訳がありません。",
+ "Signed in. Pulse holds a read-only token for this PC.": "サインイン済みです。Pulse はこの PC に読み取り専用のトークンを保持します。",
+ "Stored encrypted on this PC.": "この PC に暗号化して保存されます。",
+ "An estimate, not a reported figure: what this PC spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this PC spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.": "報告された数値ではなく推定です。この PC で期間の開始から使った金額を、プロバイダが示す使用率で割っています。使用率が上がっているのにこの PC でほとんど使っていない場合は、別の場所（ほかのコンピュータやウェブサイト）でも使われているため、その期間はリセットまで推定しません。両方で同時に使っている場合、推定は低めになります。推定できるほど使っていない上限は表示しません。",
+ "From z.ai. Stored encrypted on this PC.": "z.ai で取得します。この PC に暗号化して保存されます。",
+ "From platform.minimax.io. Stored encrypted on this PC.": "platform.minimax.io で取得します。この PC に暗号化して保存されます。",
+ "From platform.deepseek.com. Stored encrypted on this PC.": "platform.deepseek.com で取得します。この PC に暗号化して保存されます。",
+ "From platform.openai.com. Stored encrypted on this PC.": "platform.openai.com で取得します。この PC に暗号化して保存されます。",
+ "From ampcode.com/settings. Stored encrypted on this PC.": "ampcode.com/settings で取得します。この PC に暗号化して保存されます。",
+ "Copied from your browser. Stored encrypted on this PC.": "ブラウザからコピーしたものです。この PC に暗号化して保存されます。",
+ "From app.factory.ai. Stored encrypted on this PC.": "app.factory.ai で取得します。この PC に暗号化して保存されます。",
+ "From Warp's settings, under API Keys. Stored encrypted on this PC.": "Warp の設定の「API Keys」で取得します。この PC に暗号化して保存されます。",
+ "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.": "Kimi Open Platform のコンソール（国際版または中国版）で取得します。この PC に暗号化して保存されます。",
+ "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.": "プラン名と数値の更新時刻を加えます。「トークン使用量」がオンなら、この PC での最近の利用も表示します。",
+ "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.": "認証情報ファイルから Claude Code のログインを、Claude デスクトップの使用量記録を読み取ります。確認は求めません。",
+ "Uses a browser session you import in Settings.": "設定で読み込んだブラウザのログインセッションを使います。"
 }

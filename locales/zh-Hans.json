@@ -1005,5 +1005,20 @@
  "Spent by month": "每月花了多少",
  "Unclassified": "未分类",
  "These records do not report this token category separately.": "来源未单独记录这类 token。",
- "Reported tokens without a usable category breakdown.": "来源记录了这些 token，但没有可用的分类明细。"
+ "Reported tokens without a usable category breakdown.": "来源记录了这些 token，但没有可用的分类明细。",
+ "Signed in. Pulse holds a read-only token for this PC.": "已登录。Pulse 在本机保存了一个只读令牌。",
+ "Stored encrypted on this PC.": "加密保存在本机。",
+ "An estimate, not a reported figure: what this PC spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this PC spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.": "这是推算值，不是官方给出的数字：用这台电脑 从周期开始至今的花费，除以官方给出的已用百分比。如果百分比在涨，这台电脑 却几乎没花钱，说明账号还在别处使用（另一台电脑或网页），这个周期就不再推算，直到重置。两边同时在用时，推算值会偏低。用量太少、无法推算的额度不会列出。",
+ "From z.ai. Stored encrypted on this PC.": "在 z.ai 获取。加密保存在本机。",
+ "From platform.minimax.io. Stored encrypted on this PC.": "在 platform.minimax.io 获取。加密保存在本机。",
+ "From platform.deepseek.com. Stored encrypted on this PC.": "在 platform.deepseek.com 获取。加密保存在本机。",
+ "From platform.openai.com. Stored encrypted on this PC.": "在 platform.openai.com 获取。加密保存在本机。",
+ "From ampcode.com/settings. Stored encrypted on this PC.": "在 ampcode.com/settings 获取。加密保存在本机。",
+ "Copied from your browser. Stored encrypted on this PC.": "从浏览器复制。加密保存在本机。",
+ "From app.factory.ai. Stored encrypted on this PC.": "在 app.factory.ai 获取。加密保存在本机。",
+ "From Warp's settings, under API Keys. Stored encrypted on this PC.": "在 Warp 设置的 API Keys 中获取。加密保存在本机。",
+ "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.": "在 Kimi 开放平台控制台（国际站或中国站）获取。加密保存在本机。",
+ "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.": "加上套餐名、数字的更新时间；打开「Token 消耗」后，还会显示本机最近的用量。",
+ "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.": "读取 Claude Code 保存在凭据文件里的登录信息，以及 Claude 桌面版的用量记录。不会弹出授权提示。",
+ "Uses a browser session you import in Settings.": "使用你在设置里导入的浏览器登录信息。"
 }

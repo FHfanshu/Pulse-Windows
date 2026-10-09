@@ -1005,5 +1005,20 @@
  "Spent by month": "월별 지출",
  "Unclassified": "미분류",
  "These records do not report this token category separately.": "이 유형의 토큰은 별도로 기록되지 않았습니다.",
- "Reported tokens without a usable category breakdown.": "토큰 수는 기록되었지만 사용할 수 있는 유형별 내역이 없습니다."
+ "Reported tokens without a usable category breakdown.": "토큰 수는 기록되었지만 사용할 수 있는 유형별 내역이 없습니다.",
+ "Signed in. Pulse holds a read-only token for this PC.": "로그인되었습니다. Pulse는 이 PC에 읽기 전용 토큰을 보관합니다.",
+ "Stored encrypted on this PC.": "이 PC에 암호화되어 저장됩니다.",
+ "An estimate, not a reported figure: what this PC spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this PC spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.": "보고된 수치가 아니라 추정치입니다. 이 PC에서 기간이 시작된 뒤 쓴 금액을 제공업체가 알려 주는 사용률로 나눈 값입니다. 사용률이 오르는데 이 PC에서는 거의 쓰지 않았다면 다른 곳(다른 컴퓨터나 웹사이트)에서도 쓰고 있는 것이므로, 그 기간은 초기화될 때까지 추정하지 않습니다. 양쪽에서 동시에 쓰고 있으면 추정치가 낮게 나옵니다. 추정하기에 사용량이 너무 적은 한도는 표시하지 않습니다.",
+ "From z.ai. Stored encrypted on this PC.": "z.ai에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
+ "From platform.minimax.io. Stored encrypted on this PC.": "platform.minimax.io에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
+ "From platform.deepseek.com. Stored encrypted on this PC.": "platform.deepseek.com에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
+ "From platform.openai.com. Stored encrypted on this PC.": "platform.openai.com에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
+ "From ampcode.com/settings. Stored encrypted on this PC.": "ampcode.com/settings에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
+ "Copied from your browser. Stored encrypted on this PC.": "브라우저에서 복사한 값입니다. 이 PC에 암호화되어 저장됩니다.",
+ "From app.factory.ai. Stored encrypted on this PC.": "app.factory.ai에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
+ "From Warp's settings, under API Keys. Stored encrypted on this PC.": "Warp 설정의 API Keys에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
+ "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.": "Kimi Open Platform 콘솔(국제판 또는 중국판)에서 발급받습니다. 이 PC에 암호화되어 저장됩니다.",
+ "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.": "요금제 이름과 숫자를 읽은 시각을 더하고, ‘토큰 사용량’을 켜면 이 PC의 최근 사용량도 표시합니다.",
+ "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.": "인증 정보 파일에서 Claude Code의 로그인을, Claude 데스크탑의 사용량 기록을 읽습니다. 권한 요청은 없습니다.",
+ "Uses a browser session you import in Settings.": "설정에서 가져온 브라우저 로그인 세션을 사용합니다."
 }

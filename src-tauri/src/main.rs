@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod account_ipc;
 mod notify;
 mod panel;
 mod placement;
@@ -308,6 +309,9 @@ fn main() {
             set_dock,
             status_line_installed,
             set_status_line,
+            account_ipc::estimated_value,
+            account_ipc::installed_browsers,
+            account_ipc::open_external,
             spend_ipc::spend_overview,
             spend_ipc::card_spend,
             spend_ipc::prompt_cache,

@@ -1005,5 +1005,20 @@
  "Spent by month": "Spent by month",
  "Unclassified": "Unclassified",
  "These records do not report this token category separately.": "These records do not report this token category separately.",
- "Reported tokens without a usable category breakdown.": "Reported tokens without a usable category breakdown."
+ "Reported tokens without a usable category breakdown.": "Reported tokens without a usable category breakdown.",
+ "Signed in. Pulse holds a read-only token for this PC.": "Signed in. Pulse holds a read-only token for this PC.",
+ "Stored encrypted on this PC.": "Stored encrypted on this PC.",
+ "An estimate, not a reported figure: what this PC spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this PC spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.": "An estimate, not a reported figure: what this PC spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this PC spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.",
+ "From z.ai. Stored encrypted on this PC.": "From z.ai. Stored encrypted on this PC.",
+ "From platform.minimax.io. Stored encrypted on this PC.": "From platform.minimax.io. Stored encrypted on this PC.",
+ "From platform.deepseek.com. Stored encrypted on this PC.": "From platform.deepseek.com. Stored encrypted on this PC.",
+ "From platform.openai.com. Stored encrypted on this PC.": "From platform.openai.com. Stored encrypted on this PC.",
+ "From ampcode.com/settings. Stored encrypted on this PC.": "From ampcode.com/settings. Stored encrypted on this PC.",
+ "Copied from your browser. Stored encrypted on this PC.": "Copied from your browser. Stored encrypted on this PC.",
+ "From app.factory.ai. Stored encrypted on this PC.": "From app.factory.ai. Stored encrypted on this PC.",
+ "From Warp's settings, under API Keys. Stored encrypted on this PC.": "From Warp's settings, under API Keys. Stored encrypted on this PC.",
+ "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.": "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.",
+ "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.": "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.",
+ "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.": "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.",
+ "Uses a browser session you import in Settings.": "Uses a browser session you import in Settings."
 }
