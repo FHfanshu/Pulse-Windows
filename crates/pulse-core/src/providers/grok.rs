@@ -11,8 +11,8 @@
 //! The stored token lasts about six hours and nothing renews it for Pulse, so an
 //! aged-out login is reported rather than worked around. Neither endpoint is public.
 //!
-//! Added accounts hold their own token (the account's secret) and never look at
-//! the CLI's file.
+//! Added accounts hold their own login (stored by the sign-in, renewed on use) and never
+//! look at the CLI's file.
 //!
 //! TODO: the Grok Bot route (`GrokBotUsageService.swift`) is not ported.
 
@@ -24,6 +24,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::profile::{self, Fail};
+use crate::auth::{self, StoredLogin};
 use crate::model::{AccountKey, ProviderUsage, Unavailability, UsageWindow, WindowKind};
 use crate::provider::Provider;
 use crate::service::{FetchContext, UsageService};
@@ -49,9 +50,15 @@ impl UsageService for Grok {
                 Login::Usable(token) => token,
             }
         } else {
-            match ctx.api_key(account) {
-                Some(token) => token.trim().to_string(),
-                None => return ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut),
+            // The login Pulse holds (renewed here); a raw token saved by an older build is read
+            // when none is stored.
+            match auth::usable_login(ctx, account).await {
+                StoredLogin::Usable(login) => login.access_token,
+                StoredLogin::Expired => return ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut),
+                StoredLogin::Missing => match ctx.api_key(account) {
+                    Some(token) => token.trim().to_string(),
+                    None => return ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut),
+                },
             }
         };
 
