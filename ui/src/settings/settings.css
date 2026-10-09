@@ -205,3 +205,13 @@ button.drill:focus-visible { outline: 2px solid var(--s-accent); outline-offset:
 .month-labels span { position: absolute; top: 0; }
 .line-area { fill: color-mix(in srgb, var(--s-accent) 16%, transparent); }
 .line-stroke { fill: none; stroke: var(--s-accent); stroke-width: 1.5; stroke-linejoin: round; }
+
+/* ShortcutField: a key cap that records the next combination. */
+.shortcut-field { display: flex; align-items: center; gap: 6px; }
+.key-cap {
+  min-width: 96px; padding: 3px 8px; border-radius: 6px; border: 1px solid transparent;
+  background: var(--s-quiet); color: var(--s-text); font: 500 12px var(--s-font);
+  font-variant-numeric: tabular-nums; cursor: default;
+}
+.key-cap.recording { background: var(--s-select-hover); border-color: var(--s-accent); color: var(--s-accent); }
+.key-clear { display: grid; place-items: center; padding: 0; border: 0; background: none; color: var(--s-text); cursor: default; }

@@ -50,8 +50,31 @@ pub fn apply(app: &AppHandle, previous: Option<&AppSettings>) {
         let _ = app.emit("settings-changed", &*state.settings());
     }
 
+    if previous.is_none_or(|p| p.uses_glass != settings.uses_glass) {
+        apply_glass(app, settings.uses_glass);
+    }
     sync_panel_visibility(app);
     rebuild_menu(app);
+}
+
+/// Acrylic behind the panel while "Liquid Glass" is on (the UI clips the window to its shapes).
+fn apply_glass(app: &AppHandle, on: bool) {
+    let Some(window) = app.get_webview_window(panel::LABEL) else { return };
+    if on {
+        let _ = window_vibrancy::apply_acrylic(&window, Some((0, 0, 0, 0)));
+    } else {
+        let _ = window_vibrancy::clear_acrylic(&window);
+        win::set_region(&window, &[], 1.0);
+    }
+}
+
+/// The panel's shapes, sampled by the UI, for the glass's window region.
+#[tauri::command]
+pub fn set_glass_region(app: AppHandle, shared: tauri::State<'_, SharedPanel>, polygons: Vec<Vec<(f64, f64)>>) {
+    let Some(window) = app.get_webview_window(panel::LABEL) else { return };
+    let glass = app.state::<AppState>().settings().uses_glass;
+    let scale = shared.lock().unwrap().monitor.as_ref().map(|m| m.scale).unwrap_or(1.0);
+    win::set_region(&window, if glass { &polygons } else { &[] }, scale);
 }
 
 fn tray_must_remain_visible(settings: &AppSettings) -> bool {

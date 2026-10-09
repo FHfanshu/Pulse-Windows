@@ -10,7 +10,9 @@
 //! or notification centre. The shell reads the clock, loads and saves the
 //! memory (`AlertEngine` is serde), localizes the returned [`Text`] and posts.
 //!
-//! Not ported yet: "when a service is down" (status pages) and "recap ready".
+//! "When a service is down" lives in [`crate::outage`], and "recap ready" in
+//! [`crate::recap::periods::notice`]; this file only says whether anything at all would be posted
+//! ([`wants_alerts`]).
 
 use std::collections::BTreeMap;
 
@@ -44,18 +46,20 @@ pub enum Text {
     Sentences(Vec<Text>),
     /// Parts joined with " · ".
     Dotted(Vec<Text>),
+    /// Items listed the interface language's own way ("A and B", "A, B, and C", "A、B和C").
+    List(Vec<Text>),
 }
 
 impl Text {
-    fn key(key: &str) -> Self {
+    pub fn key(key: &str) -> Self {
         Text::Key { key: key.to_string(), args: Vec::new() }
     }
 
-    fn key_with(key: &str, args: Vec<Text>) -> Self {
+    pub fn key_with(key: &str, args: Vec<Text>) -> Self {
         Text::Key { key: key.to_string(), args }
     }
 
-    fn plain(text: impl Into<String>) -> Self {
+    pub fn plain(text: impl Into<String>) -> Self {
         Text::Plain(text.into())
     }
 }
@@ -364,6 +368,25 @@ pub fn wants_usage_alerts(settings: &AppSettings) -> bool {
         || settings.alerts_on_reset
         || settings.alerts_on_failure
         || settings.low_balance_alerts.values().any(|v| *v > 0.0)
+}
+
+/// Whether this provider reports a prepaid balance that can be compared against a figure, so a
+/// "warn me below" line is worth offering (upstream `Provider.reportsSpendableBalance`).
+///
+/// **Not "reports a `credit_balance`".** More providers set that, but it is a display string and
+/// Codex's is sometimes the word "Unlimited". This is the shorter list that also hands over
+/// `credit_remaining`, a number and a currency. Upstream's profiled providers carry the flag in
+/// their profile; ours have none yet, so the list lives here: add a provider to it when its
+/// profile lands with `reportsSpendableBalance: true`.
+pub fn reports_spendable_balance(provider: crate::provider::Provider) -> bool {
+    use crate::provider::Provider::*;
+    matches!(provider, DeepSeek | Moonshot | OpenAiPlatform | Amp)
+}
+
+/// Whether anything at all would be posted (upstream `wantsAlerts`): a usage rule, the outage
+/// switch or the recap switch. What decides if the notification permission is worth having.
+pub fn wants_alerts(settings: &AppSettings) -> bool {
+    wants_usage_alerts(settings) || settings.alerts_on_outage || settings.alerts_on_recap
 }
 
 /// What Pulse has already said, so that it does not say it again. Persisted:

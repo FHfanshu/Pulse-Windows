@@ -57,7 +57,7 @@ export function Shell() {
             {item?.title}
           </h2>
           {account ? (
-            <AccountPane key={account} id={account} settings={settings} />
+            <AccountPane key={account} id={account} settings={settings} onNavigate={setSelected} />
           ) : (
             fixedPane(selected, settings, providers)
           )}

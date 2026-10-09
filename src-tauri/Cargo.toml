@@ -22,7 +22,10 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
+# Toasts with a click handler (the plugin cannot report a click on desktop); already in the lock
+# file as the plugin's own dependency.
+tauri-winrt-notification = "0.8"
+windows ={ version = "0.58", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Input_KeyboardAndMouse",
@@ -31,4 +34,5 @@ windows = { version = "0.58", features = [
   "Win32_System_Registry",
   "Win32_Globalization",
   "Win32_UI_Shell",
+  "Win32_Graphics_Dwm",
 ] }

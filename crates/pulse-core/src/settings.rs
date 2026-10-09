@@ -111,6 +111,8 @@ pub struct AppSettings {
     pub tray_account: Option<String>,
     pub shows_usage_in_tray: bool,
     pub tray_style: TrayStyle,
+    /// The tray icon's left click opens the usage dashboard popup (upstream `showsMenuDashboard`).
+    pub shows_menu_dashboard: bool,
     pub open_settings_shortcut: Option<GlobalShortcut>,
     pub toggle_panel_shortcut: Option<GlobalShortcut>,
     pub language: AppLanguage,
@@ -187,6 +189,10 @@ pub struct AppSettings {
     pub alert_threshold: Option<u8>,
     pub alerts_on_reset: bool,
     pub alerts_on_failure: bool,
+    /// "When a service is down": the provider's own status page says its service is failing.
+    pub alerts_on_outage: bool,
+    /// "When a recap is ready": last month's recap, in the first days of the month.
+    pub alerts_on_recap: bool,
 }
 
 impl Default for AppSettings {
@@ -196,6 +202,7 @@ impl Default for AppSettings {
             tray_account: None,
             shows_usage_in_tray: false,
             tray_style: TrayStyle::Figure,
+            shows_menu_dashboard: false,
             open_settings_shortcut: None,
             toggle_panel_shortcut: None,
             language: AppLanguage::System,
@@ -248,6 +255,8 @@ impl Default for AppSettings {
             alert_threshold: None,
             alerts_on_reset: false,
             alerts_on_failure: false,
+            alerts_on_outage: false,
+            alerts_on_recap: false,
         }
     }
 }
@@ -305,6 +314,15 @@ mod tests {
         let s: AppSettings = serde_json::from_str(r#"{"primedProviders":["codex"],"primerHours":{"start":30,"end":2}}"#).unwrap();
         assert!(s.primed_providers.contains("codex"));
         assert_eq!(s.normalized().primer_hours, PrimerHours::default());
+    }
+
+    #[test]
+    fn every_notification_starts_off_and_an_old_file_without_the_new_ones_loads() {
+        let s = AppSettings::default();
+        assert!(!s.alerts_on_outage && !s.alerts_on_recap && !s.alerts_on_reset && !s.alerts_on_failure);
+        assert!(s.alert_threshold.is_none() && s.low_balance_alerts.is_empty());
+        let old: AppSettings = serde_json::from_str(r#"{"alertsOnFailure":true}"#).unwrap();
+        assert!(old.alerts_on_failure && !old.alerts_on_outage && !old.alerts_on_recap);
     }
 
     #[test]
