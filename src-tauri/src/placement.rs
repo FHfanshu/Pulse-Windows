@@ -111,6 +111,9 @@ pub struct Layout {
     /// Windows difference: this layout follows a change of the rail's shape (dock <-> float, a turn
     /// between axes), so the window was grown to hold the old shape too and the UI should morph.
     pub morph: bool,
+    /// Windows difference: the morph moves the rail across the screen by moving the window under it
+    /// (`PanelState::glide`), so the UI leaves where the old shape was drawn to the window.
+    pub glide: bool,
 }
 
 impl Layout {
@@ -137,6 +140,11 @@ impl Layout {
         let bottom = self.frame.bottom().max(ry + room.h);
         let frame = Rect { x: left, y: top, w: right - left, h: bottom - top };
         Layout { frame, rail: Rect { x: rail.x - left, y: rail.y - top, ..rail }, morph: true, ..self }
+    }
+
+    /// The same layout in a window moved by `(dx, dy)`: the rail goes with it.
+    pub fn glided(self, dx: f64, dy: f64) -> Layout {
+        Layout { frame: Rect { x: self.frame.x + dx, y: self.frame.y + dy, ..self.frame }, morph: true, glide: true, ..self }
     }
 }
 
@@ -229,7 +237,7 @@ impl Placement {
             w: rail.w,
             h: rail.h,
         };
-        Layout { frame, rail: rail_rect, edge, docked, morph: false }
+        Layout { frame, rail: rail_rect, edge, docked, morph: false, glide: false }
     }
 
     /// Ratios for a rail whose top-left is at `origin` (screen DIPs).
