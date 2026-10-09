@@ -119,7 +119,7 @@ fn activated(app: &AppHandle, identifier: &str) {
     let identifier = identifier.to_string();
     tauri::async_runtime::spawn(async move {
         match pulse_core::recap::periods::notice::period_from_identifier(&identifier) {
-            Some(period) => crate::recap_ipc::open_recap(app, Some(period.key())),
+            Some(period) => crate::recap_ipc::show_recap(&app, Some(period.key())),
             // Upstream opens Settings where it was last left, not on a particular pane.
             None => crate::show_settings(&app, None),
         }

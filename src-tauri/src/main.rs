@@ -209,8 +209,10 @@ fn set_dock(app: AppHandle, shared: State<SharedPanel>, dock: placement::Dock) {
 }
 
 /// Open Settings, optionally on one pane (`"spend"`, `"notifications"`, `"account:codex"`…).
+// Window-opening commands are async: a webview built inside a sync command (which runs on the main
+// thread) never gets painted on Windows.
 #[tauri::command]
-fn open_settings(app: AppHandle, pane: Option<String>) {
+async fn open_settings(app: AppHandle, pane: Option<String>) {
     show_settings(&app, pane);
 }
 
@@ -235,7 +237,7 @@ fn save_file(path: String, bytes: Vec<u8>) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn open_chooser(app: AppHandle) {
+async fn open_chooser(app: AppHandle) {
     show_chooser(&app);
 }
 
@@ -302,6 +304,10 @@ fn main() {
         // One Pulse at a time: launching it again opens Settings in the one already running.
         // `--pane=spend` (or `account:codex`) opens that pane.
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // `--recap=month` / `--recap=2026-09` opens the recap window instead.
+            if let Some(period) = args.iter().find_map(|a| a.strip_prefix("--recap=")) {
+                return recap_ipc::show_recap(app, Some(period.to_string()));
+            }
             let pane = args.iter().find_map(|a| a.strip_prefix("--pane=")).map(str::to_string);
             show_settings(app, pane)
         }))

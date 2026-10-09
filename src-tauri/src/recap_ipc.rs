@@ -101,8 +101,16 @@ pub async fn recap_report(state: State<'_, AppState>, period: Option<String>) ->
 
 /// Open the recap window, on `period` ("2026-09" or "2026") when given, else on the default
 /// month. A window already open is brought forward and told to move.
+///
+/// Async on purpose: building a webview window inside a synchronous command blocks the main thread
+/// WebView2 needs on Windows, and the new window stays white.
 #[tauri::command]
-pub fn open_recap(app: AppHandle, period: Option<String>) {
+pub async fn open_recap(app: AppHandle, period: Option<String>) {
+    show_recap(&app, period);
+}
+
+pub fn show_recap(app: &AppHandle, period: Option<String>) {
+    let app = app.clone();
     // Shown again means read again.
     forget();
     // "month" / "year" ask for the default period of that kind (upstream default_month / default_year).
@@ -131,6 +139,9 @@ pub fn open_recap(app: AppHandle, period: Option<String>) {
         .min_inner_size(860.0, 560.0)
         .center()
         .build();
+    if let Err(e) = &built {
+        eprintln!("recap window: {e}");
+    }
     if let Ok(window) = built {
         window.on_window_event(|event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
