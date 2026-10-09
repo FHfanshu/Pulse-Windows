@@ -1,7 +1,7 @@
 // Ported from upstream Settings/TokenSpendView.swift: what every coding agent on this PC has cost, added
 // up. The per-provider card answers "how heavily am I using this"; this answers "where did the work go".
 import { useEffect, useRef, useState } from "react";
-import { ProviderIcon } from "../../panel/Icon";
+import { AgentIcon } from "../../panel/Icon";
 import { t } from "../../shared/i18n";
 import {
   agentName, exactTokens, hourText, intlLocale, money, moneyExact, reportsNoCache, shortDate, tokenCount, tokensText,
@@ -80,7 +80,7 @@ export function TokenSpendView(p: SpendViewProps) {
       {model ? (
         <BackButton label={agent ? agentName[agent] : t("All models")} name={model} onBack={() => p.onModel(null)} />
       ) : agent ? (
-        <BackButton label={t("All agents")} name={agentName[agent]} icon={<ProviderIcon provider={agent} size={13} />} onBack={() => p.onAgent(null)} />
+        <BackButton label={t("All agents")} name={agentName[agent]} icon={<AgentIcon agent={agent} size={13} />} onBack={() => p.onAgent(null)} />
       ) : null}
 
       <Group title={t("Span")}>
@@ -307,7 +307,7 @@ function Agents({ summary, onAgent }: { summary: SpendSummary; onAgent: (a: Spen
     <Group title={t("By agent")}>
       {summary.agents.map((agent) => (
         <button key={agent.agent} type="button" className="drill" onClick={() => onAgent(agent.agent)}>
-          <Row title={agentName[agent.agent]} subtitle={tokensText(agent.tokens)} icon={<ProviderIcon provider={agent.agent} size={18} />}>
+          <Row title={agentName[agent.agent]} subtitle={tokensText(agent.tokens)} icon={<AgentIcon agent={agent.agent} size={18} />}>
             <ShareBar share={summary.tokens > 0 ? agent.tokens / summary.tokens : 0} />
             <span className="cost-slot">
               <CostText cost={agent.tokens > 0 && agent.unpricedTokens === agent.tokens ? null : agent.cost} unpriced={agent.unpricedTokens} />

@@ -4,11 +4,36 @@
 //
 // Lives outside React on purpose. A read started from a component's effect is cancelled by the next ring's
 // card and would come back as "no history"; here the request always runs to the end and lands in the store.
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { cardSpend, estimatedValue, promptCache, type CardSpend, type PromptCacheReading, type WindowEstimate } from "../shared/spend";
 
-/** Providers whose records the card reads (`spend::supports`): Claude Code's transcripts and Codex's rollouts. */
+/** Providers whose own transcripts are read (`spend::supports`): Claude Code's and Codex's. The dashboard tab shows only these. */
 export const spendProviders: ReadonlySet<string> = new Set(["claudeCode", "codex"]);
+
+/**
+ * Providers whose detailed card has spend to show (`spend::supports_card`): those two, and every provider an agent
+ * borrows the name of (OpenCode on OpenCode Go, Kimi CLI on Kimi Code, Grok Build on Grok). Asked of Rust once, so a new
+ * source needs nothing here; until it answers, the transcript two.
+ */
+let cardProviders: ReadonlySet<string> = spendProviders;
+const cardProviderListeners = new Set<() => void>();
+invoke<string[]>("spend_card_providers")
+  .then((providers) => {
+    cardProviders = new Set(providers);
+    cardProviderListeners.forEach((l) => l());
+  })
+  .catch(() => {});
+
+export function useCardSpendProviders(): ReadonlySet<string> {
+  return useSyncExternalStore(
+    (listener) => {
+      cardProviderListeners.add(listener);
+      return () => void cardProviderListeners.delete(listener);
+    },
+    () => cardProviders,
+  );
+}
 
 /** Long enough that moving between rings does not rescan, short enough that "Today" is today's. */
 export const LIFETIME_MS = 5 * 60 * 1000;

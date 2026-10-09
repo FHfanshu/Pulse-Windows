@@ -32,24 +32,63 @@ pub type Timings = HashMap<String, HashMap<String, ReplyTiming>>;
 
 // MARK: - Where the transcripts are
 
-/// The folders transcripts are read from, with `CLAUDE_CONFIG_DIR` and `CODEX_HOME` honoured.
+/// The folders the agents' records are read from, with `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and the
+/// other sources' own overrides (`SpendSource::env_vars`) honoured.
 #[derive(Debug, Clone)]
 pub struct Sources {
     pub home: PathBuf,
     pub claude_config_dir: Option<PathBuf>,
     pub codex_home: Option<PathBuf>,
+    /// The environment variables the registered sources named (`XDG_DATA_HOME`, `GROK_HOME`,
+    /// `APPDATA`...), by name, as paths. A variable that is empty or unset is absent.
+    pub vars: HashMap<String, PathBuf>,
 }
 
 impl Sources {
     /// `home` with no environment overrides.
     pub fn new(home: impl Into<PathBuf>) -> Self {
-        Self { home: home.into(), claude_config_dir: None, codex_home: None }
+        Self { home: home.into(), claude_config_dir: None, codex_home: None, vars: HashMap::new() }
     }
 
     /// `home`, plus the overrides in this process's environment.
     pub fn from_env(home: impl Into<PathBuf>) -> Self {
         let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty()).map(PathBuf::from);
-        Self { home: home.into(), claude_config_dir: var("CLAUDE_CONFIG_DIR"), codex_home: var("CODEX_HOME") }
+        let mut vars = HashMap::new();
+        for agent in super::SpendAgent::ALL {
+            for name in agent.source().env_vars() {
+                if let Some(value) = var(name) {
+                    vars.insert((*name).to_string(), value);
+                }
+            }
+        }
+        Self { home: home.into(), claude_config_dir: var("CLAUDE_CONFIG_DIR"), codex_home: var("CODEX_HOME"), vars }
+    }
+
+    /// One environment variable a source named, as a path.
+    pub fn var(&self, name: &str) -> Option<PathBuf> {
+        self.vars.get(name).cloned()
+    }
+
+    /// `self` with one more environment variable set (tests, and callers that inject).
+    pub fn with_var(mut self, name: &str, value: impl Into<PathBuf>) -> Self {
+        self.vars.insert(name.to_string(), value.into());
+        self
+    }
+
+    /// `%APPDATA%` (Roaming), or its usual place under the home folder.
+    pub fn app_data(&self) -> PathBuf {
+        self.var("APPDATA").unwrap_or_else(|| self.home.join("AppData").join("Roaming"))
+    }
+
+    /// `%LOCALAPPDATA%`, or its usual place under the home folder.
+    pub fn local_app_data(&self) -> PathBuf {
+        self.var("LOCALAPPDATA").unwrap_or_else(|| self.home.join("AppData").join("Local"))
+    }
+
+    /// `$XDG_DATA_HOME`, else `~/.local/share`: where the CLIs that follow the XDG convention
+    /// keep their data. On Windows they resolve it under the user profile, not `%APPDATA%`.
+    pub fn xdg_data_home(&self) -> PathBuf {
+        self.var("XDG_DATA_HOME").unwrap_or_else(|| self.home.join(".local").join("share"))
     }
 
     pub fn claude_root(&self) -> PathBuf {

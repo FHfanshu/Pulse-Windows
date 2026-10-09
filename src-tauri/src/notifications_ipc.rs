@@ -79,10 +79,7 @@ async fn check_recap(app: &AppHandle) {
     // The month's summary is arithmetic over every day of every ledger: off the async threads.
     let due = tauri::async_runtime::spawn_blocking(move || {
         let now = Utc::now();
-        let ledgers: HashMap<SpendAgent, Ledger> = SpendAgent::ALL
-            .iter()
-            .filter_map(|agent| spend::read_ledger(agent.provider(), &home(), now).ok().map(|l| (*agent, l)))
-            .collect();
+        let ledgers: HashMap<SpendAgent, Ledger> = spend::read_present_ledgers(&home(), now);
         notice::due(today, announced, |period| {
             let (first, after) = period.bounds()?;
             let summary = SpendSummary::of_range(&ledgers, calendar.midnight(first), calendar.midnight(after), now, &calendar);

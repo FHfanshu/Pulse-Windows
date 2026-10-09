@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
 use pulse_core::recap::periods;
 use pulse_core::spend::{
-    self, activity::TokenActivity, model_summary::ModelSpendSummary, summary::SpendSummary, transcripts::Sources, Calendar, Ledger,
+    self, activity::TokenActivity, model_summary::ModelSpendSummary, summary::SpendSummary, Calendar, Ledger,
     LedgerDay, PromptCacheReading, SpendAgent,
 };
 use pulse_core::Provider;
@@ -44,6 +44,8 @@ const PANE_FRESHNESS_SECONDS: i64 = 2 * 60;
 #[serde(rename_all = "camelCase")]
 struct Progress {
     agent: SpendAgent,
+    /// The product name, so the row can be drawn before the first overview has arrived.
+    name: &'static str,
     index: usize,
     total: usize,
 }
@@ -52,16 +54,13 @@ struct Progress {
 /// which reports its progress; a quiet one (rereading behind figures already on screen) is not.
 fn scan(app: Option<&AppHandle>) -> Arc<Snapshot> {
     let now = Utc::now();
-    let sources = Sources::from_env(home());
-    let present: Vec<SpendAgent> = SpendAgent::ALL.iter().copied().filter(|a| a.is_present(&sources)).collect();
+    let present = spend::present_agents(&home());
     let mut ledgers = HashMap::new();
     for (index, agent) in present.iter().enumerate() {
         if let Some(app) = app {
-            let _ = app.emit("spend-progress", Progress { agent: *agent, index, total: present.len() });
+            let _ = app.emit("spend-progress", Progress { agent: *agent, name: agent.display_name(), index, total: present.len() });
         }
-        if let Ok(ledger) = spend::read_ledger(agent.provider(), &home(), now) {
-            ledgers.insert(*agent, ledger);
-        }
+        ledgers.insert(*agent, spend::read_agent_ledger(*agent, &home(), now));
     }
     let snapshot = Arc::new(Snapshot { ledgers, present, at: now });
     *KEPT.lock().unwrap() = Some(snapshot.clone());
@@ -165,11 +164,30 @@ pub struct SpendOverview {
     /// page so a silent source is not mistaken for a zero reading.
     pub no_records: Vec<SpendAgent>,
     /// Whether any present source held history a reader could not decode (a compressed
-    /// transcript, say). Neither agent read here has such history yet, so this is false.
+    /// transcript, say). No source read here has such history yet, so this is false.
     pub has_read_limitations: bool,
+    /// Every agent the pane can name (id, product name, mark), so a new source needs no change in
+    /// the UI to be listed, named and drawn.
+    pub agents: Vec<AgentInfo>,
     /// The periods the two recap buttons open, as keys ("2026-09", "2026"): the ones the recap
     /// window would open on by itself (`RecapPeriods.defaultMonth` / `defaultYear`).
     pub recap: RecapKeys,
+}
+
+/// One agent as the UI names and draws it.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentInfo {
+    pub id: SpendAgent,
+    pub name: &'static str,
+    /// The file stem of its mark in `assets/icons`, where the set has one.
+    pub icon: Option<&'static str>,
+}
+
+impl AgentInfo {
+    fn all() -> Vec<AgentInfo> {
+        SpendAgent::ALL.iter().map(|a| AgentInfo { id: *a, name: a.display_name(), icon: a.icon_resource() }).collect()
+    }
 }
 
 #[derive(Serialize)]
@@ -239,6 +257,7 @@ pub async fn spend_overview(
             lists,
             no_records,
             has_read_limitations: false,
+            agents: AgentInfo::all(),
             recap: {
                 let earliest = periods::earliest(&snapshot.ledgers, &calendar);
                 let offer = periods::Offer::of(earliest, chrono::Local::now().date_naive());
@@ -276,12 +295,12 @@ const SPAN: usize = 31;
 #[tauri::command]
 pub async fn card_spend(state: State<'_, AppState>, provider: String) -> Result<Option<CardSpend>, String> {
     let Some(provider) = Provider::from_raw(&provider) else { return Ok(None) };
-    if !state.settings().reads_token_spend || !spend::supports(provider) {
+    if !state.settings().reads_token_spend || !spend::supports_card(provider) {
         return Ok(None);
     }
     tauri::async_runtime::spawn_blocking(move || {
         let now = Utc::now();
-        let ledger = spend::read_ledger(provider, &home(), now).ok()?;
+        let ledger = spend::read_card_ledger(provider, &home(), now)?;
         let figure = |t: spend::ledger::SpanTotal| Figure { tokens: t.tokens, cost: t.cost };
         Some(CardSpend {
             today: ledger.today(now).map(|d| Figure { tokens: d.tokens, cost: d.cost }).unwrap_or(Figure { tokens: 0, cost: 0.0 }),
@@ -295,6 +314,13 @@ pub async fn card_spend(state: State<'_, AppState>, provider: String) -> Result<
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+/// The providers whose detailed card has spend to show: the two with transcripts and every one
+/// an agent borrows the name of. No IO.
+#[tauri::command]
+pub fn spend_card_providers() -> Vec<String> {
+    Provider::ALL.iter().copied().filter(|p| spend::supports_card(*p)).map(|p| p.raw().to_string()).collect()
 }
 
 #[tauri::command]
