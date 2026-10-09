@@ -153,4 +153,4 @@ docs/              移植规格、来源接入指南与发布文档
 
 本项目基于 [qunqin24/Pulse](https://github.com/qunqin24/Pulse)，是独立维护的 Windows 移植版。感谢上游作者的产品设计、交互、翻译与服务适配工作。
 
-代码采用 [Apache License 2.0](LICENSE)。来源说明见 [NOTICE](NOTICE)，第三方素材与上游许可记录见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。服务名称和商标属于各自所有者。
+代码采用 [Apache License 2.0](LICENSE)。来源说明见 [NOTICE](NOTICE)，第三方素材与上游许可记录见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，依赖库的许可证全文见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。服务名称和商标属于各自所有者。

@@ -13,7 +13,8 @@ Release 工作流复用同一份 CI。任何检查或打包失败都会阻止 Re
 1. 同步 `package.json`、`package-lock.json`（含根 package）、`Cargo.toml` 中的 workspace 版本、`Cargo.lock` 中的 `pulse` / `pulse-core` 版本，以及 `src-tauri/tauri.conf.json`。设置页的版本展示当前仍是 `ui/src/settings/panes/AboutPane.tsx` 中的文本，也需同步。
 2. 新建 `docs/releases/v<版本>.md`。它是 Release 正文的来源，应说明新增功能、修复、下载文件与已知限制。
 3. 运行 `node scripts/check-release-version.mjs`。版本不一致时流水线会停止。
-4. 将改动提交并推送到 `main`。
+4. 依赖有变动（`Cargo.lock` 或 `package-lock.json`）时，安装 `cargo install --locked cargo-about --features cli`，在 `npm ci` 后运行 `node scripts/third-party-licenses.mjs`，提交更新后的 `THIRD_PARTY_LICENSES.md`。
+5. 将改动提交并推送到 `main`。
 
 当前 `0.1.0` 的正文已保存在 [releases/v0.1.0.md](releases/v0.1.0.md)。
 
@@ -39,7 +40,7 @@ git push origin v0.1.0
 - 附件包含 `Pulse_<版本>_x64-setup.exe`、`Pulse_<版本>_windows-x64.zip` 和 `SHA256SUMS.txt`。
 - 在 Windows 10 / 11 测试安装、启动、托盘、设置和卸载；CI 只验证构建与自动化测试，不代替桌面实机验证。
 - 核对 SHA-256，检查版本说明，不将仅有解析测试的服务描述为已验证真实账号。
-- 安装包包含 LICENSE、NOTICE 和第三方说明，免安装包也保留这些文件。
+- 安装包包含 LICENSE、NOTICE、THIRD_PARTY_NOTICES.md 和 THIRD_PARTY_LICENSES.md，免安装包也保留这些文件。
 
 安装包当前未配置代码签名，可能出现 SmartScreen 提示。应用内 updater 尚未实现；用户通过 Releases 手动升级。以后接入代码签名或自动更新时，应单独配置证书或签名密钥，不能仅修改文档来宣称已支持。
 

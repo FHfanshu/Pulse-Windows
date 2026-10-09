@@ -1,0 +1,21 @@
+# cargo-about configuration for THIRD_PARTY_LICENSES.md (see scripts/third-party-licenses.mjs).
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "MIT-0",
+    "0BSD",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unlicense",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+targets = ["x86_64-pc-windows-msvc"]
+ignore-dev-dependencies = true
+ignore-build-dependencies = true
+private = { ignore = true }

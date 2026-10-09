@@ -6,4 +6,5 @@ Copyright (c) 2026 qunqin24, licensed under the Apache License, Version 2.0.
 Behaviour, layout constants, localized strings and provider logic are derived
 from that project. Source files ported from it carry a header naming the
 upstream file they derive from. Provider icons and other third-party material
-are listed in THIRD_PARTY_NOTICES.md.
+are listed in THIRD_PARTY_NOTICES.md; the licences of the open-source
+Rust crates and npm packages it is built with are in THIRD_PARTY_LICENSES.md.
