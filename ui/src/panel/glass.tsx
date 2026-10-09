@@ -1,14 +1,19 @@
-// Windows stand-in for upstream Panel/PanelSurface.swift's Liquid Glass. Windows has no backdrop
-// that follows an arbitrary shape (DWM's backdrop and the acrylic accent both ignore window regions
-// and fill the whole transparent window), and reading the screen under the panel would hide it from
-// screenshots and remote desktop. So src-tauri/src/backdrop.rs reads a thin strip just beside the
-// window, where the window behind shows, and sends its colours from top to bottom; the glass carries
-// them on under the panel as a gradient, taken towards Mica's dark base so white text stays readable
-// (the transparency slider sets how far). On top: a faint sheen, glitter that slowly twinkles (a
-// switch), and a faint edge so the outline still reads.
+// Windows stand-in for upstream Panel/PanelSurface.swift's Liquid Glass. Windows difference: the
+// blur is real acrylic, a native Composition layer under the WebView (src-tauri/src/backdrop.rs)
+// clipped to each shape's own outline, which nativeShapes.tsx sends from here (a WebView cannot blur
+// the desktop, and DWM's own backdrops ignore the shape and fill the window). This file draws the
+// material over it: a dark scrim in Mica's #202020 (the transparency slider sets its alpha, so white
+// text stays readable), a faint sheen, glitter that slowly twinkles (a switch), and a faint edge so the
+// outline still reads.
+// Where the native layer is not available (Composition failed, Windows' "Transparency effects" off, a
+// remote session) the fallback is a gradient instead: src-tauri/src/backdrop.rs reads a thin strip just
+// beside the window, where the window behind shows, and sends its colours from top to bottom; the glass
+// carries them on under the panel, taken towards the same dark base. Reading the screen under the panel
+// would hide it from screenshots and remote desktop, so it is never done.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createContext, useContext, useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { setNativeActive } from "./nativeShapes";
 
 /** The glass's edge. */
 export const GLASS_EDGE = "rgba(255,255,255,0.12)";
@@ -62,11 +67,12 @@ const useBands = () =>
     () => bands,
   );
 
-// Only the floating rail has a native clip in this experiment. Keep other shapes opaque.
+// Whether Rust is drawing the native acrylic under every shape (else the gradient above is used).
 let nativeBackdrop = false;
 const nativeSubscribers = new Set<() => void>();
 const setNative = (active: boolean) => {
   nativeBackdrop = active;
+  setNativeActive(active);
   nativeSubscribers.forEach((f) => f());
 };
 let nativeEventSeen = false;
@@ -137,17 +143,19 @@ export function FrostedGlass({ d, width, height, transparency, nativeBackdrop = 
         </clipPath>
         {glitter(11)}
         {glitter(29)}
-        <linearGradient ref={gradient} id={`${id}-behind`} gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="0" y2={height}>
-          {(behind ?? [BASE]).map((c, i, all) => (
-            <stop key={i} offset={all.length > 1 ? (i + 0.5) / all.length : 0} stopColor={behind ? glassColour(c, transparency) : FALLBACK} />
-          ))}
-        </linearGradient>
+        {!nativeBackdrop && (
+          <linearGradient ref={gradient} id={`${id}-behind`} gradientUnits="userSpaceOnUse" x1="0" x2="0" y1="0" y2={height}>
+            {(behind ?? [BASE]).map((c, i, all) => (
+              <stop key={i} offset={all.length > 1 ? (i + 0.5) / all.length : 0} stopColor={behind ? glassColour(c, transparency) : FALLBACK} />
+            ))}
+          </linearGradient>
+        )}
         <linearGradient id={`${id}-sheen`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#fff" stopOpacity={0.07} />
           <stop offset="0.3" stopColor="#fff" stopOpacity={0} />
         </linearGradient>
       </defs>
-      {/* Windows difference: let the native blur show through the rail, with the same dark scrim. */}
+      {/* Windows difference: the native blur shows through; the scrim is the same dark base, translucent. */}
       <path d={d} fill={nativeBackdrop ? `rgba(32,32,32,${TOWARDS_DARKEST - (TOWARDS_DARKEST - TOWARDS_CLEAREST) * Math.min(Math.max(transparency, 0), 1)})` : `url(#${id}-behind)`} />
       <g clipPath={`url(#${id}-shape)`} style={{ pointerEvents: "none" }}>
         <rect {...box} fill={`url(#${id}-sheen)`} />

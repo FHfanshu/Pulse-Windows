@@ -1,18 +1,32 @@
-//! The colours behind the panel, for its glass (a Windows stand-in for upstream's Liquid Glass).
-//! Windows has no backdrop that follows the panel's shapes (DWM's backdrop and the acrylic accent
-//! fill the whole transparent window), and reading the screen *under* the panel would mean keeping
-//! the panel out of screen capture, which hides it from screenshots and remote desktop. So Pulse
-//! reads a thin strip just *beside* its window, where it never draws: the window behind shows there,
-//! and its colours carry on under the panel. The strip is averaged into a few bands from top to
-//! bottom and sent to `ui/src/panel/glass.tsx` as `backdrop-tint`, four times a second, only when
-//! it changed. Nothing runs while glass is off or the panel hidden.
+//! What is behind the panel, for its glass (a Windows stand-in for upstream's Liquid Glass).
+//!
+//! Windows difference: the real thing is acrylic. A WebView cannot blur the desktop (CSS
+//! `backdrop-filter` only sees the page), so the blur is a native Windows.UI.Composition layer under
+//! the transparent WebView: a host-backdrop brush clipped to each shape's outline (`win::HostBackdrop`,
+//! one layer for the rail or docked berth, one for the open card). `ui/src/panel/nativeShapes.ts` sends
+//! the outlines (the same SVG paths the shapes are drawn with, every animation frame while they move) to
+//! `set_backdrop_shapes`; the UI thread applies the latest. `ui/src/panel/glass.tsx` lays the tint over it.
+//! DWM's own backdrops and accent acrylic cannot do this: they ignore window regions and fill the whole
+//! window. And the panel is never excluded from screen capture, so it stays visible to RDP and remote tools.
+//!
+//! The fallback is the older stand-in, used whenever the native layer is not: Composition could not be
+//! created, "Transparency effects" is off in Windows (the host backdrop would be solid), or this is a
+//! remote desktop session. Reading the screen *under* the panel is no option (it would mean keeping the
+//! panel out of screen capture), so Pulse reads a thin strip just *beside* its window, where it never
+//! draws: the window behind shows there, and its colours carry on under the panel. The strip is averaged
+//! into a few bands from top to bottom and sent to glass.tsx as `backdrop-tint`, four times a second, only
+//! when it changed. Nothing runs while glass is off, the panel hidden or the native layer in use.
+//!
+//! `PULSE_NO_NATIVE_ACRYLIC` (testing only) forces the fallback.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::outline::Shapes;
 use crate::panel;
-use crate::placement::Layout;
 use crate::state::AppState;
 use crate::win;
 
@@ -27,14 +41,31 @@ const BANDS: i32 = 16;
 
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
+        // Held for the thread's life: the event below is delivered for as long as it is.
+        let settings = windows::UI::ViewManagement::UISettings::new().ok();
+        let handler_app = app.clone();
+        let _subscription = settings.as_ref().and_then(|s| {
+            s.AdvancedEffectsEnabledChanged(&windows::Foundation::TypedEventHandler::new(
+                move |sender: &Option<windows::UI::ViewManagement::UISettings>, _| {
+                    if let Some(sender) = sender {
+                        set_effects(&handler_app, sender.AdvancedEffectsEnabled().unwrap_or(true), win::remote_session());
+                    }
+                    Ok(())
+                },
+            ))
+            .ok()
+        });
         let mut last: Option<Vec<[u8; 3]>> = None;
         loop {
+            // A remote session can start or end without any event Pulse hears.
+            let transparency = settings.as_ref().and_then(|s| s.AdvancedEffectsEnabled().ok()).unwrap_or(true);
+            set_effects(&app, transparency, win::remote_session());
             let glass = app.state::<AppState>().settings().uses_glass;
             let Some(window) = app.get_webview_window(panel::LABEL) else {
                 std::thread::sleep(IDLE);
                 continue;
             };
-            if !glass || !win::is_visible(&window) {
+            if !glass || !win::is_visible(&window) || NATIVE_ACTIVE.load(Ordering::Relaxed) {
                 last = None;
                 std::thread::sleep(IDLE);
                 continue;
@@ -66,47 +97,85 @@ fn sample(window: &tauri::WebviewWindow) -> Option<Vec<[u8; 3]>> {
     Some(pixels.chunks_exact(4).map(|p| [p[2], p[1], p[0]]).collect())
 }
 
-// Windows difference: keep the native rail experiment opt-in. Docked flares and cards still
-// use the existing glass until their arbitrary outlines have a matching Composition clip.
-static NATIVE_LAYOUT: std::sync::Mutex<Option<(Layout, f64)>> = std::sync::Mutex::new(None);
-static NATIVE_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static NATIVE_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The outlines to clip the native layers to, as the UI last sent them.
+static SHAPES: Mutex<Shapes> = Mutex::new(Shapes { seq: 0, rail: None, card: None });
+/// A pass on the UI thread is already queued; it will read `SHAPES` when it runs.
+static QUEUED: AtomicBool = AtomicBool::new(false);
+/// What the UI is told: the native layers are showing, so draw only the tint over them.
+static NATIVE_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Composition could not be set up; the fallback stays for the session.
+static NATIVE_FAILED: AtomicBool = AtomicBool::new(false);
+/// Windows will render the blur: transparency effects on, not a remote session.
+static EFFECTS: AtomicBool = AtomicBool::new(true);
 
 #[tauri::command]
 pub fn get_native_backdrop() -> bool {
-    NATIVE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+    NATIVE_ACTIVE.load(Ordering::Relaxed)
 }
 
-/// Record while layout changes are serialized by the panel lock. This lock only protects a copy;
-/// no window or main-thread calls can run under it.
-pub fn record_layout(layout: &Layout, scale: f64) {
-    *NATIVE_LAYOUT.lock().unwrap() = Some((*layout, scale));
+/// The WebView shows what it was told about a frame later than a native layer is moved (its picture
+/// goes through the renderer and the GPU process first). Applied at once, the blur leads the shape it
+/// belongs to by a frame or two while it moves; held back by one frame (measured with real drags over
+/// a striped window: none, and 33 ms lags) they stay together.
+const WEBVIEW_LAG: Duration = Duration::from_millis(16);
+
+/// The UI's outlines, once per animation frame while a shape moves. Only the latest is applied: if
+/// the UI thread is behind, the frames in between are dropped, and so are frames that arrive late
+/// (`seq` counts them in the order the UI made them).
+#[tauri::command]
+pub async fn set_backdrop_shapes(app: AppHandle, shapes: Shapes) {
+    tokio::time::sleep(WEBVIEW_LAG).await;
+    {
+        let mut latest = SHAPES.lock().unwrap();
+        if shapes.seq < latest.seq {
+            return;
+        }
+        *latest = shapes;
+    }
+    sync_native(&app);
 }
 
-/// Call after releasing the panel lock: Tauri executes inline when already on the UI thread.
-/// Read the latest recorded geometry without taking the panel lock on the UI thread.
+fn set_effects(app: &AppHandle, transparency: bool, remote: bool) {
+    let on = transparency && !remote;
+    if EFFECTS.swap(on, Ordering::Relaxed) != on {
+        sync_native(app);
+    }
+}
+
+/// Bring the native layers in line with the settings and the latest outlines. Safe to call from any
+/// thread, holding no lock; the work runs on the UI thread, which never takes the panel lock.
 pub fn sync_native(app: &AppHandle) {
-    if std::env::var_os("PULSE_ACRYLIC_TEST").is_none() || NATIVE_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
+    if QUEUED.swap(true, Ordering::AcqRel) {
         return;
     }
     let next = app.clone();
-    let _ = app.run_on_main_thread(move || {
-        let Some(window) = next.get_webview_window(panel::LABEL) else { return };
-        let glass = next.state::<AppState>().settings().uses_glass;
-        let geometry = *NATIVE_LAYOUT.lock().unwrap();
-        let (rail, scale) = geometry.map(|(layout, scale)| ((glass && !layout.docked).then_some(layout.rail), scale)).unwrap_or((None, 1.0));
-        let active = match win::host_backdrop(&window, rail, scale) {
-            Ok(active) => active,
-            Err(error) => {
-                // An unsupported OS or failed target keeps the existing glass, not a clear hole.
-                eprintln!("native rail backdrop unavailable: {error}");
-                let _ = win::host_backdrop(&window, None, scale);
-                NATIVE_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
-                false
-            }
-        };
-        if NATIVE_ACTIVE.swap(active, std::sync::atomic::Ordering::Relaxed) != active {
-            let _ = next.emit_to(panel::LABEL, "native-backdrop", active);
-        }
+    let queued = app.run_on_main_thread(move || {
+        QUEUED.store(false, Ordering::Release);
+        apply(&next);
     });
+    if queued.is_err() {
+        QUEUED.store(false, Ordering::Release);
+    }
+}
+
+fn apply(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(panel::LABEL) else { return };
+    let wanted = app.state::<AppState>().settings().uses_glass
+        && EFFECTS.load(Ordering::Relaxed)
+        && !NATIVE_FAILED.load(Ordering::Relaxed)
+        && std::env::var_os("PULSE_NO_NATIVE_ACRYLIC").is_none();
+    let shapes = SHAPES.lock().unwrap().clone();
+    let active = match win::host_backdrop(&window, wanted, &shapes) {
+        Ok(active) => active,
+        Err(error) => {
+            // An unsupported OS or a failed target keeps the strip-sampled glass, not a clear hole.
+            eprintln!("native acrylic unavailable: {error}");
+            let _ = win::host_backdrop(&window, false, &shapes);
+            NATIVE_FAILED.store(true, Ordering::Relaxed);
+            false
+        }
+    };
+    if NATIVE_ACTIVE.swap(active, Ordering::Relaxed) != active {
+        let _ = app.emit_to(panel::LABEL, "native-backdrop", active);
+    }
 }

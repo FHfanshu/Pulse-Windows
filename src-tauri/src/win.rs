@@ -93,7 +93,21 @@ pub fn set_frame_dip(window: &WebviewWindow, frame: Rect, scale: f64) {
     let Some(hwnd) = hwnd(window) else { return };
     let (x, y, right, bottom) = frame_px(frame, scale);
     unsafe {
-        let _ = SetWindowPos(hwnd, HWND_TOPMOST, x, y, right - x, bottom - y, SWP_NOACTIVATE);
+        let _ = SetWindowPos(hwnd, HWND_TOPMOST, x, y, right - x, bottom - y, SWP_NOACTIVATE | cross_thread(hwnd));
+    }
+}
+
+/// Windows pitfall: `SetWindowPos` (and `SetWindowLongPtr`) from another thread than the window's
+/// *sends* messages to its thread and waits. The panel is moved from the sampler threads while they hold
+/// the panel lock, and the UI thread takes that lock in its sync commands, so waiting for it deadlocked
+/// the app ("Not Responding"). Off the UI thread the request is posted instead; calls keep their order.
+fn cross_thread(hwnd: HWND) -> windows::Win32::UI::WindowsAndMessaging::SET_WINDOW_POS_FLAGS {
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, SWP_ASYNCWINDOWPOS, SET_WINDOW_POS_FLAGS};
+    if unsafe { GetWindowThreadProcessId(hwnd, None) != GetCurrentThreadId() } {
+        SWP_ASYNCWINDOWPOS
+    } else {
+        SET_WINDOW_POS_FLAGS(0)
     }
 }
 
@@ -108,7 +122,7 @@ pub fn raise_topmost(window: &WebviewWindow) {
     let mut r = RECT::default();
     unsafe {
         if GetWindowRect(hwnd, &mut r).is_ok() {
-            let _ = SetWindowPos(hwnd, HWND_TOPMOST, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOACTIVATE);
+            let _ = SetWindowPos(hwnd, HWND_TOPMOST, r.left, r.top, r.right - r.left, r.bottom - r.top, SWP_NOACTIVATE | cross_thread(hwnd));
         }
     }
     let _ = SWP_NOZORDER;
@@ -293,11 +307,23 @@ pub fn capture_screen(rect: (i32, i32, i32, i32), w: i32, h: i32) -> Option<Vec<
     }
 }
 
-/// Windows difference: the experimental native backdrop is owned by the UI thread and reused
-/// as the rail moves. Composition uses physical pixels; WebView layout uses DIPs.
-struct HostBackdrop {
+/// Windows difference: the acrylic behind the panel's shapes is a native Windows.UI.Composition layer
+/// under the WebView (CSS `backdrop-filter` only sees the page, never the desktop). One layer per
+/// shape (the rail, the open card), each a host-backdrop brush clipped to that shape's outline, so
+/// the blur follows the SVG edge exactly. Owned by the UI thread and updated in place as the shapes
+/// move. Composition uses physical pixels; WebView layout uses DIPs.
+struct Layer {
     sprite: windows::UI::Composition::SpriteVisual,
-    shape: windows::UI::Composition::CompositionRoundedRectangleGeometry,
+    geometry: windows::UI::Composition::CompositionPathGeometry,
+    /// What the layer was last set to (outline, window size, scale); the panel moves 60 times a second
+    /// without any of these changing, and then nothing is done.
+    applied: std::cell::RefCell<Option<(Option<crate::outline::Outline>, [f32; 2], u64)>>,
+}
+
+struct HostBackdrop {
+    rail: Layer,
+    card: Layer,
+    factory: windows::Win32::Graphics::Direct2D::ID2D1Factory,
     _root: windows::UI::Composition::ContainerVisual,
     _target: windows::UI::Composition::Desktop::DesktopWindowTarget,
     _compositor: windows::UI::Composition::Compositor,
@@ -308,9 +334,31 @@ thread_local! {
     static HOST_BACKDROP: std::cell::RefCell<Option<HostBackdrop>> = const { std::cell::RefCell::new(None) };
 }
 
+/// Hands Composition a Direct2D geometry as a `CompositionPath` source.
+#[windows::core::implement(
+    windows::Graphics::IGeometrySource2D,
+    windows::Win32::System::WinRT::Graphics::Direct2D::IGeometrySource2DInterop
+)]
+struct GeometrySource(windows::Win32::Graphics::Direct2D::ID2D1Geometry);
+
+impl windows::Graphics::IGeometrySource2D_Impl for GeometrySource_Impl {}
+
+impl windows::Win32::System::WinRT::Graphics::Direct2D::IGeometrySource2DInterop_Impl for GeometrySource_Impl {
+    fn GetGeometry(&self) -> windows::core::Result<windows::Win32::Graphics::Direct2D::ID2D1Geometry> {
+        Ok(self.0.clone())
+    }
+    fn TryGetGeometryUsingFactory(
+        &self,
+        _factory: Option<&windows::Win32::Graphics::Direct2D::ID2D1Factory>,
+    ) -> windows::core::Result<windows::Win32::Graphics::Direct2D::ID2D1Geometry> {
+        Err(windows::Win32::Foundation::E_NOTIMPL.into())
+    }
+}
+
 impl HostBackdrop {
     fn new(hwnd: HWND) -> windows::core::Result<Self> {
         use windows::core::Interface;
+        use windows::Win32::Graphics::Direct2D::{D2D1CreateFactory, D2D1_FACTORY_TYPE_SINGLE_THREADED};
         use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
         use windows::Win32::System::WinRT::Composition::ICompositorDesktopInterop;
         use windows::Win32::System::WinRT::{CreateDispatcherQueueController, DispatcherQueueOptions, DQTAT_COM_NONE, DQTYPE_THREAD_CURRENT};
@@ -327,43 +375,130 @@ impl HostBackdrop {
                 apartmentType: DQTAT_COM_NONE,
             })? })
         };
+        let factory = unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)? };
         let compositor = Compositor::new()?;
         let interop: ICompositorDesktopInterop = compositor.cast()?;
         let target = unsafe { interop.CreateDesktopWindowTarget(hwnd, false)? };
         let root = compositor.CreateContainerVisual()?;
         target.SetRoot(&root)?;
-        let sprite = compositor.CreateSpriteVisual()?;
-        sprite.SetBrush(&compositor.CreateHostBackdropBrush()?)?;
-        let shape = compositor.CreateRoundedRectangleGeometry()?;
-        sprite.SetClip(&compositor.CreateGeometricClipWithGeometry(&shape)?)?;
-        root.Children()?.InsertAtTop(&sprite)?;
-        Ok(Self { sprite, shape, _root: root, _target: target, _compositor: compositor, _controller: controller })
+        let rail = Layer::new(&compositor, &root)?;
+        let card = Layer::new(&compositor, &root)?;
+        Ok(Self { rail, card, factory, _root: root, _target: target, _compositor: compositor, _controller: controller })
+    }
+
+    /// A Direct2D path geometry of `segs` as a `CompositionPath`.
+    fn path(&self, segs: &[crate::outline::Seg]) -> windows::core::Result<windows::UI::Composition::CompositionPath> {
+        use crate::outline::Seg;
+        use windows::core::Interface;
+        use windows::Win32::Graphics::Direct2D::Common::{D2D1_BEZIER_SEGMENT, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED, D2D_POINT_2F};
+        use windows::Win32::Graphics::Direct2D::ID2D1Geometry;
+        use windows::UI::Composition::CompositionPath;
+        let pt = |p: [f32; 2]| D2D_POINT_2F { x: p[0], y: p[1] };
+        let geometry = unsafe { self.factory.CreatePathGeometry()? };
+        let sink = unsafe { geometry.Open()? };
+        let mut figure = false;
+        unsafe {
+            for seg in segs {
+                match *seg {
+                    Seg::Move(p) => {
+                        if figure {
+                            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                        }
+                        sink.BeginFigure(pt(p), D2D1_FIGURE_BEGIN_FILLED);
+                        figure = true;
+                    }
+                    Seg::Line(p) => sink.AddLine(pt(p)),
+                    Seg::Cubic(a, b, c) => sink.AddBezier(&D2D1_BEZIER_SEGMENT { point1: pt(a), point2: pt(b), point3: pt(c) }),
+                    Seg::Close => {
+                        if figure {
+                            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                        }
+                        figure = false;
+                    }
+                }
+            }
+            if figure {
+                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+            }
+            sink.Close()?;
+        }
+        let source: windows::Graphics::IGeometrySource2D = GeometrySource(geometry.cast::<ID2D1Geometry>()?).into();
+        CompositionPath::Create(&source)
     }
 }
 
-/// UI thread only. None hides the native surface without leaking/recreating a target.
-pub fn host_backdrop(window: &WebviewWindow, rail: Option<Rect>, scale: f64) -> windows::core::Result<bool> {
-    use windows::Foundation::Numerics::{Vector2, Vector3};
+impl Layer {
+    fn new(compositor: &windows::UI::Composition::Compositor, root: &windows::UI::Composition::ContainerVisual) -> windows::core::Result<Self> {
+        let sprite = compositor.CreateSpriteVisual()?;
+        sprite.SetBrush(&compositor.CreateHostBackdropBrush()?)?;
+        let geometry = compositor.CreatePathGeometry()?;
+        sprite.SetClip(&compositor.CreateGeometricClipWithGeometry(&geometry)?)?;
+        sprite.SetIsVisible(false)?;
+        root.Children()?.InsertAtTop(&sprite)?;
+        Ok(Self { sprite, geometry, applied: Default::default() })
+    }
+
+    /// Clips the layer to `outline` (window DIPs; `px` is the window's scale) or hides it.
+    fn set(&self, backdrop: &HostBackdrop, size: windows::Foundation::Numerics::Vector2, outline: Option<&crate::outline::Outline>, px: f64) -> windows::core::Result<()> {
+        let key = (outline.cloned(), [size.X, size.Y], px.to_bits());
+        if self.applied.borrow().as_ref() == Some(&key) {
+            return Ok(());
+        }
+        let segs = outline.and_then(|o| crate::outline::parse(&o.d).map(|segs| crate::outline::place(&segs, o, px)));
+        match (outline, segs) {
+            (Some(outline), Some(segs)) => {
+                self.geometry.SetPath(&backdrop.path(&segs)?)?;
+                // The sprite covers the window; the clip is the shape.
+                self.sprite.SetSize(size)?;
+                self.sprite.SetOpacity(outline.o.clamp(0.0, 1.0) as f32)?;
+                self.sprite.SetIsVisible(true)?;
+            }
+            _ => self.sprite.SetIsVisible(false)?,
+        }
+        *self.applied.borrow_mut() = Some(key);
+        Ok(())
+    }
+
+    fn hide(&self) -> windows::core::Result<()> {
+        if self.applied.borrow_mut().take().is_some() {
+            self.sprite.SetIsVisible(false)?;
+        }
+        Ok(())
+    }
+}
+
+/// UI thread only. `active` false hides the native layers without leaking/recreating the target.
+/// Ok(false) when it is not showing; Err when the layers cannot be made.
+pub fn host_backdrop(window: &WebviewWindow, active: bool, shapes: &crate::outline::Shapes) -> windows::core::Result<bool> {
+    use windows::Foundation::Numerics::Vector2;
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
+    use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
     let Some(hwnd) = hwnd(window) else { return Ok(false) };
     HOST_BACKDROP.with(|slot| {
         let mut slot = slot.borrow_mut();
-        let Some(rail) = rail else {
+        if !active {
             if let Some(surface) = slot.as_ref() {
-                surface.sprite.SetIsVisible(false)?;
+                surface.rail.hide()?;
+                surface.card.hide()?;
             }
             return Ok(false);
-        };
+        }
         if slot.is_none() {
             *slot = Some(HostBackdrop::new(hwnd)?);
         }
         let surface = slot.as_ref().unwrap();
-        let size = Vector2 { X: (rail.w * scale) as f32, Y: (rail.h * scale) as f32 };
-        let radius = size.X.min(size.Y) / 2.0;
-        surface.sprite.SetOffset(Vector3 { X: (rail.x * scale) as f32, Y: (rail.y * scale) as f32, Z: 0.0 })?;
-        surface.sprite.SetSize(size)?;
-        surface.shape.SetSize(size)?;
-        surface.shape.SetCornerRadius(Vector2 { X: radius, Y: radius })?;
-        surface.sprite.SetIsVisible(true)?;
+        let mut client = RECT::default();
+        unsafe { GetClientRect(hwnd, &mut client)? };
+        let size = Vector2 { X: (client.right - client.left) as f32, Y: (client.bottom - client.top) as f32 };
+        let px = (unsafe { GetDpiForWindow(hwnd) }.max(96) as f64) / 96.0;
+        surface.rail.set(surface, size, shapes.rail.as_ref(), px)?;
+        surface.card.set(surface, size, shapes.card.as_ref(), px)?;
         Ok(true)
     })
+}
+
+/// Whether this is a remote desktop session, where the host backdrop is not rendered.
+pub fn remote_session() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::SM_REMOTESESSION;
+    unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
 }

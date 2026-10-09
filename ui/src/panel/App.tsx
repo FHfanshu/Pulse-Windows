@@ -15,6 +15,7 @@ import { railSlots } from "./slots";
 import { berthPath } from "./shapes";
 import { useRailMorph, type Vec } from "./morph";
 import { GlassLook, useNativeBackdrop } from "./glass";
+import { RailOutline, wakeNativeShapes } from "./nativeShapes";
 import { ink, LightPanel, Surface } from "./scheme";
 import { pulseColors, spring, usageColor } from "./tint";
 
@@ -130,6 +131,8 @@ export function App() {
   });
   const shown = useRailMorph(layout, railSize, itemOffsets, () => void invoke("morph_settled"));
   const morphing = shown?.morphing ?? false;
+  // The card's spring runs outside React; make sure its outline keeps being sent while it opens and closes.
+  useEffect(() => wakeNativeShapes(), [selected]);
   const selectedIndex = entries.findIndex((e) => e.id === selected);
   const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] : null;
 
@@ -289,6 +292,7 @@ export function App() {
         style={{ left: shown.x, top: shown.y, width: shown.w, height: shown.h }}
         onPointerDown={(e) => { if (e.button === 0) invoke("rail_press", { x: e.clientX, y: e.clientY }); }}
       >
+        <RailOutline d={berth} x={shown.x} y={shown.y} />
         <svg className="berth" width={shown.w} height={shown.h}>
           <Surface
             d={berth}
@@ -297,7 +301,7 @@ export function App() {
             usesGlass={settings.usesGlass}
             glassTransparency={settings.glassTransparency}
             light={settings.light}
-            nativeBackdrop={nativeBackdrop && !docked && !morphing}
+            nativeBackdrop={nativeBackdrop}
             screenEdge={shown.d > 0.5 ? shown.edge : null}
           />
         </svg>
@@ -385,6 +389,7 @@ export function App() {
               warningAt={settings.warningAt}
               usesGlass={settings.usesGlass}
               glassTransparency={settings.glassTransparency}
+              nativeBackdrop={nativeBackdrop}
               detailed={selectedIsDetailed}
               showsSpend={selectedShowsSpend}
               onHeight={(h) => setCardHeight((old) => (old != null && Math.abs(old - h) < 0.5 ? old : h))}
