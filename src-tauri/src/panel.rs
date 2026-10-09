@@ -26,6 +26,11 @@ pub const LABEL: &str = "panel";
 /// Movement before a press becomes a drag, in DIPs.
 const DRAG_SLOP: f64 = 3.0;
 
+/// Windows difference: when the rail changes shape (dock <-> float, a turn between axes) the window
+/// keeps covering the old shape until the UI says its animation has settled. If it never does, this
+/// long after the change.
+const SETTLE_FALLBACK: Duration = Duration::from_millis(1500);
+
 #[derive(Default)]
 pub struct PanelState {
     pub geometry: Option<Geometry>,
@@ -39,6 +44,11 @@ pub struct PanelState {
     click_through: Option<bool>,
     last_buttons: (bool, bool),
     pointer_dirty: bool,
+    /// Windows difference: extra window the morph still needs, relative to the rail's screen origin
+    /// (so it travels with the rail under the pointer). `layout` is `placement.layout` grown by it.
+    room: Option<Rect>,
+    ui_settled: bool,
+    settle_by: Option<Instant>,
 }
 
 impl PanelState {
@@ -49,7 +59,11 @@ impl PanelState {
         if !changed && self.press.is_some() {
             return None;
         }
-        let layout = self.placement.layout(monitor.work_dip(), &geometry);
+        let natural = self.placement.layout(monitor.work_dip(), &geometry);
+        if changed {
+            self.room = None;
+        }
+        let layout = self.show(natural);
         if !changed && frame_px == Some(win::frame_px(layout.frame, monitor.scale)) {
             return None;
         }
@@ -60,6 +74,51 @@ impl PanelState {
         self.monitor = Some(monitor);
         self.layout = Some(layout);
         Some(layout)
+    }
+
+    /// The layout the window shows for `natural`: grown by the room an animation still needs.
+    fn show(&self, natural: Layout) -> Layout {
+        match self.room {
+            Some(room) => natural.with_room(room),
+            None => natural,
+        }
+    }
+
+    /// Take `natural` (from the placement) as the layout now. When the rail changes shape on the same
+    /// display, the window first keeps covering the old one, so the UI can animate between the two.
+    fn commit(&mut self, natural: Layout, same_display: bool, now: Instant) -> Layout {
+        if !same_display {
+            self.room = None;
+        } else if let Some(prev) = self.layout.filter(|prev| prev.reshapes(&natural)) {
+            // The previous window (already grown by earlier room), relative to the new rail.
+            let rail = natural.rail_on_screen();
+            self.room = Some(Rect { x: prev.frame.x - rail.x, y: prev.frame.y - rail.y, w: prev.frame.w, h: prev.frame.h });
+            self.ui_settled = false;
+            self.settle_by = Some(now + SETTLE_FALLBACK);
+        }
+        let layout = self.show(natural);
+        self.layout = Some(layout);
+        layout
+    }
+
+    /// Time to shrink back to the rail's own window: nothing is pressed, and the UI has finished
+    /// animating (or has had long enough).
+    fn settle_due(&self, now: Instant) -> bool {
+        self.room.is_some() && self.press.is_none() && (self.ui_settled || self.settle_by.is_some_and(|t| now >= t))
+    }
+
+    fn settle(&mut self) -> Option<(Layout, win::MonitorInfo)> {
+        self.room.take()?;
+        self.settle_by = None;
+        let monitor = self.monitor.clone()?;
+        let layout = self.placement.layout(monitor.work_dip(), &self.geometry?);
+        self.layout = Some(layout);
+        self.pointer_dirty = true;
+        Some((layout, monitor))
+    }
+
+    fn same_display(&self, monitor: &win::MonitorInfo) -> bool {
+        self.monitor.as_ref().is_some_and(|m| m.name == monitor.name && m.scale == monitor.scale)
     }
 
     fn record_pointer(&mut self, point: Option<(i32, i32)>, pressed: bool, dragging: bool) -> bool {
@@ -118,10 +177,34 @@ pub fn place(app: &AppHandle, shared: &SharedPanel) {
     let mut state = shared.lock().unwrap();
     let Some(geometry) = state.geometry else { return };
     let monitor = win::monitor_named(state.placement.display.as_deref()).unwrap_or_else(win::primary_monitor);
-    let layout = state.placement.layout(monitor.work_dip(), &geometry);
+    let natural = state.placement.layout(monitor.work_dip(), &geometry);
+    let same_display = state.same_display(&monitor);
+    let layout = state.commit(natural, same_display, Instant::now());
     apply(&window, &monitor, &layout);
     state.monitor = Some(monitor);
-    state.layout = Some(layout);
+    drop(state);
+    crate::backdrop::sync_native(app);
+    let _ = app.emit_to(LABEL, "panel-layout", layout);
+}
+
+/// The UI's animation of a change of shape has come to rest: shrink the window to the rail's own
+/// frame (now, or once the button is released if the rail is still being dragged).
+pub fn ui_settled(app: &AppHandle, shared: &SharedPanel) {
+    {
+        let mut state = shared.lock().unwrap();
+        state.ui_settled = true;
+        if !state.settle_due(Instant::now()) {
+            return;
+        }
+    }
+    settle(app, shared);
+}
+
+fn settle(app: &AppHandle, shared: &SharedPanel) {
+    let Some(window) = app.get_webview_window(LABEL) else { return };
+    let mut state = shared.lock().unwrap();
+    let Some((layout, monitor)) = state.settle() else { return };
+    apply(&window, &monitor, &layout);
     drop(state);
     crate::backdrop::sync_native(app);
     let _ = app.emit_to(LABEL, "panel-layout", layout);
@@ -167,6 +250,9 @@ fn tick(app: &AppHandle, shared: &SharedPanel) -> bool {
     let Some(window) = app.get_webview_window(LABEL) else { return false };
     if !win::is_visible(&window) {
         return false;
+    }
+    if shared.lock().unwrap().settle_due(Instant::now()) {
+        settle(app, shared);
     }
     let Some(cursor) = win::cursor_pos() else { return false };
     let button = win::left_button_down();
@@ -312,10 +398,11 @@ fn carry(app: &AppHandle, shared: &SharedPanel, window: &WebviewWindow, cursor_p
     if let Some(press) = state.press.as_mut() {
         press.grab = new_grab;
     }
-    let layout = state.placement.layout(visible, &geometry);
+    let natural = state.placement.layout(visible, &geometry);
+    let same_display = state.same_display(&monitor);
+    let layout = state.commit(natural, same_display, Instant::now());
     apply(window, &monitor, &layout);
     state.monitor = Some(monitor);
-    state.layout = Some(layout);
     let placement = state.placement.clone();
     drop(state);
     crate::backdrop::sync_native(app);
@@ -402,6 +489,64 @@ mod tests {
         state.press = None;
         let layout = state.display_update(monitor(), Some((0, 0, 342, 600))).unwrap();
         assert_eq!(win::frame_px(layout.frame, 1.0), expected);
+    }
+
+    fn turned_state() -> PanelState {
+        let v = Shapes { panel: Size { w: 342.0, h: 600.0 }, rail: Size { w: 64.0, h: 400.0 } };
+        let h = Shapes { panel: Size { w: 600.0, h: 400.0 }, rail: Size { w: 400.0, h: 64.0 } };
+        let mut state = state();
+        state.geometry = Some(Geometry { vertical_docked: v, vertical_free: v, horizontal_docked: h, horizontal_free: h });
+        state.display_update(monitor(), None);
+        state
+    }
+
+    #[test]
+    fn a_change_of_shape_keeps_the_old_window_until_the_ui_settles() {
+        let mut state = turned_state();
+        let now = Instant::now();
+        let before = state.layout.unwrap();
+        state.placement.dock = Dock::Edge(Edge::Top);
+        let natural = state.placement.layout(monitor().work_dip(), &state.geometry.unwrap());
+        let layout = state.commit(natural, true, now);
+        assert!(layout.morph);
+        // The rail stays where the placement put it; the window also covers where the old one was.
+        assert_eq!(layout.rail_on_screen(), natural.rail_on_screen());
+        assert!(layout.frame.x <= before.frame.x && layout.frame.right() >= before.frame.right());
+        assert!(layout.frame.y <= natural.frame.y && layout.frame.bottom() >= natural.frame.bottom());
+        // The grown layout is what later placements (a drag tick, a display change) show too.
+        assert_eq!(state.show(natural), layout);
+        assert!(!state.settle_due(now));
+        state.ui_settled = true;
+        assert!(state.settle_due(now));
+        state.press = Some(press());
+        assert!(!state.settle_due(now));
+        state.press = None;
+        let (settled, _) = state.settle().unwrap();
+        assert_eq!(settled, natural);
+        assert!(!settled.morph && state.room.is_none() && state.settle().is_none());
+    }
+
+    #[test]
+    fn the_window_settles_on_its_own_if_the_ui_never_reports() {
+        let mut state = turned_state();
+        let now = Instant::now();
+        state.placement.dock = Dock::Floating(true);
+        let natural = state.placement.layout(monitor().work_dip(), &state.geometry.unwrap());
+        state.commit(natural, true, now);
+        assert!(!state.settle_due(now + Duration::from_millis(1000)));
+        assert!(state.settle_due(now + SETTLE_FALLBACK));
+    }
+
+    #[test]
+    fn same_shape_or_another_display_does_not_grow_the_window() {
+        let mut state = turned_state();
+        let now = Instant::now();
+        let natural = state.placement.layout(monitor().work_dip(), &state.geometry.unwrap());
+        assert!(!state.commit(natural, true, now).morph);
+        state.placement.dock = Dock::Edge(Edge::Top);
+        let turned = state.placement.layout(monitor().work_dip(), &state.geometry.unwrap());
+        let layout = state.commit(turned, false, now);
+        assert!(!layout.morph && layout == turned && state.room.is_none());
     }
 
     #[test]

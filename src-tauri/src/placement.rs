@@ -108,6 +108,36 @@ pub struct Layout {
     pub rail: Rect,
     pub edge: Edge,
     pub docked: bool,
+    /// Windows difference: this layout follows a change of the rail's shape (dock <-> float, a turn
+    /// between axes), so the window was grown to hold the old shape too and the UI should morph.
+    pub morph: bool,
+}
+
+impl Layout {
+    /// The rail on screen, DIPs.
+    pub fn rail_on_screen(&self) -> Rect {
+        Rect { x: self.frame.x + self.rail.x, y: self.frame.y + self.rail.y, w: self.rail.w, h: self.rail.h }
+    }
+
+    /// Whether the rail changes shape between `self` and `next`: docks or undocks, or turns between
+    /// axes. Another docked edge on the same axis, or a floating rail whose card side flips, is the
+    /// same shape (mirrored or not drawn differently) and is not morphed.
+    pub fn reshapes(&self, next: &Layout) -> bool {
+        self.docked != next.docked || self.edge.is_vertical() != next.edge.is_vertical()
+    }
+
+    /// The same layout in a window that also covers `room`, a rect relative to the rail's screen
+    /// origin (so it travels with the rail). Where the rail is on screen does not change.
+    pub fn with_room(self, room: Rect) -> Layout {
+        let rail = self.rail_on_screen();
+        let (rx, ry) = (rail.x + room.x, rail.y + room.y);
+        let left = self.frame.x.min(rx);
+        let top = self.frame.y.min(ry);
+        let right = self.frame.right().max(rx + room.w);
+        let bottom = self.frame.bottom().max(ry + room.h);
+        let frame = Rect { x: left, y: top, w: right - left, h: bottom - top };
+        Layout { frame, rail: Rect { x: rail.x - left, y: rail.y - top, ..rail }, morph: true, ..self }
+    }
 }
 
 impl Placement {
@@ -199,7 +229,7 @@ impl Placement {
             w: rail.w,
             h: rail.h,
         };
-        Layout { frame, rail: rail_rect, edge, docked }
+        Layout { frame, rail: rail_rect, edge, docked, morph: false }
     }
 
     /// Ratios for a rail whose top-left is at `origin` (screen DIPs).
@@ -231,5 +261,38 @@ mod tests {
         assert_eq!(layout.rail.x + layout.rail.w, layout.frame.w);
         let rail_screen_top = layout.frame.y + layout.rail.y;
         assert!((rail_screen_top - 320.0).abs() < 0.01);
+    }
+
+    fn at(placement: Placement) -> Layout {
+        placement.layout(Rect { x: 0.0, y: 0.0, w: 1920.0, h: 1040.0 }, &geometry())
+    }
+
+    #[test]
+    fn reshapes_on_dock_and_axis_changes_only() {
+        let docked = at(Placement::default());
+        let floating = at(Placement { dock: Dock::Floating(true), horizontal_ratio: 0.5, ..Placement::default() });
+        let turned = at(Placement { dock: Dock::Edge(Edge::Top), ..Placement::default() });
+        let left = at(Placement { dock: Dock::Edge(Edge::Left), ..Placement::default() });
+        assert!(docked.reshapes(&floating) && floating.reshapes(&docked));
+        assert!(docked.reshapes(&turned) && turned.reshapes(&docked));
+        assert!(!docked.reshapes(&left));
+        assert!(!docked.reshapes(&docked));
+    }
+
+    #[test]
+    fn with_room_covers_both_windows_and_keeps_the_rail_on_screen() {
+        let old = at(Placement::default());
+        let next = at(Placement { dock: Dock::Edge(Edge::Top), ..Placement::default() });
+        let wide = next.with_room(Rect { x: old.frame.x - next.rail_on_screen().x, y: old.frame.y - next.rail_on_screen().y, ..old.frame });
+        assert!(wide.morph);
+        assert_eq!(wide.rail_on_screen(), next.rail_on_screen());
+        for r in [old.frame, next.frame] {
+            assert!(wide.frame.x <= r.x && wide.frame.y <= r.y);
+            assert!(wide.frame.right() >= r.right() && wide.frame.bottom() >= r.bottom());
+        }
+        // The old window's rail is inside it too.
+        let rail = old.rail_on_screen();
+        assert!(rail.x >= wide.frame.x && rail.right() <= wide.frame.right());
+        assert!(rail.y >= wide.frame.y && rail.bottom() <= wide.frame.bottom());
     }
 }

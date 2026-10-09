@@ -23,13 +23,13 @@ class PathBuilder {
 const SQUIRCLE_EXPONENT = 4;
 const CORNER_SAMPLES = 48;
 
-/** Corner as a superellipse, sampled — upstream `appendCorner`. */
-function corner(path: PathBuilder, center: Pt, r: number, from: Pt, to: Pt) {
+/** Corner as a superellipse, sampled — upstream `appendCorner`. `exponent` 2 is a circle. */
+function corner(path: PathBuilder, center: Pt, r: number, from: Pt, to: Pt, exponent = SQUIRCLE_EXPONENT) {
   if (r <= 0) return;
   for (let step = 1; step <= CORNER_SAMPLES; step++) {
     const t = (step / CORNER_SAMPLES) * (Math.PI / 2);
-    const along = Math.pow(Math.cos(t), 2 / SQUIRCLE_EXPONENT);
-    const across = Math.pow(Math.sin(t), 2 / SQUIRCLE_EXPONENT);
+    const along = Math.pow(Math.cos(t), 2 / exponent);
+    const across = Math.pow(Math.sin(t), 2 / exponent);
     path.line([center[0] + r * (from[0] * along + to[0] * across), center[1] + r * (from[1] * along + to[1] * across)]);
   }
 }
@@ -59,9 +59,16 @@ export interface BerthMetrics {
   usesRoundEnds: boolean;
 }
 
-/** The rail's surface: flares into the docked edge; a capsule when floating. */
-export function berthPath(w: number, h: number, edge: Edge, docked: boolean, openness: number, m: BerthMetrics): string {
-  if (!docked) {
+/**
+ * The rail's surface: flares into the docked edge; a capsule when floating.
+ *
+ * Windows difference: `dockedness` is continuous (1 = docked, 0 = floating; a boolean still works) so the
+ * outline can morph between the two when the rail is dragged to or off an edge. The same commands are
+ * drawn for every value in between; 1 and 0 are exactly the docked outline and the capsule.
+ */
+export function berthPath(w: number, h: number, edge: Edge, dockedness: boolean | number, openness: number, m: BerthMetrics): string {
+  const d = typeof dockedness === "number" ? Math.min(Math.max(dockedness, 0), 1) : dockedness ? 1 : 0;
+  if (d <= 0) {
     const r = Math.min(w, h) / 2;
     return new PathBuilder()
       .move([r, 0]).line([w - r, 0]).curve([w, r], [w - r + r * 0.5523, 0], [w, r - r * 0.5523])
@@ -78,7 +85,42 @@ export function berthPath(w: number, h: number, edge: Edge, docked: boolean, ope
     case "bottom": cw = h; ch = w; matrix = [0, 1, -1, 0, w, 0]; break;
     case "top": cw = h; ch = w; matrix = [0, -1, 1, 0, 0, h]; break;
   }
-  return facingRight(cw, ch, openness, m, matrix);
+  return d >= 1 ? facingRight(cw, ch, openness, m, matrix) : morphingRight(cw, ch, d, openness, m, matrix);
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/**
+ * `facingRight` at a dockedness between 0 and 1: the capsule's four arcs and the docked outline's flares
+ * are the same commands with different numbers, so every number is lerped. The flare grows out of the
+ * screen-side corners (height and width scale with `d`), and the far corners go from the capsule's
+ * circle to the docked radius and its squircle.
+ */
+function morphingRight(w: number, h: number, d: number, openness: number, m: BerthMetrics, matrix: Matrix): string {
+  const capsule = Math.min(w, h) / 2;
+  // The docked outline's numbers, as `facingRight` has them.
+  const flareHeight = Math.min(m.flareHeight * openness, h / 2);
+  const cornerRadius = m.collapsedWidth + (m.cornerRadius - m.collapsedWidth) * openness;
+  const dockedRadius = Math.max(Math.min(cornerRadius, Math.min(w, (h - flareHeight * 2) / 2)), 0);
+  const flareWidth = Math.max(Math.min(m.flareWidth * openness, w - dockedRadius), 0);
+  const f = flareHeight * d;
+  const r = lerp(capsule, dockedRadius, d);
+  const fw = lerp(capsule, flareWidth, d);
+  // Control points of the screen-side curves: the capsule's circle (0.5523) towards the flare (0.55).
+  const reachX = lerp(capsule * (1 - 0.5523), flareWidth * (1 - 0.55), d);
+  const reachY = lerp(capsule * (1 - 0.5523), flareHeight * 0.55, d);
+  const endY = capsule * (1 - d);
+  const exponent = lerp(2, m.usesRoundEnds ? 2 : SQUIRCLE_EXPONENT, d);
+  const p = new PathBuilder(matrix);
+  p.move([r, f]).line([w - fw, f]);
+  p.curve([w, endY], [w - reachX, f], [w, reachY]);
+  p.line([w, h - endY]);
+  p.curve([w - fw, h - f], [w, h - reachY], [w - reachX, h - f]);
+  p.line([r, h - f]);
+  corner(p, [r, h - f - r], r, [0, 1], [-1, 0], exponent);
+  p.line([0, f + r]);
+  corner(p, [r, f + r], r, [-1, 0], [0, -1], exponent);
+  return p.close().toString();
 }
 
 function facingRight(w: number, h: number, openness: number, m: BerthMetrics, matrix: Matrix): string {
