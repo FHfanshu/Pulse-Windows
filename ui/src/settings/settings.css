@@ -176,6 +176,31 @@ button.drill:focus-visible { outline: 2px solid var(--s-accent); outline-offset:
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--s-quiet); border-top-color: var(--s-text-2); animation: spend-spin 0.8s linear infinite; }
 @keyframes spend-spin { to { transform: rotate(360deg); } }
 
+/* Day-by-day table: the columns share the row's width equally, as upstream's Grid does. */
+.day-table { display: grid; padding: 0 16px 8px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.day-head { display: inline-flex; align-items: center; gap: 2px; padding: 8px 0 8px 10px; border: 0; background: transparent; color: var(--s-text-2); font-size: 10px; white-space: nowrap; cursor: default; }
+.day-head[data-sorted="true"] { color: var(--s-text); font-weight: 600; }
+.day-head[data-align="left"] { justify-content: flex-start; padding-left: 0; }
+.day-head[data-align="right"] { justify-content: flex-end; }
+.day-head:focus-visible { outline: 2px solid var(--s-accent); outline-offset: -2px; border-radius: 4px; }
+.day-cell { padding: 5px 0 5px 10px; border-top: 1px solid var(--s-line); white-space: nowrap; }
+.day-cell[data-align="left"] { text-align: left; padding-left: 0; }
+.day-cell[data-align="right"] { text-align: right; }
+.day-cell .dim { color: var(--s-text-2); opacity: 0.6; }
+.small-cost { font-size: 12px; }
+
+/* The foot of a paged table */
+.pager { display: flex; align-items: center; gap: 10px; padding: 8px 16px; }
+.pager-range { margin-left: auto; font-size: 11px; }
+.pager-arrow { display: inline-flex; align-items: center; justify-content: center; width: 28px; padding: 0; }
+.pager-arrow:disabled { opacity: 0.4; }
+
+/* Prompt cache list and estimated value */
+.pane-sub { display: flex; flex-direction: column; gap: 8px; }
+.cache-left { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cache-left[data-urgent="true"] { color: var(--s-danger); }
+.value-figure { font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
 /* Charts */
 .plot { position: relative; width: 100%; }
 .plot svg { display: block; }
@@ -190,7 +215,7 @@ button.drill:focus-visible { outline: 2px solid var(--s-accent); outline-offset:
 
 /* Token activity */
 .activity-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.activity-head .group-title { margin: 0; }
+.activity-head .group-title { margin: 0 0 0 4px; font-size: 13px; font-weight: 600; }
 .activity-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; }
 .legend { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--s-text-2); }
 .legend .cell { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }

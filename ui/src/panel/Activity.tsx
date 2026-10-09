@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { t } from "../shared/i18n";
 import {
-  intlLocale, money, tokenCount, tokensText,
+  duration, money, sessionLabel, tokenCount, tokensText,
   type CardSpend, type LedgerDay, type PromptCacheLapse, type PromptCacheReading,
 } from "../shared/spend";
 import type { CardLedger } from "./cardLedgers";
@@ -176,19 +176,6 @@ function useNow(ms: number): number {
   return now;
 }
 
-/** "1 hr", "1 hr, 5 min", "38 min": whole minutes, rounded up, so the last minute still reads as one. */
-function duration(seconds: number): string {
-  const minutes = Math.max(Math.ceil(seconds / 60), 1);
-  const unit = (n: number, name: "hour" | "minute") =>
-    new Intl.NumberFormat(intlLocale(), { style: "unit", unit: name, unitDisplay: "short" }).format(n);
-  if (seconds >= 3600) {
-    const parts = [unit(Math.floor(minutes / 60), "hour")];
-    if (minutes % 60) parts.push(unit(minutes % 60, "minute"));
-    return new Intl.ListFormat(intlLocale(), { type: "unit", style: "short" }).format(parts);
-  }
-  return unit(minutes, "minute");
-}
-
 /** "38 min left", or for Codex's guaranteed floor "At least 18 min left". */
 function timeLeft(lapse: PromptCacheLapse, now: number, several: boolean): string {
   const left = duration((Date.parse(lapse.expiresAt) - now) / 1000);
@@ -231,7 +218,7 @@ function PromptCacheRow({ reading, L }: { reading: PromptCacheReading; L: Layout
         )}
         {live.length > 1 && (
           <div className="ellipsis" style={{ fontSize: L.footnoteFontSize, height: L.footnoteHeight, lineHeight: `${L.footnoteHeight}px`, opacity: 0.45 }}>
-            {sessionName(urgent)}
+            {sessionLabel(urgent, urgent.project)}
           </div>
         )}
       </div>
@@ -242,11 +229,4 @@ function PromptCacheRow({ reading, L }: { reading: PromptCacheReading; L: Layout
     return row(t("Prompt cache (%@)", duration(lapsed.lifetime)), lapsed.isMinimum ? t("May have lapsed") : t("Expired"), true);
   }
   return null;
-}
-
-/** What to call a conversation on a line of its own (upstream `SessionLabel.text`). */
-function sessionName(s: PromptCacheReading["live"][number]): string {
-  if (s.title) return s.title;
-  if (s.isReview) return t("Codex review");
-  return s.project ?? t("Untitled conversation");
 }

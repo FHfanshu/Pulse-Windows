@@ -6,6 +6,8 @@ import { accountId, percentText } from "../../shared/model";
 import { updateSettings, useUsage, type AppSettings } from "../../shared/settings";
 import { Button, Switch } from "../controls";
 import { Group, Row } from "../Group";
+import { EstimatedValueGroup } from "../spend/EstimatedValue";
+import { PromptCacheSessionsGroup } from "../spend/PromptCacheSessions";
 import { apiProviders } from "../panes";
 import { ToggleRow } from "./ToggleRow";
 
@@ -51,6 +53,14 @@ export function AccountPane({ id, settings }: { id: string; settings: AppSetting
         </Group>
       )}
       <CurrentUsage id={id} settings={settings} enabled={enabled} />
+      {/* A first account whose records Pulse reads, with Token spend on: which conversations still hold a prompt
+          cache, then what each limit is worth (the only inferred figure, so its own group). */}
+      {id === provider && transcriptProviders.has(provider) && settings.readsTokenSpend && enabled && (
+        <>
+          <PromptCacheSessionsGroup provider={provider} />
+          <EstimatedValue id={id} />
+        </>
+      )}
     </div>
   );
 }
@@ -147,6 +157,11 @@ function KeyRow({ id, provider }: { id: string; provider: string }) {
       <Button disabled={!saved} onClick={() => void remove()}>{t("Remove")}</Button>
     </Row>
   );
+}
+
+function EstimatedValue({ id }: { id: string }) {
+  const { usages } = useUsage();
+  return <EstimatedValueGroup account={id} usage={usages.find((u) => accountId(u.account) === id)} />;
 }
 
 /** Re-renders now and then so "1 minute ago" keeps counting. */

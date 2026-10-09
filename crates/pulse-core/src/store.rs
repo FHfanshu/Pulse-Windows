@@ -13,7 +13,8 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 
-use crate::model::{AccountKey, ProviderUsage, Unavailability, UsageState};
+use crate::model::{AccountKey, ProviderUsage, Unavailability, UsageState, UsageWindow};
+use crate::spend::elsewhere::ElsewhereWatch;
 use crate::refresh::{self, Signals};
 use crate::secrets::SecretStore;
 use crate::service::{FetchContext, Registry};
@@ -38,6 +39,8 @@ pub struct UsageStore {
     secrets: Arc<dyn SecretStore>,
     cache_path: Option<PathBuf>,
     inner: Mutex<Inner>,
+    /// Limits seen being spent where this PC's logs cannot see (`used-elsewhere.json`).
+    elsewhere: Arc<ElsewhereWatch>,
 }
 
 #[derive(Default)]
@@ -49,9 +52,27 @@ struct Inner {
 
 impl UsageStore {
     pub fn new(registry: Registry, secrets: Arc<dyn SecretStore>, cache_path: Option<PathBuf>) -> Self {
-        let store = Self { registry, secrets, cache_path, inner: Mutex::new(Inner::default()) };
+        let store = Self {
+            registry,
+            secrets,
+            cache_path,
+            inner: Mutex::new(Inner::default()),
+            elsewhere: Arc::new(ElsewhereWatch::new(None)),
+        };
         store.restore_cache();
         store
+    }
+
+    /// Keeps what the elsewhere watch has seen in `file`, across launches.
+    pub fn with_elsewhere_file(mut self, file: PathBuf) -> Self {
+        self.elsewhere = Arc::new(ElsewhereWatch::new(Some(file)));
+        self
+    }
+
+    /// Whether this window's current cycle was seen spent where this PC's logs cannot see
+    /// (upstream `UsageStore.usedElsewhere`): its value is not estimated.
+    pub fn used_elsewhere(&self, window: &UsageWindow, account: &AccountKey) -> bool {
+        self.elsewhere.used_elsewhere(window, account)
     }
 
     /// Readings for the given account ids, in that order. Accounts never fetched read `loading`.
@@ -148,6 +169,25 @@ impl UsageStore {
             }
             None => ProviderUsage::unavailable(key.clone(), Unavailability::NoLimitsReported),
         };
+
+        // Only with Token spend on: the watch compares the readings with what this PC's own
+        // records say was spent, and reads nothing otherwise.
+        let checks = if settings.reads_token_spend {
+            self.elsewhere.observe(&fetched, &key, Utc::now())
+        } else {
+            Vec::new()
+        };
+        if !checks.is_empty() {
+            let watch = self.elsewhere.clone();
+            // Blocking work: the transcripts are read for the span each check names.
+            tokio::task::spawn_blocking(move || {
+                let home = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_default();
+                for check in checks {
+                    let Ok(ledger) = crate::spend::read_ledger(check.provider, &home, Utc::now()) else { continue };
+                    watch.resolve(&check, ledger.cost_between(check.from, check.to), ledger.tokens_between(check.from, check.to));
+                }
+            });
+        }
 
         let changed = {
             let mut inner = self.inner.lock().unwrap();

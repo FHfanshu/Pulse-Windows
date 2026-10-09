@@ -311,6 +311,8 @@ fn main() {
             status_line_installed,
             set_status_line,
             spend_ipc::spend_overview,
+            spend_ipc::spend_release,
+            spend_ipc::estimated_values,
             spend_ipc::card_spend,
             spend_ipc::prompt_cache,
             recap_ipc::recap_report,

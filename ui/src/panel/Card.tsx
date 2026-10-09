@@ -4,10 +4,10 @@ import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { relativeTime, resetText, unavailableMessage, windowName } from "../shared/copy";
 import { t } from "../shared/i18n";
-import { isSpent, percentText, remainingFraction, type ProviderUsage, type UsageWindow } from "../shared/model";
-import { intlLocale } from "../shared/spend";
+import { accountId, isSpent, percentText, remainingFraction, type ProviderUsage, type UsageWindow } from "../shared/model";
+import { approximate, intlLocale } from "../shared/spend";
 import { ActivitySection, activityState } from "./Activity";
-import { useCardLedger } from "./cardLedgers";
+import { useCardLedger, useEstimatedValues } from "./cardLedgers";
 import { ProviderIcon } from "./Icon";
 import type { Edge } from "./layout";
 import { detailCardLayout, type PanelMetrics } from "./layout";
@@ -92,6 +92,19 @@ export function Card(p: CardProps) {
   const ledger = useCardLedger(u.account.provider);
   const activity = p.detailed && p.showsSpend ? activityState(ledger) : null;
   const plan = p.detailed && u.plan ? u.plan : null;
+  // What a limit is worth, under the limit: this PC's spend since the window opened over the percentage the
+  // provider reports. Withheld wherever the estimator withholds it, and for a window seen spent elsewhere.
+  const values = useEstimatedValues(
+    accountId(u.account),
+    `${u.observedAt ?? ""}|${u.windows.map((w) => `${w.id}:${w.usedFraction}`).join(",")}`,
+    p.detailed && p.showsSpend && u.state.kind === "live",
+  );
+  const valueText = (w: UsageWindow): string | null => {
+    const v = values.find((x) => x.windowId === w.id);
+    return v && !v.elsewhere && v.full !== null && v.spent !== null
+      ? t("Estimated value %@ · %@ used", approximate(v.full), approximate(v.spent))
+      : null;
+  };
   const updated = p.detailed && u.state.kind === "live" && u.observedAt ? updatedText(u.observedAt) : null;
   const head = (
     <>
@@ -148,7 +161,7 @@ export function Card(p: CardProps) {
           <AnimatePresence initial={false}>
             {u.windows.map((w) => (
               <motion.div key={`${u.account.provider}|${w.id}`} {...rowTransition}>
-                <MetricRow window={w} L={L} showsRemaining={p.showsRemaining} warningAt={p.warningAt} />
+                <MetricRow window={w} L={L} showsRemaining={p.showsRemaining} warningAt={p.warningAt} value={valueText(w)} />
               </motion.div>
             ))}
           </AnimatePresence>
@@ -181,7 +194,7 @@ function Message({ text, size }: { text: string; size: number }) {
   return <div style={{ fontSize: size, lineHeight: 1.25, opacity: 0.55 }}>{text}</div>;
 }
 
-function MetricRow({ window: w, L, showsRemaining, warningAt }: { window: UsageWindow; L: ReturnType<typeof detailCardLayout>; showsRemaining: boolean; warningAt: number }) {
+function MetricRow({ window: w, L, showsRemaining, warningAt, value }: { window: UsageWindow; L: ReturnType<typeof detailCardLayout>; showsRemaining: boolean; warningAt: number; value: string | null }) {
   const progress = showsRemaining ? remainingFraction(w) : Math.min(Math.max(w.usedFraction, 0), 1);
   const spent = isSpent(w);
   const accent = usageColor(w.usedFraction, w.isExhausted, warningAt);
@@ -203,6 +216,8 @@ function MetricRow({ window: w, L, showsRemaining, warningAt }: { window: UsageW
         <span style={{ fontWeight: 500, color: spent ? PulseColor.exhausted : "rgba(255,255,255,0.9)" }}>{figure}</span>
         <span className="ellipsis" style={{ opacity: 0.45 }}>{resetText(w)}</span>
       </div>
+      {/* Dimmer than the reported figures above it: it is the one number here the provider did not say. */}
+      {value && <div className="ellipsis" style={{ ...line, opacity: 0.45 }}>{value}</div>}
     </div>
   );
 }

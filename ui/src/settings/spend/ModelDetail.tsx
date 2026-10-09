@@ -8,6 +8,7 @@ import {
   type ModelSpendSummary,
 } from "../../shared/spend";
 import { Group, Row } from "../Group";
+import { DayTable, modelDayRow } from "./DayTable";
 import {
   CostText, HourProfile, PartialNote, ShareBar, SpendBarChart, SpendCaption, TokenKindBreakdown,
 } from "./SpendCharts";
@@ -21,6 +22,7 @@ export function ModelSpendDetail({ model }: { model: ModelSpendSummary }) {
   const busiest = model.days.reduce<(typeof model.days)[number] | null>((best, d) => (!best || d.tokens > best.tokens ? d : best), null);
   const partial = model.unpricedTokens > 0 || model.hasPartialCounts;
   const hours = !model.hasAggregateTiming && model.hours && Object.values(model.hours).some((v) => v > 0) ? model.hours : null;
+  // Every agent that sent work to this model keeps no cache figure at all, or its replies never named the cache.
   const readsUnreported = !!model.tally && reportsNoCache(model.tally);
 
   return (
@@ -93,6 +95,14 @@ export function ModelSpendDetail({ model }: { model: ModelSpendSummary }) {
           ))}
         </Group>
       )}
+
+      <DayTable
+        days={model.days}
+        cacheUnreported={readsUnreported}
+        unclassifiedTokens={model.unclassifiedTokens}
+        makeRow={modelDayRow}
+        zeroAsDash={false}
+      />
 
       <div className="footnote">
         <div>{t("Usage records, estimated at models.dev API rates—not an actual bill.")}</div>

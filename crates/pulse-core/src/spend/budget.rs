@@ -58,6 +58,19 @@ pub fn approximate(amount: f64) -> String {
     format!("≈${grouped}{fraction}")
 }
 
+/// Whether a limit's worth is something to estimate at all (upstream
+/// `UsageDetailCard.estimatesValue`, which the detailed card applies).
+///
+/// Not for OpenCode Go: its plan states every limit in money (its docs give the amounts and the
+/// console's meters count them in micro-cents), so dividing this PC's spend by a percentage would
+/// put a guess beside a figure the provider already publishes, and could disagree with it. Nor for
+/// DeepSeek, whose ring is a balance: it is money already, in the account's own currency, not a
+/// limit to price.
+pub fn estimates_value(provider: crate::provider::Provider) -> bool {
+    use crate::provider::Provider;
+    provider != Provider::OpenCodeGo && provider != Provider::DeepSeek
+}
+
 /// `observed_at` is when the percentage was read. The spend is counted up to that moment, not to
 /// now: the percentage does not move between readings while the logs do, and counting what was
 /// spent since the last reading against the old percentage set the figure high by however much

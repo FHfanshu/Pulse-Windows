@@ -118,11 +118,61 @@ export interface ModelSpendSummary {
   hasPartialCounts: boolean;
 }
 
+/** One transcript in the session list; the quarter-hours stay in Rust. */
+export interface SessionRow {
+  agent: SpendAgent;
+  title: string | null;
+  isReview: boolean;
+  /** The project as the list shows it. */
+  project: string | null;
+  end: string;
+  tokens: number;
+  cost: number;
+  unpricedTokens: number;
+}
+
+export interface ProjectRow {
+  name: string;
+  tokens: number;
+  cost: number;
+  unpricedTokens: number;
+  sessions: number;
+  lastUsed: string;
+}
+
+/** The project and session lists of the summary on screen. */
+export interface SpendLists {
+  projects: ProjectRow[];
+  sessions: SessionRow[];
+}
+
 export interface SpendOverview {
   summary: SpendSummary;
   activity: TokenActivity;
   agent: SpendSummary | null;
   model: ModelSpendSummary | null;
+  /** Absent while a model is open: it draws neither list. */
+  lists: SpendLists | null;
+  /** Present sources that produced no records at all. */
+  noRecords: SpendAgent[];
+  hasReadLimitations: boolean;
+  /** The recap period keys the two buttons open: "2026-09" and "2026". */
+  recap: { month: string; year: string };
+}
+
+/** "Reading Codex…", 1/2: which agent a scan is on. */
+export interface SpendProgress {
+  agent: SpendAgent;
+  index: number;
+  total: number;
+}
+
+/** What one limit is worth, by this PC's reckoning; `elsewhere` limits have no figure. */
+export interface WindowValue {
+  windowId: string;
+  elsewhere: boolean;
+  full: number | null;
+  spent: number | null;
 }
 
 export interface SpendFigure {
@@ -169,8 +219,11 @@ export interface PromptCacheReading {
   lastLapsed: PromptCacheLapse | null;
 }
 
-export const spendOverview = (overLast: number | null, agent: SpendAgent | null, model: string | null) =>
-  invoke<SpendOverview | null>("spend_overview", { overLast, agent, model });
+export const spendOverview = (overLast: number | null, agent: SpendAgent | null, model: string | null, rescan: boolean) =>
+  invoke<SpendOverview | null>("spend_overview", { overLast, agent, model, rescan });
+/** Lets the kept scan go: Token spend was switched off, or the Settings window closed. */
+export const spendRelease = () => invoke<void>("spend_release");
+export const estimatedValues = (account: string, card: boolean) => invoke<WindowValue[]>("estimated_values", { account, card });
 export const cardSpend = (provider: string) => invoke<CardSpend | null>("card_spend", { provider });
 export const promptCache = (provider: string) => invoke<PromptCacheReading | null>("prompt_cache", { provider });
 
@@ -181,6 +234,10 @@ export const agentName: Record<SpendAgent, string> = { claudeCode: "Claude Code"
 export const tallyTotal = (x: TokenTally) => (x.input ?? 0) + (x.cacheWrite ?? 0) + (x.cacheRead ?? 0) + (x.output ?? 0);
 /** New input, cache writes included. */
 export const tallyFresh = (x: TokenTally) => (x.input ?? 0) + (x.cacheWrite ?? 0);
+/** Whether the recorded kinds plus an explicit unclassified count account for the reported total (`TokenTally::accounts_for`). */
+export const accountsFor = (x: TokenTally, tokens: number, unclassified: number) =>
+  [x.input ?? 0, x.cacheWrite ?? 0, x.cacheRead ?? 0, x.output ?? 0, unclassified].every((v) => v >= 0) &&
+  tallyTotal(x) + unclassified === tokens;
 export const reportsNoCache = (x: TokenTally) =>
   (x.repliesWithoutCacheFields ?? 0) > 0 && (x.cacheRead ?? 0) === 0 && (x.cacheWrite ?? 0) === 0;
 
@@ -278,3 +335,52 @@ export function shortDate(iso: string): string {
 }
 
 export const hourText = (hour: number) => t("%@ o'clock", hour);
+
+/** "≈$220": whole dollars from a hundred up, because the figure is an estimate and cents would claim a precision it does not have (upstream `BudgetEstimator.approximate`). */
+export function approximate(amount: number): string {
+  const digits = amount >= 100 ? 0 : 2;
+  return "≈" + new Intl.NumberFormat(intlLocale(), { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(amount);
+}
+
+/** "1 hr", "1 hr, 5 min", "38 min": whole minutes, rounded up, so the last minute still reads as one (upstream `PromptCacheLapse.duration`). */
+export function duration(seconds: number): string {
+  const minutes = Math.max(Math.ceil(seconds / 60), 1);
+  const unit = (n: number, name: "hour" | "minute") =>
+    new Intl.NumberFormat(intlLocale(), { style: "unit", unit: name, unitDisplay: "short" }).format(n);
+  if (seconds >= 3600) {
+    const parts = [unit(Math.floor(minutes / 60), "hour")];
+    if (minutes % 60) parts.push(unit(minutes % 60, "minute"));
+    return new Intl.ListFormat(intlLocale(), { type: "unit", style: "short" }).format(parts);
+  }
+  return unit(minutes, "minute");
+}
+
+// MARK: - Session labels (upstream SessionLabel)
+
+/**
+ * What a session is called wherever one is listed: its own title where it has one; a review session Codex
+ * ran by itself says so; else the project it ran in; else "Untitled conversation". Never the file name.
+ */
+export function sessionLabel(s: { title: string | null; isReview: boolean }, project: string | null): string {
+  if (s.title) return s.title;
+  if (s.isReview) return t("Codex review");
+  return project ?? t("Untitled conversation");
+}
+
+/** Whether the label is the session's own name rather than its project, which is when a subtitle adds the project. */
+export const sessionNamesItself = (s: { title: string | null; isReview: boolean }) => !!s.title || s.isReview;
+
+/** "Sep 23, 11:08": when a session ran. */
+export function dateTime(iso: string): string {
+  return new Intl.DateTimeFormat(intlLocale(), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
+}
+
+/** A clock time, with the date too unless it is today (the prompt-cache list's `time`). */
+export function timeText(iso: string): string {
+  const date = new Date(iso);
+  const sameDay = date.toDateString() === new Date().toDateString();
+  return new Intl.DateTimeFormat(
+    intlLocale(),
+    sameDay ? { hour: "numeric", minute: "2-digit" } : { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" },
+  ).format(date);
+}

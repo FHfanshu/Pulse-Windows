@@ -5,15 +5,18 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use pulse_core::model::AccountKey;
+use pulse_core::recap::periods;
 use pulse_core::spend::{
-    self, activity::TokenActivity, model_summary::ModelSpendSummary, summary::SpendSummary, Calendar, Ledger, LedgerDay, PromptCacheReading,
-    SpendAgent,
+    self, activity::TokenActivity, budget, model_summary::ModelSpendSummary, summary::SpendSummary, transcripts::Sources, Calendar, Ledger,
+    LedgerDay, PromptCacheReading, SpendAgent,
 };
 use pulse_core::Provider;
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::state::AppState;
 
@@ -21,12 +24,128 @@ fn home() -> PathBuf {
     std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_default()
 }
 
-fn read_all() -> HashMap<SpendAgent, Ledger> {
+/// The last finished scan (upstream `AgentLedgers.kept`): ledgers, not transcripts. One snapshot,
+/// replaced and never copied; dropped when Token spend is switched off or the Settings window goes
+/// (`spend_release`).
+struct Snapshot {
+    ledgers: HashMap<SpendAgent, Ledger>,
+    /// Sources that are present: installed, or used at least once.
+    present: Vec<SpendAgent>,
+    at: DateTime<Utc>,
+}
+
+static KEPT: Mutex<Option<Arc<Snapshot>>> = Mutex::new(None);
+
+/// A kept scan younger than this is shown and not reread when the pane opens
+/// (upstream `SpendWarmer.paneFreshness`).
+const PANE_FRESHNESS_SECONDS: i64 = 2 * 60;
+
+/// "Reading Codex…", 1/2: which agent the scan is on.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct Progress {
+    agent: SpendAgent,
+    index: usize,
+    total: usize,
+}
+
+/// Reads every present agent's ledger and keeps the result. `app` is given for a visible scan,
+/// which reports its progress; a quiet one (rereading behind figures already on screen) is not.
+fn scan(app: Option<&AppHandle>) -> Arc<Snapshot> {
     let now = Utc::now();
-    SpendAgent::ALL
-        .iter()
-        .filter_map(|agent| spend::read_ledger(agent.provider(), &home(), now).ok().map(|l| (*agent, l)))
-        .collect()
+    let sources = Sources::from_env(home());
+    let present: Vec<SpendAgent> = SpendAgent::ALL.iter().copied().filter(|a| a.is_present(&sources)).collect();
+    let mut ledgers = HashMap::new();
+    for (index, agent) in present.iter().enumerate() {
+        if let Some(app) = app {
+            let _ = app.emit("spend-progress", Progress { agent: *agent, index, total: present.len() });
+        }
+        if let Ok(ledger) = spend::read_ledger(agent.provider(), &home(), now) {
+            ledgers.insert(*agent, ledger);
+        }
+    }
+    let snapshot = Arc::new(Snapshot { ledgers, present, at: now });
+    *KEPT.lock().unwrap() = Some(snapshot.clone());
+    snapshot
+}
+
+fn kept() -> Option<Arc<Snapshot>> {
+    KEPT.lock().unwrap().clone()
+}
+
+/// Lets the kept scan go: Token spend was switched off, or the Settings window closed.
+#[tauri::command]
+pub fn spend_release() {
+    *KEPT.lock().unwrap() = None;
+}
+
+/// One transcript's row in the session list. The session's own quarter-hours stay behind: the
+/// pane draws none of them, and they are most of a session's size.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionOut {
+    pub agent: SpendAgent,
+    pub title: Option<String>,
+    pub is_review: bool,
+    /// The project as the list shows it (it can carry a parent folder where names collide).
+    pub project: Option<String>,
+    pub end: DateTime<Utc>,
+    pub tokens: i64,
+    pub cost: f64,
+    pub unpriced_tokens: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectOut {
+    pub name: String,
+    pub tokens: i64,
+    pub cost: f64,
+    pub unpriced_tokens: i64,
+    pub sessions: usize,
+    pub last_used: DateTime<Utc>,
+}
+
+/// The project and session lists of the summary on screen: newest sessions first, heaviest
+/// projects first.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Lists {
+    pub projects: Vec<ProjectOut>,
+    pub sessions: Vec<SessionOut>,
+}
+
+impl Lists {
+    fn of(summary: &SpendSummary) -> Self {
+        Self {
+            projects: summary
+                .projects
+                .iter()
+                .map(|p| ProjectOut {
+                    name: p.name.clone(),
+                    tokens: p.tokens,
+                    cost: p.cost,
+                    unpriced_tokens: p.unpriced_tokens,
+                    sessions: p.sessions,
+                    last_used: p.last_used,
+                })
+                .collect(),
+            sessions: summary
+                .sessions
+                .iter()
+                .map(|row| SessionOut {
+                    agent: row.agent,
+                    title: row.session.title.clone(),
+                    is_review: row.session.is_review,
+                    project: summary.project_name(row),
+                    end: row.session.end,
+                    tokens: row.session.tokens,
+                    cost: row.session.cost,
+                    unpriced_tokens: row.session.unpriced_tokens,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -40,42 +159,92 @@ pub struct SpendOverview {
     pub agent: Option<SpendSummary>,
     /// One model's figures, narrowed to the focused agent first; present only when `model` was asked for.
     pub model: Option<ModelSpendSummary>,
+    /// The project and session lists of the summary on screen (the agent's when one is focused);
+    /// absent while a model is, which draws neither.
+    pub lists: Option<Lists>,
+    /// Present sources that produced no records at all, named together at the foot of the combined
+    /// page so a silent source is not mistaken for a zero reading.
+    pub no_records: Vec<SpendAgent>,
+    /// Whether any present source held history a reader could not decode (a compressed
+    /// transcript, say). Neither agent read here has such history yet, so this is false.
+    pub has_read_limitations: bool,
+    /// The periods the two recap buttons open, as keys ("2026-09", "2026"): the ones the recap
+    /// window would open on by itself (`RecapPeriods.defaultMonth` / `defaultYear`).
+    pub recap: RecapKeys,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecapKeys {
+    pub month: String,
+    pub year: String,
 }
 
 /// The Token spend pane: combined and per-agent figures over the last `over_last` days (None = all).
 /// `agent` and `model` ask for the drill-downs. Everything is counted from the same ledgers with
 /// one `now` and one calendar, so a detail always adds up to the row it was opened from.
+///
+/// The scan is kept between calls: a sidebar visit or a new span reuses it, and only `rescan` (or
+/// a scan older than two minutes, which is read again without the progress row) reads again.
 #[tauri::command]
 pub async fn spend_overview(
+    app: AppHandle,
     state: State<'_, AppState>,
     over_last: Option<usize>,
     agent: Option<SpendAgent>,
     model: Option<String>,
+    rescan: bool,
 ) -> Result<Option<SpendOverview>, String> {
     if !state.settings().reads_token_spend {
+        spend_release();
         return Ok(None);
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let ledgers = read_all();
         let now = Utc::now();
-        let calendar = Calendar::local();
-        let mut summary = SpendSummary::of(&ledgers, over_last, now, &calendar);
-        let narrowed: HashMap<SpendAgent, Ledger> = match agent {
-            Some(a) => ledgers.into_iter().filter(|(k, _)| *k == a).collect(),
-            None => ledgers,
+        let snapshot = match kept() {
+            Some(k) if !rescan && (now - k.at).num_seconds() < PANE_FRESHNESS_SECONDS => k,
+            Some(_) if !rescan => scan(None),
+            _ => scan(Some(&app)),
         };
-        let mut focused = agent.map(|_| SpendSummary::of(&narrowed, over_last, now, &calendar));
-        // The pane draws neither the session list nor the project list, and every session carries
-        // its quarter-hours: leave both out of what crosses the IPC.
+        let calendar = Calendar::local();
+        let mut summary = SpendSummary::of(&snapshot.ledgers, over_last, now, &calendar);
+        let narrowed: HashMap<SpendAgent, Ledger> = match agent {
+            Some(a) => snapshot.ledgers.iter().filter(|(k, _)| **k == a).map(|(k, v)| (*k, v.clone())).collect(),
+            None => HashMap::new(),
+        };
+        let scope = if agent.is_some() { &narrowed } else { &snapshot.ledgers };
+        let mut focused = agent.map(|_| SpendSummary::of(scope, over_last, now, &calendar));
+
+        // The lists of the summary on screen only, and none under a model.
+        let lists = match (&model, &focused) {
+            (Some(_), _) => None,
+            (None, Some(f)) => Some(Lists::of(f)),
+            (None, None) => Some(Lists::of(&summary)),
+        };
+        // Every session carries its quarter-hours, and the pane draws them nowhere.
         for s in std::iter::once(&mut summary).chain(focused.as_mut()) {
             s.sessions = Vec::new();
             s.projects = Vec::new();
         }
+        let no_records = snapshot
+            .present
+            .iter()
+            .copied()
+            .filter(|a| snapshot.ledgers.get(a).is_none_or(|l| l.all_time().tokens == 0))
+            .collect();
         Some(SpendOverview {
             summary,
-            activity: TokenActivity::of(&narrowed, now, &calendar),
+            activity: TokenActivity::of(scope, now, &calendar),
             agent: focused,
-            model: model.map(|name| ModelSpendSummary::of(&narrowed, &name, over_last, now, &calendar)),
+            model: model.map(|name| ModelSpendSummary::of(scope, &name, over_last, now, &calendar)),
+            lists,
+            no_records,
+            has_read_limitations: false,
+            recap: {
+                let earliest = periods::earliest(&snapshot.ledgers, &calendar);
+                let offer = periods::Offer::of(earliest, chrono::Local::now().date_naive());
+                RecapKeys { month: offer.default_month, year: offer.default_year }
+            },
         })
     })
     .await
@@ -126,6 +295,55 @@ pub async fn card_spend(state: State<'_, AppState>, provider: String) -> Result<
         })
     })
     .await
+    .map_err(|e| e.to_string())
+}
+
+/// What one limit is worth in money, by this PC's reckoning (upstream `BudgetEstimate`).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowValue {
+    pub window_id: String,
+    /// Seen spent where this PC's logs cannot see: no figure, and the settings pane says why.
+    pub elsewhere: bool,
+    pub full: Option<f64>,
+    pub spent: Option<f64>,
+}
+
+/// The estimated value of each limit of one account: the percentage the provider reports against
+/// what this PC spent since the window opened. `card` applies the detailed card's own rule (not
+/// for a provider that states its limits in money); the settings pane lists every window that has
+/// a figure or was spent elsewhere. Empty with Token spend off or for a provider whose records
+/// are not read here.
+#[tauri::command]
+pub async fn estimated_values(state: State<'_, AppState>, account: String, card: bool) -> Result<Vec<WindowValue>, String> {
+    let Some(key) = AccountKey::from_id(&account) else { return Ok(Vec::new()) };
+    if !state.settings().reads_token_spend || !spend::supports(key.provider) || (card && !budget::estimates_value(key.provider)) {
+        return Ok(Vec::new());
+    }
+    let Some(usage) = state.store.snapshot(std::slice::from_ref(&account)).into_iter().next() else { return Ok(Vec::new()) };
+    let elsewhere: Vec<bool> = usage.windows.iter().map(|w| state.store.used_elsewhere(w, &key)).collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        let now = Utc::now();
+        let ledger = spend::read_ledger(key.provider, &home(), now).ok()?;
+        Some(
+            usage
+                .windows
+                .iter()
+                .zip(elsewhere)
+                .filter_map(|(window, elsewhere)| {
+                    // A window seen spent off this PC keeps its row, saying why there is no
+                    // figure: a value that quietly vanished would read as a bug.
+                    if elsewhere {
+                        return Some(WindowValue { window_id: window.id.clone(), elsewhere, full: None, spent: None });
+                    }
+                    budget::estimate(window, &ledger, usage.observed_at, now)
+                        .map(|e| WindowValue { window_id: window.id.clone(), elsewhere, full: Some(e.full), spent: Some(e.spent) })
+                })
+                .collect::<Vec<_>>(),
+        )
+    })
+    .await
+    .map(Option::unwrap_or_default)
     .map_err(|e| e.to_string())
 }
 
