@@ -253,8 +253,15 @@ fn window_from_limit(limit: &Value) -> Option<UsageWindow> {
         _ => return None,
     };
     let scope = limit.pointer("/scope/model/display_name").and_then(Value::as_str).map(str::to_string);
+    // The unscoped windows take the ids every other route gives them, so a ring pinned to the
+    // five-hour window stays pinned whichever route answered.
+    let id = match (kind_name, scope.as_deref()) {
+        ("session", None) => "claudeCode.five_hour".to_string(),
+        ("weekly_all", None) => "claudeCode.seven_day".to_string(),
+        (kind_name, scope) => format!("claudeCode.{kind_name}.{}", scope.unwrap_or("all")),
+    };
     let mut window = UsageWindow::new(
-        format!("claudeCode.{kind_name}.{}", scope.as_deref().unwrap_or("all")),
+        id,
         kind,
         percent / 100.0,
         seconds,
@@ -455,6 +462,8 @@ mod tests {
         assert_eq!(usage.windows[0].kind, WindowKind::FiveHour);
         assert_eq!(usage.windows[2].scope.as_deref(), Some("Opus"));
         assert_eq!(usage.windows[2].id, "claudeCode.weekly_scoped.Opus");
+        assert_eq!(usage.windows[0].id, "claudeCode.five_hour", "same id as the capture and desktop routes");
+        assert_eq!(usage.windows[1].id, "claudeCode.seven_day");
         assert!(!usage.windows[2].is_exhausted, "warning still has room");
     }
 

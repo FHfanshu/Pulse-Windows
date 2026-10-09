@@ -1026,5 +1026,6 @@
  "Couldn't save the login on this PC.": "이 PC에 로그인을 저장하지 못했습니다.",
  "Pulse's sign-in window": "Pulse 로그인 창",
  "Opens a window where you sign in to platform.deepseek.com.": "platform.deepseek.com에 로그인하는 창을 엽니다.",
- "Opens a window where you sign in to opencode.ai.": "opencode.ai에 로그인하는 창을 엽니다."
+ "Opens a window where you sign in to opencode.ai.": "opencode.ai에 로그인하는 창을 엽니다.",
+ "%1$@ of it came between %2$@ and %3$@.": "%1$@가 %2$@부터 %3$@ 사이에 쓰였습니다."
 }

@@ -1026,5 +1026,6 @@
  "Couldn't save the login on this PC.": "無法在本機儲存登入資訊。",
  "Pulse's sign-in window": "Pulse 的登入視窗",
  "Opens a window where you sign in to platform.deepseek.com.": "會開啟一個視窗，讓你登入 platform.deepseek.com。",
- "Opens a window where you sign in to opencode.ai.": "會開啟一個視窗，讓你登入 opencode.ai。"
+ "Opens a window where you sign in to opencode.ai.": "會開啟一個視窗，讓你登入 opencode.ai。",
+ "%1$@ of it came between %2$@ and %3$@.": "%1$@ 的用量發生在 %2$@ 到 %3$@ 之間。"
 }

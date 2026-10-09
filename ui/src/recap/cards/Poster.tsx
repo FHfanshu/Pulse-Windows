@@ -10,7 +10,7 @@ import { Deck, Payback, personaTitle } from "../deck";
 import * as F from "../format";
 import { Box, C, CARD_WIDTH, FigureText, H, Page, Pill, RichText, Spacer, T, V, grow } from "../kit";
 import { Flame, PersonaGlyph, PulseMark } from "../marks";
-import type { Day } from "../types";
+import type { Day, Report } from "../types";
 
 export function PosterCard({ deck }: { deck: Deck }) {
   const rows = buildRows(deck);
@@ -321,9 +321,9 @@ function RhythmCard({ deck }: { deck: Deck }) {
             ) : null}
           </div>
         </div>
-        {recap.lateShare !== undefined ? (
+        {rhythmLine(recap) ? (
           <T size={16} color="rgba(245,245,241,0.72)" align="center" fit={0.8}>
-            {t("%@ of it came between 9 PM and 5 AM.", F.percent(recap.lateShare))}
+            {rhythmLine(recap)}
           </T>
         ) : null}
       </V>
@@ -581,4 +581,37 @@ function Footer({ deck }: { deck: Deck }) {
       </T>
     </H>
   );
+}
+
+/** The sentence under the clock, in the same terms as the persona on its corner. Upstream always
+ *  quoted the 21:00-05:00 share, which reads as nonsense under "Day shift": the reader takes the
+ *  line for the busiest stretch. A night owl keeps it (that share is what made them one); early
+ *  birds and day shifts get their own band's share; all-day gets the busiest four hours running. */
+function rhythmLine(recap: Report): string | null {
+  const hours = recap.hours;
+  if (!hours || hours.length !== 24) {
+    return recap.lateShare !== undefined ? t("%@ of it came between 9 PM and 5 AM.", F.percent(recap.lateShare)) : null;
+  }
+  const total = hours.reduce((a, b) => a + b, 0);
+  if (total <= 0) return null;
+  const share = (from: number, length: number) => {
+    let sum = 0;
+    for (let i = 0; i < length; i++) sum += hours[(from + i) % 24];
+    return sum / total;
+  };
+  const between = (from: number, length: number) =>
+    t("%1$@ of it came between %2$@ and %3$@.", F.percent(share(from, length)), F.hourLabel(from), F.hourLabel((from + length) % 24));
+  switch (recap.persona) {
+    case "nightOwl":
+      return t("%@ of it came between 9 PM and 5 AM.", F.percent(share(21, 8)));
+    case "earlyBird":
+      return between(5, 5);
+    case "dayShift":
+      return between(10, 8);
+    default: {
+      let best = 0;
+      for (let h = 1; h < 24; h++) if (share(h, 4) > share(best, 4)) best = h;
+      return between(best, 4);
+    }
+  }
 }

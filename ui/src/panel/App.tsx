@@ -11,7 +11,7 @@ import { readCardSpend, readPromptCache, resetCardLedgers, spendProviders } from
 import { providerNames } from "./Icon";
 import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelSizeScale, RailSpacingScale, type Edge, type PanelMetrics } from "./layout";
 import { Ring } from "./Ring";
-import { glassDim, useGlassRegion } from "./glass";
+import { GLASS_EDGE, glassDim } from "./glass";
 import { railSlots } from "./slots";
 import { berthPath } from "./shapes";
 import { PulseColor, spring, usageColor } from "./tint";
@@ -197,8 +197,6 @@ export function App() {
     hoveredItem.current = id;
   }, [pointer, dragging, layout]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useGlassRegion(settings.usesGlass);
-
   // Tell Rust where input belongs; everything else stays click-through.
   useEffect(() => {
     if (!layout) return;
@@ -274,7 +272,12 @@ export function App() {
         onPointerDown={(e) => { if (e.button === 0) invoke("rail_press", { x: e.clientX, y: e.clientY }); }}
       >
         <svg className="berth" width={railSize.w} height={railSize.h}>
-          <path d={berth} fill={settings.usesGlass ? `rgba(0,0,0,${glassDim(settings.glassTransparency)})` : "#000"} />
+          <path
+            d={berth}
+            fill={settings.usesGlass ? `rgba(0,0,0,${glassDim(settings.glassTransparency)})` : "#000"}
+            stroke={settings.usesGlass ? GLASS_EDGE : "none"}
+            strokeWidth={1}
+          />
         </svg>
         <div
           className="rings"

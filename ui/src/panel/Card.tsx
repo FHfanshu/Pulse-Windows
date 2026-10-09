@@ -11,7 +11,7 @@ import { useCardLedger, useEstimatedValues } from "./cardLedgers";
 import { ProviderIcon } from "./Icon";
 import type { Edge } from "./layout";
 import { detailCardLayout, type PanelMetrics } from "./layout";
-import { glassDim } from "./glass";
+import { GLASS_EDGE, glassDim } from "./glass";
 import { bubblePath } from "./shapes";
 import { PulseColor, spring, usageColor } from "./tint";
 
@@ -148,7 +148,12 @@ export function Card(p: CardProps) {
   return (
     <div className={`card ${p.usesGlass ? "glass" : ""}`} style={{ width: totalW, height: totalH, [pointerSide]: L.pointerWidth } as React.CSSProperties}>
       <svg className="card-surface" width={totalW} height={totalH}>
-        <path d={path} fill={p.usesGlass ? `rgba(0,0,0,${glassDim(p.glassTransparency)})` : "#000"} />
+        <path
+          d={path}
+          fill={p.usesGlass ? `rgba(0,0,0,${glassDim(p.glassTransparency)})` : "#000"}
+          stroke={p.usesGlass ? GLASS_EDGE : "none"}
+          strokeWidth={1}
+        />
       </svg>
       <div className="card-clip" style={{ clipPath: `path("${path}")`, width: totalW, height: totalH, position: "absolute", left: 0, top: 0 }}>
         <div

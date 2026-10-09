@@ -1026,5 +1026,6 @@
  "Couldn't save the login on this PC.": "この PC にログインを保存できませんでした。",
  "Pulse's sign-in window": "Pulse のサインインウィンドウ",
  "Opens a window where you sign in to platform.deepseek.com.": "platform.deepseek.com にサインインするウィンドウを開きます。",
- "Opens a window where you sign in to opencode.ai.": "opencode.ai にサインインするウィンドウを開きます。"
+ "Opens a window where you sign in to opencode.ai.": "opencode.ai にサインインするウィンドウを開きます。",
+ "%1$@ of it came between %2$@ and %3$@.": "%1$@ が %2$@ から %3$@ の間に集中しました。"
 }

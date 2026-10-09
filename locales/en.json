@@ -1026,5 +1026,6 @@
  "Couldn't save the login on this PC.": "Couldn't save the login on this PC.",
  "Pulse's sign-in window": "Pulse's sign-in window",
  "Opens a window where you sign in to platform.deepseek.com.": "Opens a window where you sign in to platform.deepseek.com.",
- "Opens a window where you sign in to opencode.ai.": "Opens a window where you sign in to opencode.ai."
+ "Opens a window where you sign in to opencode.ai.": "Opens a window where you sign in to opencode.ai.",
+ "%1$@ of it came between %2$@ and %3$@.": "%1$@ of it came between %2$@ and %3$@."
 }

@@ -360,7 +360,6 @@ fn main() {
             signin_ipc::signin_remove_account,
             signin_ipc::signin_open_page,
             signin_ipc::signin_copy_code,
-            shell::set_glass_region,
             save_file,
             dashboard::dashboard_resize,
             dashboard::dashboard_hide,
