@@ -292,3 +292,78 @@ pub fn capture_screen(rect: (i32, i32, i32, i32), w: i32, h: i32) -> Option<Vec<
         out
     }
 }
+
+/// Windows difference: the experimental native backdrop is owned by the UI thread and reused
+/// as the rail moves. Composition uses physical pixels; WebView layout uses DIPs.
+struct HostBackdrop {
+    sprite: windows::UI::Composition::SpriteVisual,
+    shape: windows::UI::Composition::CompositionRoundedRectangleGeometry,
+    _root: windows::UI::Composition::ContainerVisual,
+    _target: windows::UI::Composition::Desktop::DesktopWindowTarget,
+    _compositor: windows::UI::Composition::Compositor,
+    _controller: Option<windows::System::DispatcherQueueController>,
+}
+
+thread_local! {
+    static HOST_BACKDROP: std::cell::RefCell<Option<HostBackdrop>> = const { std::cell::RefCell::new(None) };
+}
+
+impl HostBackdrop {
+    fn new(hwnd: HWND) -> windows::core::Result<Self> {
+        use windows::core::Interface;
+        use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWINDOWATTRIBUTE};
+        use windows::Win32::System::WinRT::Composition::ICompositorDesktopInterop;
+        use windows::Win32::System::WinRT::{CreateDispatcherQueueController, DispatcherQueueOptions, DQTAT_COM_NONE, DQTYPE_THREAD_CURRENT};
+        use windows::UI::Composition::Compositor;
+        let on = BOOL(1);
+        unsafe { DwmSetWindowAttribute(hwnd, DWMWINDOWATTRIBUTE(17), (&on as *const BOOL).cast(), std::mem::size_of::<BOOL>() as u32)? };
+        // The thread can already have a queue; creating a second one fails.
+        let controller = if windows::System::DispatcherQueue::GetForCurrentThread().is_ok() {
+            None
+        } else {
+            Some(unsafe { CreateDispatcherQueueController(DispatcherQueueOptions {
+                dwSize: std::mem::size_of::<DispatcherQueueOptions>() as u32,
+                threadType: DQTYPE_THREAD_CURRENT,
+                apartmentType: DQTAT_COM_NONE,
+            })? })
+        };
+        let compositor = Compositor::new()?;
+        let interop: ICompositorDesktopInterop = compositor.cast()?;
+        let target = unsafe { interop.CreateDesktopWindowTarget(hwnd, false)? };
+        let root = compositor.CreateContainerVisual()?;
+        target.SetRoot(&root)?;
+        let sprite = compositor.CreateSpriteVisual()?;
+        sprite.SetBrush(&compositor.CreateHostBackdropBrush()?)?;
+        let shape = compositor.CreateRoundedRectangleGeometry()?;
+        sprite.SetClip(&compositor.CreateGeometricClipWithGeometry(&shape)?)?;
+        root.Children()?.InsertAtTop(&sprite)?;
+        Ok(Self { sprite, shape, _root: root, _target: target, _compositor: compositor, _controller: controller })
+    }
+}
+
+/// UI thread only. None hides the native surface without leaking/recreating a target.
+pub fn host_backdrop(window: &WebviewWindow, rail: Option<Rect>, scale: f64) -> windows::core::Result<bool> {
+    use windows::Foundation::Numerics::{Vector2, Vector3};
+    let Some(hwnd) = hwnd(window) else { return Ok(false) };
+    HOST_BACKDROP.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(rail) = rail else {
+            if let Some(surface) = slot.as_ref() {
+                surface.sprite.SetIsVisible(false)?;
+            }
+            return Ok(false);
+        };
+        if slot.is_none() {
+            *slot = Some(HostBackdrop::new(hwnd)?);
+        }
+        let surface = slot.as_ref().unwrap();
+        let size = Vector2 { X: (rail.w * scale) as f32, Y: (rail.h * scale) as f32 };
+        let radius = size.X.min(size.Y) / 2.0;
+        surface.sprite.SetOffset(Vector3 { X: (rail.x * scale) as f32, Y: (rail.y * scale) as f32, Z: 0.0 })?;
+        surface.sprite.SetSize(size)?;
+        surface.shape.SetSize(size)?;
+        surface.shape.SetCornerRadius(Vector2 { X: radius, Y: radius })?;
+        surface.sprite.SetIsVisible(true)?;
+        Ok(true)
+    })
+}

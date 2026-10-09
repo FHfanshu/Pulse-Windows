@@ -123,11 +123,13 @@ pub fn place(app: &AppHandle, shared: &SharedPanel) {
     state.monitor = Some(monitor);
     state.layout = Some(layout);
     drop(state);
+    crate::backdrop::sync_native(app);
     let _ = app.emit_to(LABEL, "panel-layout", layout);
 }
 
 fn apply(window: &WebviewWindow, monitor: &win::MonitorInfo, layout: &Layout) {
     win::set_frame_dip(window, layout.frame, monitor.scale);
+    crate::backdrop::record_layout(layout, monitor.scale);
 }
 
 /// Display changes do not change the device name. Refresh the cached DPI and
@@ -139,6 +141,7 @@ pub fn reconcile_display(app: &AppHandle, shared: &SharedPanel) {
     let Some(layout) = state.display_update(monitor.clone(), win::window_rect_px(&window)) else { return };
     apply(&window, &monitor, &layout);
     drop(state);
+    crate::backdrop::sync_native(app);
     // The sampler reports a fresh pointer even if it has not moved. Emitting a
     // reset here could race and overwrite that fresh event after unlocking.
     let _ = app.emit_to(LABEL, "panel-layout", layout);
@@ -315,6 +318,7 @@ fn carry(app: &AppHandle, shared: &SharedPanel, window: &WebviewWindow, cursor_p
     state.layout = Some(layout);
     let placement = state.placement.clone();
     drop(state);
+    crate::backdrop::sync_native(app);
     crate::store::save_placement(app, &placement);
     let _ = app.emit_to(LABEL, "panel-layout", layout);
     let _ = app.emit("placement-changed", &placement);

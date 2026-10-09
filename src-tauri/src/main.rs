@@ -65,6 +65,7 @@ fn update_settings(app: AppHandle, state: State<AppState>, patch: serde_json::Va
     };
     let previous = state.settings();
     state.save_settings(settings.clone());
+    backdrop::sync_native(&app);
     shell::apply(&app, Some(&previous));
     dashboard::sync(&app, Some(&previous));
     notify::reconsider(&app, &previous);
@@ -318,6 +319,7 @@ fn main() {
         .manage(shared.clone())
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
+            backdrop::get_native_backdrop,
             get_settings,
             update_settings,
             list_providers,
