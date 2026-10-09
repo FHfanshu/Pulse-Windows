@@ -93,7 +93,7 @@ export function ShortcutField({ shortcut, onChange }: { shortcut: GlobalShortcut
 
   const label = recording
     ? needsModifier
-      ? t("Add Ctrl or Alt")
+      ? t("Add ⌘, ⌥ or ⌃")
       : held.length
         ? displayAccelerator(held.join("+"))
         : t("Press keys…")

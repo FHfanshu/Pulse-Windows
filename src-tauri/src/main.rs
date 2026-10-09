@@ -317,6 +317,7 @@ fn main() {
             detect_providers,
             open_chooser,
             shell::shortcut_status,
+            shell::set_glass_region,
             save_file
         ])
         .setup(move |app| {
