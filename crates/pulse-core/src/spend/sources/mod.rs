@@ -148,6 +148,18 @@ registry! {
     CommandCode => commandcode::CommandCode,
     OpenCodeReview => opencodereview::OpenCodeReview,
     ZCode => zcode::ZCode,
+    // batch D
+    Mux => mux::Mux,
+    Codebuff => codebuff::Codebuff,
+    Freebuff => freebuff::Freebuff,
+    JCode => jcode::JCode,
+    Augment => augment::Augment,
+    Gjc => gjc::Gjc,
+    Junie => junie::Junie,
+    Dsh => dsh::Dsh,
+    Fx => fx::Fx,
+    LmStudio => lmstudio::LmStudio,
+    Reasonix => reasonix::Reasonix,
 }
 
 /// A count out of a JSON value the way the Swift readers took one: a number, whole or not,
