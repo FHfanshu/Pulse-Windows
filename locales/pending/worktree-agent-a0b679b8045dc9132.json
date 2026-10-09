@@ -1,0 +1,107 @@
+{
+ "Signed in. Pulse holds a read-only token for this PC.": {
+  "en": "Signed in. Pulse holds a read-only token for this PC.",
+  "zh-Hans": "已登录。Pulse 在本机保存了一个只读令牌。",
+  "zh-Hant": "已登入。Pulse 在本機保存了一個唯讀權杖。",
+  "ja": "サインイン済みです。Pulse はこの PC に読み取り専用のトークンを保持します。",
+  "ko": "로그인되었습니다. Pulse는 이 PC에 읽기 전용 토큰을 보관합니다."
+ },
+ "Stored encrypted on this PC.": {
+  "en": "Stored encrypted on this PC.",
+  "zh-Hans": "加密保存在本机。",
+  "zh-Hant": "加密儲存在本機。",
+  "ja": "この PC に暗号化して保存されます。",
+  "ko": "이 PC에 암호화되어 저장됩니다."
+ },
+ "An estimate, not a reported figure: what this PC spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this PC spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.": {
+  "en": "An estimate, not a reported figure: what this PC spent since each window opened, divided by the percentage the provider says is used. When the percentage rises while this PC spends nothing, the account is being used elsewhere — another computer, or the website — and that window isn't estimated until it resets. If both are in use at once, the figure reads low. Windows with too little use to extrapolate from are left out.",
+  "zh-Hans": "这是推算值，不是官方给出的数字：用这台电脑 从周期开始至今的花费，除以官方给出的已用百分比。如果百分比在涨，这台电脑 却几乎没花钱，说明账号还在别处使用（另一台电脑或网页），这个周期就不再推算，直到重置。两边同时在用时，推算值会偏低。用量太少、无法推算的额度不会列出。",
+  "zh-Hant": "這是推算值，不是官方給出的數字：用這台電腦 從週期開始至今的花費，除以官方給出的已用百分比。如果百分比在漲，這台電腦 卻幾乎沒花錢，代表帳號還在別處使用（另一台電腦或網頁），這個週期就不再推算，直到重設。兩邊同時在用時，推算值會偏低。用量太少、無法推算的額度不會列出。",
+  "ja": "報告された数値ではなく推定です。この PC で期間の開始から使った金額を、プロバイダが示す使用率で割っています。使用率が上がっているのにこの PC でほとんど使っていない場合は、別の場所（ほかのコンピュータやウェブサイト）でも使われているため、その期間はリセットまで推定しません。両方で同時に使っている場合、推定は低めになります。推定できるほど使っていない上限は表示しません。",
+  "ko": "보고된 수치가 아니라 추정치입니다. 이 PC에서 기간이 시작된 뒤 쓴 금액을 제공업체가 알려 주는 사용률로 나눈 값입니다. 사용률이 오르는데 이 PC에서는 거의 쓰지 않았다면 다른 곳(다른 컴퓨터나 웹사이트)에서도 쓰고 있는 것이므로, 그 기간은 초기화될 때까지 추정하지 않습니다. 양쪽에서 동시에 쓰고 있으면 추정치가 낮게 나옵니다. 추정하기에 사용량이 너무 적은 한도는 표시하지 않습니다."
+ },
+ "From z.ai. Stored encrypted on this PC.": {
+  "en": "From z.ai. Stored encrypted on this PC.",
+  "zh-Hans": "在 z.ai 获取。加密保存在本机。",
+  "zh-Hant": "在 z.ai 取得。加密儲存在本機。",
+  "ja": "z.ai で取得します。この PC に暗号化して保存されます。",
+  "ko": "z.ai에서 발급받습니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "From platform.minimax.io. Stored encrypted on this PC.": {
+  "en": "From platform.minimax.io. Stored encrypted on this PC.",
+  "zh-Hans": "在 platform.minimax.io 获取。加密保存在本机。",
+  "zh-Hant": "在 platform.minimax.io 取得。加密儲存在本機。",
+  "ja": "platform.minimax.io で取得します。この PC に暗号化して保存されます。",
+  "ko": "platform.minimax.io에서 발급받습니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "From platform.deepseek.com. Stored encrypted on this PC.": {
+  "en": "From platform.deepseek.com. Stored encrypted on this PC.",
+  "zh-Hans": "在 platform.deepseek.com 获取。加密保存在本机。",
+  "zh-Hant": "在 platform.deepseek.com 取得。加密儲存在本機。",
+  "ja": "platform.deepseek.com で取得します。この PC に暗号化して保存されます。",
+  "ko": "platform.deepseek.com에서 발급받습니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "From platform.openai.com. Stored encrypted on this PC.": {
+  "en": "From platform.openai.com. Stored encrypted on this PC.",
+  "zh-Hans": "在 platform.openai.com 获取。加密保存在本机。",
+  "zh-Hant": "在 platform.openai.com 取得。加密儲存在本機。",
+  "ja": "platform.openai.com で取得します。この PC に暗号化して保存されます。",
+  "ko": "platform.openai.com에서 발급받습니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "From ampcode.com/settings. Stored encrypted on this PC.": {
+  "en": "From ampcode.com/settings. Stored encrypted on this PC.",
+  "zh-Hans": "在 ampcode.com/settings 获取。加密保存在本机。",
+  "zh-Hant": "在 ampcode.com/settings 取得。加密儲存在本機。",
+  "ja": "ampcode.com/settings で取得します。この PC に暗号化して保存されます。",
+  "ko": "ampcode.com/settings에서 발급받습니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "Copied from your browser. Stored encrypted on this PC.": {
+  "en": "Copied from your browser. Stored encrypted on this PC.",
+  "zh-Hans": "从浏览器复制。加密保存在本机。",
+  "zh-Hant": "從瀏覽器複製而來。加密儲存在本機。",
+  "ja": "ブラウザからコピーしたものです。この PC に暗号化して保存されます。",
+  "ko": "브라우저에서 복사한 값입니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "From app.factory.ai. Stored encrypted on this PC.": {
+  "en": "From app.factory.ai. Stored encrypted on this PC.",
+  "zh-Hans": "在 app.factory.ai 获取。加密保存在本机。",
+  "zh-Hant": "在 app.factory.ai 取得。加密儲存在本機。",
+  "ja": "app.factory.ai で取得します。この PC に暗号化して保存されます。",
+  "ko": "app.factory.ai에서 발급받습니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "From Warp's settings, under API Keys. Stored encrypted on this PC.": {
+  "en": "From Warp's settings, under API Keys. Stored encrypted on this PC.",
+  "zh-Hans": "在 Warp 设置的 API Keys 中获取。加密保存在本机。",
+  "zh-Hant": "在 Warp 設定的 API Keys 中取得。加密儲存在本機。",
+  "ja": "Warp の設定の「API Keys」で取得します。この PC に暗号化して保存されます。",
+  "ko": "Warp 설정의 API Keys에서 발급받습니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.": {
+  "en": "From the Kimi Open Platform console, international or China. Stored encrypted on this PC.",
+  "zh-Hans": "在 Kimi 开放平台控制台（国际站或中国站）获取。加密保存在本机。",
+  "zh-Hant": "在 Kimi 開放平台主控台（國際站或中國站）取得。加密儲存在本機。",
+  "ja": "Kimi Open Platform のコンソール（国際版または中国版）で取得します。この PC に暗号化して保存されます。",
+  "ko": "Kimi Open Platform 콘솔(국제판 또는 중국판)에서 발급받습니다. 이 PC에 암호화되어 저장됩니다."
+ },
+ "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.": {
+  "en": "Adds the plan, when the figures were read and, with Token spend on, this PC's recent activity.",
+  "zh-Hans": "加上套餐名、数字的更新时间；打开「Token 消耗」后，还会显示本机最近的用量。",
+  "zh-Hant": "加上方案名稱、數字的更新時間；開啟「Token 用量支出」後，還會顯示這台電腦 最近的用量。",
+  "ja": "プラン名と数値の更新時刻を加えます。「トークン使用量」がオンなら、この PC での最近の利用も表示します。",
+  "ko": "요금제 이름과 숫자를 읽은 시각을 더하고, ‘토큰 사용량’을 켜면 이 PC의 최근 사용량도 표시합니다."
+ },
+ "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.": {
+  "en": "Reads Claude Code's saved login from its credentials file, and the Claude desktop app's usage record. No prompt.",
+  "zh-Hans": "读取 Claude Code 保存在凭据文件里的登录信息，以及 Claude 桌面版的用量记录。不会弹出授权提示。",
+  "zh-Hant": "讀取 Claude Code 存在憑證檔案中的登入資訊，以及 Claude 桌面版的用量記錄。不會跳出授權提示。",
+  "ja": "認証情報ファイルから Claude Code のログインを、Claude デスクトップの使用量記録を読み取ります。確認は求めません。",
+  "ko": "인증 정보 파일에서 Claude Code의 로그인을, Claude 데스크탑의 사용량 기록을 읽습니다. 권한 요청은 없습니다."
+ },
+ "Uses a browser session you import in Settings.": {
+  "en": "Uses a browser session you import in Settings.",
+  "zh-Hans": "使用你在设置里导入的浏览器登录信息。",
+  "zh-Hant": "使用你在設定中匯入的瀏覽器登入資訊。",
+  "ja": "設定で読み込んだブラウザのログインセッションを使います。",
+  "ko": "설정에서 가져온 브라우저 로그인 세션을 사용합니다."
+ }
+}

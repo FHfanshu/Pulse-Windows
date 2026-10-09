@@ -1,0 +1,11 @@
+/* Account pane additions (ui/src/settings/account/*). Everything else comes from settings.css. */
+.text-field.narrow { width: 110px; }
+.colour-well { width: 44px; height: 26px; padding: 2px; border: 1px solid var(--s-line); border-radius: 8px; background: var(--s-field); cursor: pointer; }
+.colour-well::-webkit-color-swatch-wrapper { padding: 0; }
+.colour-well::-webkit-color-swatch { border: 0; border-radius: 5px; }
+.colour-well:focus-visible { outline: 2px solid var(--s-accent); outline-offset: 2px; }
+.route-name { max-width: 260px; text-align: right; }
+.small-text { font-size: 12px; }
+.selectable { user-select: text; }
+p.footnote { margin: 0; }
+.pane-stack.tight { gap: 8px; }
