@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setLanguage } from "../shared/i18n";
 import { elapsedFraction, headlineWindow, isSpent, percentText, secondWindow } from "../shared/model";
-import { useSettings, useUsage } from "../shared/settings";
+import { recordsAccount, useSettings, useUsage } from "../shared/settings";
 import { Card } from "./Card";
 import { readCardSpend, readPromptCache, resetCardLedgers, useCardSpendProviders } from "./cardLedgers";
 import { providerNames } from "./Icon";
@@ -120,14 +120,14 @@ export function App() {
   const selectedIndex = entries.findIndex((e) => e.id === selected);
   const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] : null;
 
-  // The detailed card's recent activity: this account's detailed switch is on, it is the first account of a
-  // provider whose records are read here, and Token spend is on (upstream `showsSpend`).
+  // The detailed card's recent activity: this account's detailed switch is on, it is the account this PC's
+  // records are shown on (`recordsAccount`), and Token spend is on (upstream `showsSpend`).
   const readsSpend = stored?.readsTokenSpend ?? false;
   const cardSpendProviders = useCardSpendProviders();
   const selectedProvider = selectedEntry?.usage.account.provider ?? null;
   const selectedIsDetailed = !!selectedEntry && (stored?.detailedCards.includes(selectedEntry.account) ?? false);
   const selectedShowsSpend =
-    selectedIsDetailed && readsSpend && !!selectedProvider && selectedEntry?.usage.account.slot === "" && cardSpendProviders.has(selectedProvider);
+    selectedIsDetailed && readsSpend && !!selectedProvider && !!stored && recordsAccount(stored, selectedProvider) === selectedEntry?.account && cardSpendProviders.has(selectedProvider);
   // Fetched on selection and at most every five minutes per provider; the store lives outside React, so a
   // fast sweep across the rings cannot cancel a read.
   useEffect(() => {

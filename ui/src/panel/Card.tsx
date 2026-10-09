@@ -27,7 +27,7 @@ export interface CardProps {
   glassTransparency: number;
   /** The detailed card: the plan, how fresh the figures are and (below) recent activity. Set per account. */
   detailed: boolean;
-  /** Whether this account has records to show: detailed, a primary account, Token spend on. */
+  /** Whether this account has records to show: detailed, the account the records are shown on, Token spend on. */
   showsSpend: boolean;
   onHeight: (h: number) => void;
 }

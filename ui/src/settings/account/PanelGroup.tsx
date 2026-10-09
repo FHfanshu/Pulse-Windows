@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { windowName } from "../../shared/copy";
 import { t } from "../../shared/i18n";
 import type { ProviderUsage } from "../../shared/model";
-import type { AppSettings } from "../../shared/settings";
+import { recordsAccount, type AppSettings } from "../../shared/settings";
 import { Segmented, Select } from "../controls";
 import { Group, Row } from "../Group";
 import { ToggleRow } from "../panes/ToggleRow";
@@ -15,7 +15,7 @@ import { setDetailedCard, setEnabled, setPinnedWindow, setRingTint, setSplit } f
 const FIRST_SUGGESTION = "#4099FF";
 
 /** An account's Panel card: whether it is on the rail, which limit its ring follows, its detailed card, and its ring colour. */
-export function PanelGroup({ id, provider, primary, settings, usage }: {
+export function PanelGroup({ id, provider, settings, usage }: {
   id: string;
   provider: string;
   primary: boolean;
@@ -50,7 +50,7 @@ export function PanelGroup({ id, provider, primary, settings, usage }: {
           pulse-core and a Codex app-server read of the limit reset credits. */}
       <ToggleRow
         title="Detailed card"
-        subtitle={detailedCardSubtitle(primary && meta.keepsLocalTranscripts ? "transcripts" : null)}
+        subtitle={detailedCardSubtitle(recordsAccount(settings, provider) === id && meta.keepsLocalTranscripts ? "transcripts" : null)}
         checked={settings.detailedCards.includes(id)}
         onChange={(on) => void setDetailedCard(settings, id, on)}
       />
