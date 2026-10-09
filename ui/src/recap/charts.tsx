@@ -3,6 +3,7 @@
 import { CSSProperties, ReactNode } from "react";
 import * as F from "./format";
 import { C, Geo, H, MONO, T, V } from "./kit";
+import { hourInBand, type RhythmBand } from "./rhythm";
 import type { Day, Mark, MonthRow } from "./types";
 
 // MARK: Heat
@@ -119,9 +120,9 @@ export function Donut({ parts, thickness, size }: { parts: { share: number; colo
 
 // MARK: Clock
 
-/** 24 bars around a ring, one per hour, midnight at the top. The late hours are lime; the rest are
+/** 24 bars around a ring, one per hour, midnight at the top. The summary's band is lime; the rest are
  *  a muted grey that gets lighter with less work. */
-export function Clock({ hours, inner, longest, barWidth, labelSize, size }: { hours: number[]; inner: number; longest: number; barWidth: number; labelSize: number; size: number }) {
+export function Clock({ hours, highlight, inner, longest, barWidth, labelSize, size }: { hours: number[]; highlight: RhythmBand | null; inner: number; longest: number; barWidth: number; labelSize: number; size: number }) {
   const maximum = Math.max(0, ...hours);
   const c = size / 2;
   if (hours.length !== 24 || maximum <= 0) return <svg width={size} height={size} />;
@@ -131,6 +132,7 @@ export function Clock({ hours, inner, longest, barWidth, labelSize, size }: { ho
       {hours.map((tokens, hour) => {
         const fraction = tokens / maximum;
         const length = longest * (0.12 + 0.88 * fraction);
+        const highlighted = highlight !== null && hourInBand(hour, highlight);
         return (
           <rect
             key={hour}
@@ -140,8 +142,8 @@ export function Clock({ hours, inner, longest, barWidth, labelSize, size }: { ho
             height={length}
             rx={barWidth / 2}
             transform={`translate(${c} ${c}) rotate(${hour * 15})`}
-            fill={F.isLate(hour) ? C.lime : C.darkRest}
-            fillOpacity={F.isLate(hour) ? 1 : 0.38 + 0.62 * fraction}
+            fill={highlighted ? C.lime : C.darkRest}
+            fillOpacity={highlighted ? 1 : 0.38 + 0.62 * fraction}
           />
         );
       })}
