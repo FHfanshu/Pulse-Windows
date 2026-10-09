@@ -150,7 +150,9 @@ fn a_month_holds_its_first_and_last_day_and_nothing_from_either_neighbour() {
     assert_eq!(hours.iter().sum::<i64>(), 200);
     assert_eq!(hours[0], 100);
     assert_eq!(hours[23], 100);
-    assert_eq!(recap.late_nights, 1);
+    // October 1's 00:00 continues September 30's evening, which is not this month's: within
+    // October it is a stretch that began at midnight.
+    assert_eq!(recap.late_nights, 0);
 }
 
 #[test]
@@ -405,21 +407,23 @@ fn work_past_midnight_up_to_0500_counts_toward_its_night_once() {
         session("b", None, at(2026, 10, 4, 4, 40), at(2026, 10, 4, 4, 58), vec![slot(at(2026, 10, 4, 4, 45), 100)]),
     ];
     let recap = month_of(2026, 10, vec![(SpendAgent::ClaudeCode, l.clone())]);
-    assert_eq!(recap.late_nights, 2);
-    // 04:58, from the session's own last record rather than its quarter-hour.
-    assert_eq!(recap.latest_minute, Some(4 * 60 + 58));
+    // Only the first crossed a midnight; 04:40-04:58 began after one.
+    assert_eq!(recap.late_nights, 1);
+    // 01:22 the next day, from the session's own last record.
+    assert_eq!(recap.latest_minute, Some(24 * 60 + 60 + 22));
 
-    // Without the session's end it is the quarter-hour's start.
+    // Without the session's end it is the last quarter-hour's start.
     let mut bare = l;
     bare.sessions = vec![];
-    assert_eq!(month_of(2026, 10, vec![(SpendAgent::ClaudeCode, bare)]).latest_minute, Some(4 * 60 + 45));
+    assert_eq!(month_of(2026, 10, vec![(SpendAgent::ClaudeCode, bare)]).latest_minute, Some(24 * 60 + 60 + 15));
 }
 
 #[test]
 fn no_work_after_midnight_is_no_late_night_not_a_zero_minute() {
     let recap = october(vec![event(at(2026, 10, 2, 22, 0), 100), event(at(2026, 10, 3, 5, 0), 100)]);
+    // Seven quiet hours between them: two stretches, neither over midnight.
     assert_eq!(recap.late_nights, 0);
-    assert_eq!(recap.latest_minute, None);
+    assert_eq!(recap.latest_minute, Some(22 * 60));
 }
 
 // Persona.
@@ -703,7 +707,7 @@ fn tokens_with_no_published_price_are_carried_so_the_money_can_be_called_a_floor
 }
 
 #[test]
-fn one_unpriced_day_takes_the_posters_cost_line_away_rather_than_drawing_a_zero_for_it() {
+fn one_unpriced_day_breaks_the_posters_cost_line_rather_than_drawing_a_zero_for_it() {
     let series = |mystery_day: Option<u32>| {
         let mut events = vec![event(noon(2026, 10, 1), 1_000_000), event(noon(2026, 10, 3), 1_000_000)];
         if let Some(day) = mystery_day {
@@ -713,9 +717,9 @@ fn one_unpriced_day_takes_the_posters_cost_line_away_rather_than_drawing_a_zero_
         super::deck::cost_series(&recap)
     };
     // October 2nd is quiet: a real zero between priced days.
-    assert_eq!(series(None), vec![3.0, 0.0, 3.0, 0.0, 0.0]);
-    // On the 4th there was work with no price: no line.
-    assert!(series(Some(4)).is_empty());
+    assert_eq!(series(None), vec![Some(3.0), Some(0.0), Some(3.0), Some(0.0), Some(0.0)]);
+    // On the 4th there was work with no price: a break in the line, not a zero and not no line.
+    assert_eq!(series(Some(4)), vec![Some(3.0), Some(0.0), Some(3.0), None, Some(0.0)]);
 }
 
 // The command and the report.
@@ -753,4 +757,36 @@ fn the_serialised_recap_leaves_a_missing_figure_out_rather_than_printing_a_zero(
     // Each agent carries the days it worked, as dates.
     assert_eq!(json["agents"][0]["activeDates"], serde_json::json!(["2026-10-02"]));
     assert_eq!(json["agents"][0]["activeDays"], 1);
+}
+
+#[test]
+fn a_year_whose_records_begin_in_may_counts_from_may_not_january() {
+    let recap = build_with(
+        Period::Year(2026),
+        vec![(SpendAgent::ClaudeCode, ledger(vec![event(noon(2026, 5, 14), 100), event(noon(2026, 9, 2), 300)]))],
+        noon(2026, 10, 9),
+    );
+    assert_eq!(recap.records_begin, Some(date(2026, 5, 14)));
+    // January 1 to October 9 has been 282 days; May 14 to October 9, 149.
+    assert_eq!(recap.elapsed_days, 282);
+    assert_eq!(recap.observed_days(), 149);
+    assert!(recap.is_before_records(date(2026, 5, 13)));
+    assert!(!recap.is_before_records(date(2026, 5, 14)));
+
+    let insights = super::insights::RecapInsights::new(&recap);
+    assert!((0..4).all(|i| insights.is_month_before_records(i)));
+    assert!(!insights.is_month_before_records(4), "May holds the first record");
+    assert!(insights.is_month_unrecorded(11), "December is still to come");
+    let split = insights.work_split().unwrap();
+    assert_eq!(split.weekday_days + split.weekend_days, 149);
+
+    // The plan price runs from the first record too.
+    assert!((super::deck::paid_months(&recap) - 12.0 * 149.0 / 365.0).abs() < 1e-9);
+}
+
+#[test]
+fn records_reaching_back_before_the_period_leave_it_whole() {
+    let recap = october(vec![event(noon(2026, 9, 20), 100), event(noon(2026, 10, 2), 100)]);
+    assert_eq!(recap.records_begin, None);
+    assert_eq!(recap.observed_days(), recap.elapsed_days);
 }

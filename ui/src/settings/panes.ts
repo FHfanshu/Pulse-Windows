@@ -35,7 +35,7 @@ export const apiProviders = new Set(["moonshot", "openAIPlatform", "deepSeek"]);
 function fixed(id: FixedPane): SidebarItem {
   switch (id) {
     case "appearance":
-      return { id, title: t("Appearance"), icon: { glyph: "appearance" }, terms: ["Size", "Spacing", "Round ends", "Liquid Glass", "Transparency", "Ring activity animation"].map((k) => t(k)) };
+      return { id, title: t("Appearance"), icon: { glyph: "appearance" }, terms: ["Size", "Spacing", "Round ends", "Panel colour", "Liquid Glass", "Effect", "Acrylic", "Glitter", "Transparency", "Ring activity animation"].map((k) => t(k)) };
     case "rings":
       return { id, title: t("Rings and figures"), icon: { glyph: "rings" }, terms: ["Percentages at the side", "Percentages across", "Figures beside the rings", "Figure above the ring", "Show what's left", "Forecast", "Second limit inside the ring", "Time until reset", "Time ring direction", "Turn red at", "Alert colour when docked"].map((k) => t(k)) };
     case "placement":
@@ -78,6 +78,9 @@ export function enabledInOrder(settings: AppSettings): string[] {
   return [...ordered, ...[...rest].sort()];
 }
 
+/** Row titles every account pane has (its Panel group). */
+const ACCOUNT_TERMS = ["Show in panel", "Detailed card", "Ring colour", "Ring shows"];
+
 export function buildSections(settings: AppSettings, providers: ProviderInfo[]): SidebarSection[] {
   const accounts = allAccounts(settings, providers);
   const byId = new Map(accounts.map((a) => [a.id, a]));
@@ -85,8 +88,9 @@ export function buildSections(settings: AppSettings, providers: ProviderInfo[]):
     id: accountPaneId(a.id),
     title: a.label,
     icon: { provider: a.provider },
-    // Typing the provider's name finds an account the user has relabelled.
-    terms: [providerName(a.provider, providers)],
+    // Typing the provider's name finds an account the user has relabelled; the Panel group's rows
+    // find every account, since each has its own.
+    terms: [providerName(a.provider, providers), ...ACCOUNT_TERMS.map((k) => t(k))],
   });
 
   const enabledIds = enabledInOrder(settings).filter((id) => byId.has(id));

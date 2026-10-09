@@ -270,7 +270,8 @@ mod tests {
         let ledger = read_agent(SpendAgent::LmStudio, &Home::new(home.path()), cache.path(), &Calendar::utc(2), &PriceTable::new());
         assert_eq!(ledger.days.iter().map(|d| d.tokens).sum::<i64>(), 5);
 
-        let empty = tempfile::tempdir().unwrap();
+        // A home with no store, read with no history kept.
+        let (empty, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let ledger = read_agent(SpendAgent::LmStudio, &Home::new(empty.path()), cache.path(), &Calendar::utc(2), &PriceTable::new());
         assert!(ledger.days.is_empty());
     }

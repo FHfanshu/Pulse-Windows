@@ -12,6 +12,7 @@ import {
 } from "../shared/spend";
 import type { CardLedger } from "./cardLedgers";
 import type { detailCardLayout } from "./layout";
+import { ink, useLightPanel } from "./scheme";
 
 type Layout = ReturnType<typeof detailCardLayout>;
 
@@ -37,7 +38,6 @@ export function activityState(ledger: CardLedger): ActivityState | null {
   return ledger.failed ? { kind: "failed" } : null;
 }
 
-const faint = (alpha: number) => `rgba(255,255,255,${alpha})`;
 
 export function ActivitySection({ state, L, provider, promptCache }: {
   state: ActivityState;
@@ -45,13 +45,14 @@ export function ActivitySection({ state, L, provider, promptCache }: {
   provider: string;
   promptCache: PromptCacheReading | null;
 }) {
+  const light = useLightPanel();
   const line = (size: number, height: number) => ({ fontSize: size, height, lineHeight: `${height}px` });
   const message = (text: string) => (
     <div className="ellipsis" style={{ ...line(L.rowFontSize, L.rowTextLineHeight), opacity: 0.45 }}>{text}</div>
   );
   return (
     <div className="activity" style={{ display: "flex", flexDirection: "column", gap: L.activitySpacing }}>
-      <div style={{ height: 1, background: faint(0.12) }} />
+      <div style={{ height: 1, background: ink(light, 0.12) }} />
       <div style={{ ...line(L.footnoteFontSize, L.figureLabelHeight), fontWeight: 500, opacity: 0.5 }}>{t("On this Mac")}</div>
       {state.kind === "reading" && message(t("Reading local records…"))}
       {state.kind === "empty" && message(t("No history yet"))}
@@ -140,6 +141,7 @@ function Figure({ label, tokens, cost, priced, currency, L }: {
  * ledger that starts today has one day, and sized by that its one bar would take the full width.
  */
 function DaysChart({ days, slots, width, height }: { days: LedgerDay[]; slots: number; width: number; height: number }) {
+  const light = useLightPanel();
   const peak = Math.max(...days.map((d) => d.tokens), 1);
   const count = Math.max(days.length, slots, 1);
   const spacing = Math.max((width / count) * 0.3, 1.5);
@@ -158,7 +160,7 @@ function DaysChart({ days, slots, width, height }: { days: LedgerDay[]; slots: n
             width={w}
             height={h}
             rx={Math.min(w, h) / 2}
-            fill={faint(isToday ? 0.9 : day.tokens > 0 ? 0.32 : 0.12)}
+            fill={ink(light, isToday ? 0.9 : day.tokens > 0 ? 0.32 : 0.12)}
           />
         );
       })}

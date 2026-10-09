@@ -224,7 +224,24 @@ function Detail({ usage, label, settings }: { usage: ProviderUsage; label: strin
   );
 }
 
+/**
+ * Whether the popup is drawn light, as it follows the system's theme. The usage colours take their
+ * deeper twins there, as upstream's menu does when macOS draws it light.
+ */
+function useLightAppearance(): boolean {
+  const query = "(prefers-color-scheme: light)";
+  const [light, setLight] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    const update = () => setLight(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return light;
+}
+
 function Limit({ window: w, remaining, warningAt }: { window: UsageWindow; remaining: boolean; warningAt: number }) {
+  const light = useLightAppearance();
   const spent = isSpent(w);
   const percent = percentText(w, remaining);
   const fraction = Math.min(Math.max(remaining && !spent ? remainingFraction(w) : w.usedFraction, 0), 1);
@@ -234,7 +251,7 @@ function Limit({ window: w, remaining, warningAt }: { window: UsageWindow; remai
         <span className="limit-name ellipsis">{windowName(w)}</span>
         <span className="caption ellipsis">{resetText(w)}</span>
       </div>
-      <div className="bar"><div className="bar-fill" style={{ width: `${fraction * 100}%`, background: usageColor(w.usedFraction, spent, warningAt) }} /></div>
+      <div className="bar"><div className="bar-fill" style={{ width: `${fraction * 100}%`, background: usageColor(w.usedFraction, spent, warningAt, light) }} /></div>
       <span className={`caption strong${spent ? " alert" : ""}`}>{remaining ? t("%@ Left", percent) : t("%@ Used", percent)}</span>
     </div>
   );

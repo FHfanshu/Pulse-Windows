@@ -39,7 +39,7 @@ export interface Deck {
   activeDaysLine: string;
   change: Change | null;
   tokensPerDay: number | null;
-  costSeries: number[];
+  costSeries: (number | null)[];
   streak: { days: number; isCurrent: boolean } | null;
   provenance: string[];
   costIsFloor: boolean;
@@ -113,6 +113,7 @@ export function makeDeck(recap: Report, monthlyPrice: number | null, hidesProjec
       : t("Counted from this Mac's local records"),
   ];
   if (recap.isInProgress) provenance.push(t("Figures are to date."));
+  if (recap.recordsBegin) provenance.push(t("Records on this Mac begin on %@; days before it are not counted.", F.day(recap.recordsBegin)));
   if (recap.deck.costIsFloor) provenance.push(t("Some work had no published price, so the money is a floor."));
   if (recap.isPartial) provenance.push(t("Some tools' counts may be missing, so the total is a floor."));
 
@@ -158,11 +159,13 @@ export function makeDeck(recap: Report, monthlyPrice: number | null, hidesProjec
     nextName,
     workedThroughLine: t("In %@, you and AI worked through", periodName),
     activeDaysLine:
-      recap.elapsedDays === 1
+      // "of 1 days" on a running month's first day: the singular is its own key.
+      recap.observedDays === 1
         ? t("Active %@ of 1 day", F.mark(String(recap.activeDays)))
-        : t("Active %@ of %@ days", F.mark(String(recap.activeDays)), recap.elapsedDays),
+        : t("Active %@ of %@ days", F.mark(String(recap.activeDays)), recap.observedDays),
     change,
-    tokensPerDay: recap.elapsedDays > 0 ? Math.trunc(recap.tokens / recap.elapsedDays) : null,
+    // Over the days of the period Pulse could see.
+    tokensPerDay: recap.observedDays > 0 ? Math.trunc(recap.tokens / recap.observedDays) : null,
     costSeries: recap.deck.costSeries,
     streak: recap.deck.streak ? { days: recap.deck.streak[0], isCurrent: recap.deck.streak[1] } : null,
     provenance,

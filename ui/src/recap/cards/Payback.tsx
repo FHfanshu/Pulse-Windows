@@ -413,6 +413,11 @@ function Footnotes({ deck }: { deck: Deck }) {
           {t("Figures are to date, and the plan price is prorated by the days so far.")}
         </T>
       ) : null}
+      {deck.recap.recordsBegin ? (
+        <T size={15} color={C.tertiary}>
+          {t("The plan price is counted from %@, when records on this Mac begin.", F.day(deck.recap.recordsBegin))}
+        </T>
+      ) : null}
       {deck.costIsFloor ? (
         <T size={15} color={C.tertiary}>
           {t("Some work had no published price, so the money is a floor.")}

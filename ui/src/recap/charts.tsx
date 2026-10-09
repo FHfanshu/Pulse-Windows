@@ -64,18 +64,44 @@ export const dashed = (stroke: string, width = 1.5, dash = "4 3") => ({ fill: "n
 // MARK: Sparkline
 
 /** A line over a filled area, the area in lime and the line in ink. */
-export function Sparkline({ values }: { values: number[] }) {
+/** The unbroken stretches of a series with gaps: each run is the indices of consecutive values
+ *  that have one. A lone point is a run of one (upstream `RecapLineRuns`). */
+export function lineRuns(values: (number | null)[]): number[][] {
+  const runs: number[][] = [];
+  let current: number[] = [];
+  values.forEach((v, i) => {
+    if (v === null) {
+      if (current.length) runs.push(current);
+      current = [];
+    } else current.push(i);
+  });
+  if (current.length) runs.push(current);
+  return runs;
+}
+
+/** Null is a point with no figure (work with no price): the line breaks there rather than dipping
+ *  to a zero it never had. */
+export function Sparkline({ values }: { values: (number | null)[] }) {
   return (
     <Geo style={{ width: "100%", height: "100%" }}>
       {(w, h) => {
-        const maximum = Math.max(0, ...values);
+        const maximum = Math.max(0, ...values.map((v) => v ?? 0));
         if (values.length < 2 || maximum <= 0) return null;
-        const points = values.map((v, i) => [(i / (values.length - 1)) * w, h - 6 - (v / maximum) * (h - 12)] as const);
-        const line = points.map(([x, y], i) => `${i ? "L" : "M"}${f(x)} ${f(y)}`).join(" ");
+        const at = (i: number) => [(i / (values.length - 1)) * w, h - 6 - ((values[i] ?? 0) / maximum) * (h - 12)] as const;
         return (
           <svg width={w} height={h} style={{ position: "absolute", left: 0, top: 0, display: "block" }}>
-            <path d={`${line} L${f(w)} ${f(h)} L0 ${f(h)} Z`} fill={C.lime} />
-            <path d={line} fill="none" stroke={C.ink} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+            {lineRuns(values).map((run) => {
+              const points = run.map(at);
+              const line = points.map(([x, y], i) => `${i ? "L" : "M"}${f(x)} ${f(y)}`).join(" ");
+              const [x0] = points[0];
+              const [x1] = points[points.length - 1];
+              return (
+                <g key={run[0]}>
+                  <path d={`${line} L${f(x1)} ${f(h)} L${f(x0)} ${f(h)} Z`} fill={C.lime} />
+                  <path d={line} fill="none" stroke={C.ink} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                </g>
+              );
+            })}
           </svg>
         );
       }}

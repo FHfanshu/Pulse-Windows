@@ -161,7 +161,8 @@ mod tests {
         let ledger = read_agent(SpendAgent::Hindsight, &Sources::new(home.path()), cache.path(), &Calendar::utc(2), &priced());
         assert_eq!(ledger.days.iter().map(|d| d.tokens).sum::<i64>(), 8);
 
-        let empty = tempfile::tempdir().unwrap();
+        // A home with no store, read with no history kept.
+        let (empty, cache) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let ledger = read_agent(SpendAgent::Hindsight, &Sources::new(empty.path()), cache.path(), &Calendar::utc(2), &priced());
         assert!(ledger.days.is_empty());
     }

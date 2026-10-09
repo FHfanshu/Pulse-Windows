@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 
 use super::{AgentShare, Day, ModelShare, Month, Period, Persona, ProjectShare, Recap};
 use crate::spend::prices::{ModelPriceLookup, PriceTable};
@@ -40,13 +40,60 @@ fn cache_read_as_input(tally: &TokenTally) -> TokenTally {
     copy
 }
 
+/// The quiet that ends a stretch of work.
+pub const WORK_BREAK: Duration = Duration::hours(3);
+/// A stretch longer than this is a process left running, not a workday.
+pub const LONGEST_WORKDAY: Duration = Duration::hours(20);
+
+/// One stretch of work: when it ended, as minutes after the midnight of the day it began (so past
+/// 1440 the next morning), and whether it ran over a midnight.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Workday {
+    pub end_minute: u32,
+    pub crosses_midnight: bool,
+}
+
+pub fn workdays(instants: &[DateTime<Utc>], calendar: &Calendar) -> Vec<Workday> {
+    let mut sorted = instants.to_vec();
+    sorted.sort();
+    let Some(&first) = sorted.first() else { return Vec::new() };
+    let (mut first, mut last) = (first, first);
+    let mut result = Vec::new();
+    let mut close = |first: DateTime<Utc>, last: DateTime<Utc>| {
+        if last - first > LONGEST_WORKDAY {
+            return;
+        }
+        let midnight = calendar.start_of_day(first);
+        result.push(Workday {
+            end_minute: (last - midnight).num_minutes().max(0) as u32,
+            crosses_midnight: calendar.date(first) != calendar.date(last),
+        });
+    };
+    for &instant in &sorted[1..] {
+        if instant - last > WORK_BREAK {
+            close(first, last);
+            first = instant;
+        }
+        last = instant;
+    }
+    close(first, last);
+    result
+}
+
 /// Build a recap. See the module note for the rules this adds to the summary's.
 ///
 /// - `hours`: `None` when any contributing store has only session- or report-level timing, and
 ///   when no quarter-hour work was recorded.
-/// - Late nights: any work with a recorded quarter-hour from 00:00 to 04:59 local counts toward
-///   the night before it; the minute is the quarter-hour's start, or a session's own last record
-///   where that is in the same window and later.
+/// - Late nights (`late_nights`, `latest_minute`) are read from **stretches of work**
+///   ([`workdays`]): every agent's quarter-hours and sessions' last records, split wherever
+///   nothing happened for `WORK_BREAK`. A stretch ends at its last instant, measured from the
+///   midnight of the day it began, so an all-nighter that stops at 07:00 finishes at 31:00, later
+///   than anything that stopped the same evening, and `latest_minute` is the latest of them
+///   (shown on a clock, so 07:00). A stretch that crosses midnight is a late night; one that only
+///   *starts* after it (04:30) is an early start, not a night. A stretch longer than
+///   `LONGEST_WORKDAY` is not a person's day and is left out. It once took only 00:00-04:59: the
+///   all-nighter read 04:45, and someone who always stopped at 23:50 got no figure at all. Work
+///   with only day-level timing has no instants: where `hours` is `None`, both are floors.
 /// - `cache_hit_rate`: the rule of `Ledger::cache_hit_rate_in`, over every contributing agent:
 ///   `None` when any of them has counts that may be missing, and a store that records no cache
 ///   is left out of it.
@@ -71,21 +118,32 @@ pub fn build(
 
     let summary = SpendSummary::of_range(ledgers, start_at, end_at, now, calendar);
     let elapsed_days = summary.days.len();
+    // Only a first record inside the span moves anything: one before the start leaves the whole
+    // period observed.
+    let first_record = super::periods::earliest(ledgers, calendar);
+    let records_begin = first_record.filter(|first| *first > start && *first < end);
     let in_span = |at: DateTime<Utc>| at >= start_at && at < end_at;
 
-    // The previous period, as long as this one has run.
+    // The previous period. A running period against the same number of days of the one before
+    // (capped at its end: March 29 has no February 29); a finished one against the whole of it.
+    // Either way the days are kept, and the change is worked out per day, so 31 days are never
+    // weighed against 28 nor September against August 1-30. Days before this PC's first record
+    // are not part of the span.
     let mut previous_tokens = None;
+    let mut previous_days = None;
     if elapsed_days > 0 {
         if let Some((previous_start, previous_end)) = period.previous().bounds() {
             let same = previous_start + Duration::days(elapsed_days as i64);
-            let before = SpendSummary::of_range(
-                ledgers,
-                calendar.midnight(previous_start),
-                calendar.midnight(previous_end.min(same)),
-                now,
-                calendar,
-            );
-            previous_tokens = (before.tokens > 0).then_some(before.tokens);
+            let until = if is_in_progress { previous_end.min(same) } else { previous_end };
+            let from = previous_start.max(first_record.unwrap_or(previous_start));
+            if from < until {
+                let before =
+                    SpendSummary::of_range(ledgers, calendar.midnight(from), calendar.midnight(until), now, calendar);
+                if before.tokens > 0 {
+                    previous_tokens = Some(before.tokens);
+                    previous_days = Some((until - from).num_days() as usize);
+                }
+            }
         }
     }
 
@@ -143,8 +201,7 @@ pub fn build(
 
     // Per ledger: late nights, cache, per-model money.
     let mut lookup = ModelPriceLookup::new(prices);
-    let mut nights: BTreeSet<NaiveDate> = BTreeSet::new();
-    let mut latest_minute: Option<u32> = None;
+    let mut instants: Vec<DateTime<Utc>> = Vec::new();
     let mut cache_tally = TokenTally::default();
     let mut cache_unvouched = false;
     let mut savings = 0.0;
@@ -155,20 +212,11 @@ pub fn build(
         let agent = share.agent;
         let Some(ledger) = ledgers.get(&agent) else { continue };
 
-        // A quarter-hour's start, and where a session's own last record falls later in that
-        // window, are the instants of work after midnight.
-        let mut instants: Vec<DateTime<Utc>> =
-            ledger.slots.iter().filter(|s| s.tokens > 0 && in_span(s.start)).map(|s| s.start).collect();
+        // A quarter-hour's start, and a session's own last record, are the instants of work the
+        // stretches below are read from.
+        instants.extend(ledger.slots.iter().filter(|s| s.tokens > 0 && in_span(s.start)).map(|s| s.start));
         for session in ledger.sessions.iter().filter(|s| !s.slots.is_empty() && in_span(s.end)) {
             instants.push(session.end);
-        }
-        for instant in instants {
-            let local = calendar.to_local(instant);
-            if local.hour() >= Recap::NIGHT_ENDS_AT_HOUR {
-                continue;
-            }
-            nights.insert(local.date());
-            latest_minute = Some(latest_minute.unwrap_or(0).max(local.hour() * 60 + local.minute()));
         }
 
         let span: Vec<_> = ledger.days.iter().filter(|d| in_span(d.date)).cloned().collect();
@@ -195,6 +243,10 @@ pub fn build(
             }
         }
     }
+
+    let workdays = workdays(&instants, calendar);
+    let latest_minute = workdays.iter().map(|w| w.end_minute).max();
+    let late_nights = workdays.iter().filter(|w| w.crosses_midnight).count();
 
     let cache_input = cache_tally.input + cache_tally.cache_write + cache_tally.cache_read;
     let cache_hit_rate =
@@ -247,6 +299,8 @@ pub fn build(
         previous_tokens,
         active_days: summary.active_days(),
         elapsed_days,
+        records_begin,
+        previous_days,
         sessions: summary.sessions.len(),
         days,
         months,
@@ -254,7 +308,7 @@ pub fn build(
         peak_hour,
         late_share,
         latest_minute,
-        late_nights: nights.len(),
+        late_nights,
         persona,
         models: summary
             .models

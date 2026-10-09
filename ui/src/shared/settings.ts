@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ProviderUsage } from "./model";
 
 export type PanelSize = "small" | "standard" | "large";
+export type GlassStyle = "blur" | "acrylic";
 export type RailSpacing = "compact" | "standard" | "roomy";
 export type AppLanguage = "system" | "en" | "zh-Hans" | "zh-Hant" | "ja" | "ko";
 export type RefreshInterval = { type: "adaptive" } | { type: "fixed"; minutes: number };
@@ -32,6 +33,9 @@ export interface AppSettings {
   usesRoundEnds: boolean;
   usesGlass: boolean;
   glassTransparency: number;
+  glassStyle: GlassStyle;
+  glassGlitter: boolean;
+  usesLightPanel: boolean;
   autoCollapse: boolean;
   detailedCards: string[];
   showsWindowClock: boolean;
@@ -108,4 +112,12 @@ export function useUsage(): UsagePayload {
     return () => void un.then((f) => f());
   }, []);
   return payload;
+}
+
+/** The account whose card shows this PC's records for `provider`: the first account, the one the records
+ *  belong to, while it is on the panel; otherwise the first of the provider's accounts that is (a Windows
+ *  difference: upstream shows them on the first account only, so a panel of added accounts showed none). */
+export function recordsAccount(settings: Pick<AppSettings, "enabledAccounts">, provider: string): string | null {
+  if (settings.enabledAccounts.includes(provider)) return provider;
+  return settings.enabledAccounts.find((id) => id.split("#")[0] === provider) ?? null;
 }

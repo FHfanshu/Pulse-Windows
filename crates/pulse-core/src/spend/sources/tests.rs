@@ -78,15 +78,16 @@ fn real_stores_on_this_pc() {
 }
 
 #[test]
-fn a_store_that_appears_later_is_noticed_and_one_that_vanishes_is_an_empty_ledger() {
+fn a_store_that_appears_later_is_noticed_and_one_that_vanishes_keeps_its_history() {
     let home = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     let none = PriceTable::new();
     assert_eq!(read(home.path(), cache.path(), &none).all_time().tokens, 0);
     std::fs::write(grok_log(home.path()), turn(5)).unwrap();
     assert_eq!(read(home.path(), cache.path(), &none).all_time().tokens, 5);
+    // Deleting the whole store is deleting its logs: the kept marks still hold the usage.
     std::fs::remove_dir_all(home.path().join(".grok")).unwrap();
-    assert_eq!(read(home.path(), cache.path(), &none).all_time().tokens, 0);
+    assert_eq!(read(home.path(), cache.path(), &none).all_time().tokens, 5);
 }
 
 #[test]

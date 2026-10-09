@@ -80,6 +80,20 @@ impl Calendar {
         DateTime::from_naive_utc_and_offset(local, Utc)
     }
 
+    /// What identifies the zone for cutting days: its offsets at instants across the years and
+    /// both halves of each. Two zones that agree on all of them cut the same days, so for a
+    /// record of which days were cut, they are the same zone.
+    pub fn zone_signature(&self) -> String {
+        let mut offsets = Vec::new();
+        for year in [2000, 2010, 2020, 2025, 2026, 2027] {
+            for month in [1, 4, 7, 10] {
+                let at = NaiveDate::from_ymd_opt(year, month, 15).and_then(|d| d.and_hms_opt(12, 0, 0)).expect("a date");
+                offsets.push(self.zone.offset_seconds(&at).to_string());
+            }
+        }
+        offsets.join(",")
+    }
+
     pub fn start_of_day(&self, at: DateTime<Utc>) -> DateTime<Utc> {
         self.from_local(self.to_local(at).date().and_hms_opt(0, 0, 0).expect("midnight"))
     }

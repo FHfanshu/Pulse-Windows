@@ -10,8 +10,8 @@ import { Deck, Payback, personaTitle } from "../deck";
 import * as F from "../format";
 import { Box, C, CARD_WIDTH, FigureText, H, Page, Pill, RichText, Spacer, T, V, grow } from "../kit";
 import { Flame, PersonaGlyph, PulseMark } from "../marks";
-import { rhythmBand, type RhythmBand } from "../rhythm";
-import type { Day, Report } from "../types";
+import { bandEnd, rhythmBand, type RhythmBand } from "../rhythm";
+import type { Day } from "../types";
 
 export function PosterCard({ deck }: { deck: Deck }) {
   const rows = buildRows(deck);
@@ -297,7 +297,7 @@ function MonthsCard({ deck }: { deck: Deck }) {
 function RhythmCard({ deck }: { deck: Deck }) {
   const recap = deck.recap;
   const band = rhythmBand(recap);
-  const line = rhythmLine(recap, band);
+  const line = rhythmLine(band);
   return (
     <Box dark padding={[24, 26, 24, 26]}>
       <V gap={4} align="stretch" style={{ flex: "1 1 0" }}>
@@ -586,18 +586,9 @@ function Footer({ deck }: { deck: Deck }) {
   );
 }
 
-/** The sentence under the clock, in the same terms as the persona on its corner. Upstream always
- *  quoted the 21:00-05:00 share, which reads as nonsense under "Day shift": the reader takes the
- *  line for the busiest stretch. A night owl keeps it (that share is what made them one); early
- *  birds and day shifts get their own band's share; all-day gets the busiest four hours running. */
-function rhythmLine(recap: Report, band: RhythmBand | null): string | null {
-  const hours = recap.hours;
-  if (!hours || hours.length !== 24) {
-    return recap.lateShare !== undefined ? t("%@ of it came between 9 PM and 5 AM.", F.percent(recap.lateShare)) : null;
-  }
+/** The sentence under the clock: the reader's own busiest four hours, the same band the clock
+ *  lights. */
+function rhythmLine(band: RhythmBand | null): string | null {
   if (!band) return null;
-  if (recap.persona === "nightOwl") {
-    return t("%@ of it came between 9 PM and 5 AM.", F.percent(band.share));
-  }
-  return t("%1$@ of it came between %2$@ and %3$@.", F.percent(band.share), F.hourLabel(band.from), F.hourLabel((band.from + band.length) % 24));
+  return t("%@ of it came between %@ and %@.", F.percent(band.share), F.hourLabel(band.from), F.hourLabel(bandEnd(band)));
 }

@@ -259,10 +259,11 @@ pub struct Recap {
     /// Share of the period's tokens in 21:00-04:59.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub late_share: Option<f64>,
-    /// The latest a session ran past midnight, as minutes after midnight (0..300).
+    /// The latest any stretch of work ended, as minutes after the midnight of the day it began:
+    /// past 1440 when it ran into the next morning (`build::workdays`). `None` with no timed work.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latest_minute: Option<u32>,
-    /// Nights on which work ran past midnight.
+    /// Stretches of work that ran over a midnight.
     pub late_nights: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub persona: Option<Persona>,
@@ -290,9 +291,40 @@ pub struct Recap {
     pub currency: String,
     /// Whether some store behind it may be missing counts: the total is a floor.
     pub is_partial: bool,
+
+    /// The first day this PC has any record for, when that falls inside the period after its
+    /// first day; `None` when the records reach back to the start or before it.
+    ///
+    /// **Before it Pulse saw nothing, which is not a quiet day.** A year whose records began in
+    /// May drew January to April as zeros and counted them in every denominator ("active 88 of
+    /// 282 days", the workday split, the plan price prorated from January 1). `observed_days` is
+    /// the count those use, and a month entirely before it is drawn as unrecorded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub records_begin: Option<NaiveDate>,
+
+    /// The days `previous_tokens` was counted over: as many as this period has had while it runs
+    /// (fewer where the period before is shorter), all of the period before once this one is
+    /// over, and none from before the first record. `None` where `previous_tokens` is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_days: Option<usize>,
 }
 
 impl Recap {
+    /// The period's days Pulse could have seen work on: from `records_begin` (or the start) up to
+    /// today or the end. `elapsed_days` without a later first record; the "same period"
+    /// comparison keeps `elapsed_days`.
+    pub fn observed_days(&self) -> usize {
+        match self.records_begin {
+            None => self.elapsed_days,
+            Some(begin) => self.days.iter().filter(|d| d.date >= begin).count(),
+        }
+    }
+
+    /// Whether a day falls before the first record this PC holds.
+    pub fn is_before_records(&self, date: NaiveDate) -> bool {
+        self.records_begin.is_some_and(|begin| date < begin)
+    }
+
     /// The tokens-by-hour band that counts as late: 21:00 through 04:59.
     pub const LATE_HOURS: [usize; 8] = [21, 22, 23, 0, 1, 2, 3, 4];
     /// Work before this local hour, after midnight, belongs to the night before.
@@ -337,6 +369,8 @@ impl Recap {
 pub struct Report {
     #[serde(flatten)]
     pub recap: Recap,
+    /// `Recap::observed_days`: the denominator for "active N of M days" and the like.
+    pub observed_days: usize,
     pub insights: insights::Insights,
     pub deck: deck::DeckFacts,
 }
@@ -345,6 +379,6 @@ impl Report {
     pub fn of(recap: Recap) -> Report {
         let insights = insights::Insights::of(&recap);
         let deck = deck::DeckFacts::of(&recap);
-        Report { recap, insights, deck }
+        Report { observed_days: recap.observed_days(), recap, insights, deck }
     }
 }

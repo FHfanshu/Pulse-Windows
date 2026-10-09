@@ -110,7 +110,8 @@ export interface DeckFacts {
   paybackMonths?: number;
   costIsFloor: boolean;
   cacheSavings?: number;
-  costSeries: number[];
+  /** Null is work with no price: a break in the line, not a zero. */
+  costSeries: (number | null)[];
   streak?: [number, boolean];
   sessionsPerActiveDay?: number;
   scoreBars: ScoreBar[];
@@ -147,6 +148,10 @@ export interface Report {
   busiestDay?: Day;
   currency: string;
   isPartial: boolean;
+  /** The first day this PC has any record for, when it falls inside the period after its first day. */
+  recordsBegin?: string;
+  /** The period's days Pulse could have seen work on, from `recordsBegin` (or the start). */
+  observedDays: number;
   insights: Insights;
   deck: DeckFacts;
 }

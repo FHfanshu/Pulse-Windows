@@ -9,28 +9,25 @@ const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind
 const { rhythmBand, hourInBand } = await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
 const highlighted = band => Array.from({ length: 24 }, (_, h) => h).filter(h => hourInBand(h, band));
 
-test('afternoon summary highlights 14 through 17 on the lower half', () => {
+test('afternoon work highlights 14 through 17 on the lower half', () => {
   const hours = Array(24).fill(1);
   for (const h of [14, 15, 16, 17]) hours[h] = 10;
-  const band = rhythmBand({ hours, persona: 'allDay' });
+  const band = rhythmBand({ hours });
   assert.deepEqual({ from: band.from, length: band.length }, { from: 14, length: 4 });
   assert.deepEqual(highlighted(band), [14, 15, 16, 17]);
   assert.equal(band.share, 40 / 60);
 });
 
-test('night owl wraps across midnight and excludes 05:00', () => {
-  const band = rhythmBand({ hours: Array(24).fill(1), persona: 'nightOwl' });
-  assert.deepEqual(highlighted(band), [0, 1, 2, 3, 4, 21, 22, 23]);
-  assert.equal(band.share, 8 / 24);
+test('every reader gets their own busiest four hours, not a fixed 21:00 to 05:00', () => {
+  const hours = Array(24).fill(0);
+  for (const h of [10, 11, 12, 13]) hours[h] = 5;
+  hours[22] = 1;
+  const band = rhythmBand({ hours });
+  assert.deepEqual(highlighted(band), [10, 11, 12, 13]);
+  assert.equal(band.share, 20 / 21);
 });
 
-test('early bird and day shift use the same bands as their captions', () => {
-  const hours = Array(24).fill(1);
-  assert.deepEqual(highlighted(rhythmBand({ hours, persona: 'earlyBird' })), [5, 6, 7, 8, 9]);
-  assert.deepEqual(highlighted(rhythmBand({ hours, persona: 'dayShift' })), [10, 11, 12, 13, 14, 15, 16, 17]);
-});
-
-test('busiest four hours can cross midnight and ties keep the first band', () => {
+test('busiest four hours can cross midnight and ties keep the earliest start', () => {
   const hours = Array(24).fill(0);
   for (const h of [22, 23, 0, 1]) hours[h] = 10;
   assert.deepEqual(highlighted(rhythmBand({ hours })), [0, 1, 22, 23]);

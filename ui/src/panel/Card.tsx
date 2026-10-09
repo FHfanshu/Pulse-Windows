@@ -11,9 +11,9 @@ import { useCardLedger, useEstimatedValues } from "./cardLedgers";
 import { ProviderIcon } from "./Icon";
 import type { Edge } from "./layout";
 import { detailCardLayout, type PanelMetrics } from "./layout";
-import { GLASS_EDGE, glassDim } from "./glass";
 import { bubblePath } from "./shapes";
-import { PulseColor, spring, usageColor } from "./tint";
+import { ink, Surface, useLightPanel } from "./scheme";
+import { pulseColors, spring, usageColor } from "./tint";
 
 export interface CardProps {
   usage: ProviderUsage;
@@ -27,7 +27,7 @@ export interface CardProps {
   glassTransparency: number;
   /** The detailed card: the plan, how fresh the figures are and (below) recent activity. Set per account. */
   detailed: boolean;
-  /** Whether this account has records to show: detailed, a primary account, Token spend on. */
+  /** Whether this account has records to show: detailed, the account the records are shown on, Token spend on. */
   showsSpend: boolean;
   onHeight: (h: number) => void;
 }
@@ -52,6 +52,7 @@ const rowTransition = {
 
 export function Card(p: CardProps) {
   const L = detailCardLayout(p.metrics);
+  const light = useLightPanel();
   const ref = useRef<HTMLDivElement>(null);
   const vertical = p.edge === "left" || p.edge === "right";
   const pointerSide = { left: "paddingLeft", right: "paddingRight", top: "paddingTop", bottom: "paddingBottom" }[p.edge];
@@ -148,12 +149,7 @@ export function Card(p: CardProps) {
   return (
     <div className={`card ${p.usesGlass ? "glass" : ""}`} style={{ width: totalW, height: totalH, [pointerSide]: L.pointerWidth } as React.CSSProperties}>
       <svg className="card-surface" width={totalW} height={totalH}>
-        <path
-          d={path}
-          fill={p.usesGlass ? `rgba(0,0,0,${glassDim(p.glassTransparency)})` : "#000"}
-          stroke={p.usesGlass ? GLASS_EDGE : "none"}
-          strokeWidth={1}
-        />
+        <Surface d={path} width={totalW} height={totalH} usesGlass={p.usesGlass} glassTransparency={p.glassTransparency} light={light} />
       </svg>
       <div className="card-clip" style={{ clipPath: `path("${path}")`, width: totalW, height: totalH, position: "absolute", left: 0, top: 0 }}>
         <div
@@ -235,7 +231,8 @@ function Message({ text, size }: { text: string; size: number }) {
 function MetricRow({ window: w, L, showsRemaining, warningAt, value }: { window: UsageWindow; L: ReturnType<typeof detailCardLayout>; showsRemaining: boolean; warningAt: number; value: string | null }) {
   const progress = showsRemaining ? remainingFraction(w) : Math.min(Math.max(w.usedFraction, 0), 1);
   const spent = isSpent(w);
-  const accent = usageColor(w.usedFraction, w.isExhausted, warningAt);
+  const light = useLightPanel();
+  const accent = usageColor(w.usedFraction, w.isExhausted, warningAt, light);
   const figure = showsRemaining ? t("%@ Left", percentText(w, true)) : t("%@ Used", percentText(w));
   const line = { fontSize: L.rowFontSize, lineHeight: `${L.rowTextLineHeight}px`, height: L.rowTextLineHeight };
   return (
@@ -251,7 +248,7 @@ function MetricRow({ window: w, L, showsRemaining, warningAt, value }: { window:
         />
       </div>
       <div className="metric-foot" style={line}>
-        <span style={{ fontWeight: 500, color: spent ? PulseColor.exhausted : "rgba(255,255,255,0.9)" }}>{figure}</span>
+        <span style={{ fontWeight: 500, color: spent ? pulseColors(light).exhausted : ink(light, 0.9) }}>{figure}</span>
         <span className="ellipsis" style={{ opacity: 0.45 }}>{resetText(w)}</span>
       </div>
       {/* Dimmer than the reported figures above it: it is the one number here the provider did not say. */}

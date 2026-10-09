@@ -18,6 +18,12 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "fhfanshu",
+    "copyright": "Copyright (c) 2026 contributors of this port. Based on Pulse by qunqin24 (Apache-2.0).",
+    "category": "Utility",
+    "homepage": "https://github.com/FHfanshu/Pulse-Windows",
+    "shortDescription": "Pulse — AI 编程额度监视器",
+    "longDescription": "把 Claude Code、Codex、Cursor 等 AI 编程工具的额度、重置时间和 Token 消耗放在屏幕边缘。A Windows monitor for AI coding plan limits, token usage and estimated spend.",
     "resources": {
       "../LICENSE": "LICENSE",
       "../NOTICE": "NOTICE",
@@ -34,7 +40,19 @@
     ],
     "windows": {
       "nsis": {
-        "installerHooks": "./windows/hooks.nsi"
+        "installerHooks": "./windows/hooks.nsi",
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "TradChinese",
+          "English",
+          "Japanese",
+          "Korean"
+        ],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "windows/header.bmp",
+        "sidebarImage": "windows/sidebar.bmp"
       }
     }
   }

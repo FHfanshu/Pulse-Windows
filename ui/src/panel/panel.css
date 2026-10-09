@@ -33,4 +33,25 @@ html, body, #root {
 .value-row { display: flex; justify-content: space-between; gap: 8px; }
 .bar { position: relative; border-radius: 999px; background: rgba(255, 255, 255, 0.17); overflow: hidden; }
 .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+/* The light panel (#74): dark content on the light surface. */
+.panel.light { color: #000; }
+.panel.light .ring-icon { color: #000; }
+.panel.light .bar { background: rgba(0, 0, 0, 0.17); }
 .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* Liquid Glass's glitter (glass.tsx): two sprinkles that twinkle in turn. Only opacity moves, so the
+   filtered layers are painted once and the compositor does the rest. */
+.glitter {
+  will-change: opacity;
+  animation: glitter 5.2s ease-in-out infinite;
+}
+.glitter-b {
+  animation-delay: -2.6s;
+}
+@keyframes glitter {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glitter { animation: none; opacity: 0.5; }
+}

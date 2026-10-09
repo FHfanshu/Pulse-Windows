@@ -105,6 +105,44 @@ impl TokenTally {
         self.input + self.cache_write + self.cache_read + self.output
     }
 
+    /// Each kind at the larger of the two: the most of it either held.
+    pub fn highest(&self, other: &TokenTally) -> TokenTally {
+        let mut bands = self.context_bands.clone();
+        for (band, tally) in &other.context_bands {
+            let merged = bands.get(band).map_or_else(|| tally.clone(), |mine| mine.highest(tally));
+            bands.insert(*band, merged);
+        }
+        TokenTally {
+            input: self.input.max(other.input),
+            cache_write: self.cache_write.max(other.cache_write),
+            cache_read: self.cache_read.max(other.cache_read),
+            output: self.output.max(other.output),
+            cache_write_1h: self.cache_write_1h.max(other.cache_write_1h),
+            replies_without_cache_fields: self.replies_without_cache_fields.max(other.replies_without_cache_fields),
+            context_bands: bands,
+        }
+    }
+
+    /// What this holds beyond another tally, kind by kind and never below zero.
+    pub fn beyond(&self, other: &TokenTally) -> TokenTally {
+        let mut bands = HashMap::new();
+        for (band, tally) in &self.context_bands {
+            let more = tally.beyond(other.context_bands.get(band).unwrap_or(&TokenTally::default()));
+            if more.total() > 0 {
+                bands.insert(*band, more);
+            }
+        }
+        TokenTally {
+            input: (self.input - other.input).max(0),
+            cache_write: (self.cache_write - other.cache_write).max(0),
+            cache_read: (self.cache_read - other.cache_read).max(0),
+            output: (self.output - other.output).max(0),
+            cache_write_1h: (self.cache_write_1h - other.cache_write_1h).max(0),
+            replies_without_cache_fields: (self.replies_without_cache_fields - other.replies_without_cache_fields).max(0),
+            context_bands: bands,
+        }
+    }
+
     /// Every reply behind this tally said nothing about the cache, and none was read or written:
     /// there is no cache figure, not a zero one.
     pub fn reports_no_cache(&self) -> bool {
