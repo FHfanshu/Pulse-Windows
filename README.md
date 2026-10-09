@@ -54,6 +54,7 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 - Roo Code、Kilo Code、Cline、CodeBuddy、WorkBuddy、Cherry Studio、Command Code、OpenCode Review、Z Code。
 - Hermes、Goose、Zed、Kiro、Crush、Unsloth、Antigravity CLI / IDE、Micode、Devin Desktop。
 - Mux、Codebuff、Freebuff、JCode、Augment、GJC、Junie、DSH、FX、LM Studio、Reasonix。
+- Cursor、Antigravity 导出、Trae、Warp、Hindsight、MiniMax Code、GitHub Copilot；其中部分来源需要工具导出或采集文件。
 
 具体记录格式、Windows 路径和统计能力以[来源注册表](crates/pulse-core/src/spend/sources/mod.rs)及各来源实现为准。缺失日志、未记录模型或未提供缓存计数时，统计可能不完整；没有可用价格的模型无法可靠估算费用。
 
