@@ -274,6 +274,17 @@ fn main() {
         pulse_core::statusline::run_as_status_line();
         return;
     }
+    // Used by the installer's uninstall step, and handy from a terminal.
+    for (flag, connect) in [("--statusline-install", true), ("--statusline-uninstall", false)] {
+        if std::env::args().any(|a| a == flag) {
+            let result = match (connect, std::env::current_exe()) {
+                (true, Ok(exe)) => pulse_core::statusline::install(&home_dir(), &exe),
+                (false, _) => pulse_core::statusline::uninstall(&home_dir()),
+                (true, Err(_)) => return std::process::exit(1),
+            };
+            std::process::exit(if result.is_ok() { 0 } else { 1 });
+        }
+    }
     if let Ok(exe) = std::env::current_exe() {
         pulse_core::statusline::repair_path_if_needed(&home_dir(), &exe);
     }

@@ -7,7 +7,11 @@
 //!    keeps it in `%USERPROFILE%\.claude\.credentials.json` — there is no
 //!    Keychain step to wait on.
 //! 2. Status-line capture: the blob Claude Code pipes to `pulse --statusline`.
-//! 3. An actionable unavailable reason.
+//! 3. The Claude desktop app's own record, `%APPDATA%\Claude\plan-usage-history.json`:
+//!    the five-hour and weekly percentages it sampled, no secrets involved. It
+//!    carries no reset times, so a sample older than a window is dropped.
+//!    Of 2 and 3 the newer reading wins.
+//! 4. An actionable unavailable reason.
 //!
 //! A network/rate-limit/server failure on the endpoint goes straight to the
 //! capture: a stumble should not hide a good captured reading.
@@ -62,7 +66,7 @@ impl UsageService for ClaudeCode {
         }
 
         match ctx.source(Provider::ClaudeCode).unwrap_or("automatic") {
-            "tooling" => captured_usage(ctx, account).unwrap_or_else(|| {
+            "tooling" => local_usage(ctx, account).unwrap_or_else(|| {
                 ProviderUsage::unavailable(account.clone(), capture_problem(ctx, None))
             }),
             "endpoint" => match credentials(ctx).as_ref().and_then(|c| unexpired_token(c, ctx.now)) {
@@ -84,12 +88,12 @@ impl ClaudeCode {
                 HttpOutcome::Success(usage) => return usage,
                 HttpOutcome::NeedsFreshCredentials => {}
                 HttpOutcome::Failed(reason) => {
-                    return captured_usage(ctx, account)
+                    return local_usage(ctx, account)
                         .unwrap_or_else(|| ProviderUsage::unavailable(account.clone(), reason).with_origin(UsageRoute::Endpoint));
                 }
             }
         }
-        captured_usage(ctx, account)
+        local_usage(ctx, account)
             .unwrap_or_else(|| ProviderUsage::unavailable(account.clone(), capture_problem(ctx, Some(had_credentials))))
     }
 
@@ -321,6 +325,57 @@ fn tidy(raw: &str) -> String {
         .join(" ")
 }
 
+/// The newer of the status-line capture and the desktop app's record.
+fn local_usage(ctx: &FetchContext, account: &AccountKey) -> Option<ProviderUsage> {
+    let capture = captured_usage(ctx, account);
+    let desktop = desktop_usage(ctx, account);
+    match (capture, desktop) {
+        (Some(a), Some(b)) => Some(if b.observed_at > a.observed_at { b } else { a }),
+        (a, b) => a.or(b),
+    }
+}
+
+fn desktop_usage(ctx: &FetchContext, account: &AccountKey) -> Option<ProviderUsage> {
+    let bytes = std::fs::read(ctx.app_data.join("Claude").join("plan-usage-history.json")).ok()?;
+    parse_desktop_history(&serde_json::from_slice(&bytes).ok()?, account, ctx.now)
+}
+
+/// The desktop app's newest sample. `fh` and `sd` are percentages of the
+/// five-hour and seven-day windows; without reset times, a window whose whole
+/// length has passed since the sample may have reset and is left out.
+pub fn parse_desktop_history(root: &Value, account: &AccountKey, now: DateTime<Utc>) -> Option<ProviderUsage> {
+    let sample = root
+        .get("samples")?
+        .as_array()?
+        .iter()
+        .filter(|s| s.get("u").is_some_and(Value::is_object))
+        .max_by_key(|s| s.get("t").and_then(Value::as_i64).unwrap_or(0))?;
+    let taken = DateTime::from_timestamp_millis(sample.get("t")?.as_i64()?)?;
+    let age = (now - taken).num_seconds();
+    if age < -300 {
+        return None;
+    }
+    let used = &sample["u"];
+    let windows: Vec<UsageWindow> = [
+        ("fh", "five_hour", WindowKind::FiveHour, 5 * 3600),
+        ("sd", "seven_day", WindowKind::Weekly, 7 * 86_400),
+    ]
+    .into_iter()
+    .filter(|(_, _, _, seconds)| age < *seconds)
+    .filter_map(|(key, name, kind, seconds)| {
+        let percent = percent(used.get(key)?)?;
+        Some(UsageWindow::new(format!("claudeCode.{name}"), kind, percent / 100.0, seconds))
+    })
+    .collect();
+    if windows.is_empty() {
+        return None;
+    }
+    let mut usage = ProviderUsage::live(account.clone(), windows, now);
+    usage.observed_at = Some(taken);
+    usage.state = if age <= CAPTURE_FRESH_FOR_SECONDS { UsageState::Live } else { UsageState::Stale };
+    Some(usage.with_origin(UsageRoute::LocalStore))
+}
+
 /// The last status-line capture, with windows that have already reset dropped.
 fn captured_usage(ctx: &FetchContext, account: &AccountKey) -> Option<ProviderUsage> {
     let bytes = std::fs::read(crate::paths::claude_status_line_capture()).ok()?;
@@ -424,6 +479,29 @@ mod tests {
         assert_eq!(unexpired_token(&creds, now()), None);
         let creds = json!({"claudeAiOauth": {"accessToken": "t", "expiresAt": 4_102_444_800_000.0}});
         assert_eq!(unexpired_token(&creds, now()).as_deref(), Some("t"));
+    }
+
+    #[test]
+    fn desktop_history_reads_the_newest_sample_and_drops_lapsed_windows() {
+        let ms = |secs_ago: i64| (now().timestamp() - secs_ago) * 1000;
+        let root = json!({"version": 2, "samples": [
+            {"t": ms(9000), "org": "o", "u": {"fh": 80, "sd": 30}},
+            {"t": ms(120), "org": "o", "u": {"fh": 12, "sd": 31}},
+        ]});
+        let usage = parse_desktop_history(&root, &account(), now()).unwrap();
+        assert_eq!(usage.windows.len(), 2);
+        assert_eq!(usage.windows[0].kind, WindowKind::FiveHour);
+        assert!((usage.windows[0].used_fraction - 0.12).abs() < 1e-9);
+        assert_eq!(usage.state, UsageState::Live);
+
+        let old = json!({"samples": [{"t": ms(6 * 3600), "u": {"fh": 100, "sd": 37}}]});
+        let usage = parse_desktop_history(&old, &account(), now()).unwrap();
+        assert_eq!(usage.windows.len(), 1, "the five-hour reading may have reset since");
+        assert_eq!(usage.windows[0].kind, WindowKind::Weekly);
+        assert_eq!(usage.state, UsageState::Stale);
+
+        let ancient = json!({"samples": [{"t": ms(8 * 86_400), "u": {"fh": 1, "sd": 2}}]});
+        assert!(parse_desktop_history(&ancient, &account(), now()).is_none());
     }
 
     #[test]
