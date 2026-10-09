@@ -1023,5 +1023,8 @@
  "Uses a browser session you import in Settings.": "設定で読み込んだブラウザのログインセッションを使います。",
  "Nothing has been logged on this PC yet, so there is no history to add up.": "この PC にはまだログがないため、集計できる履歴がありません。",
  "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.": "この PC の %@ のログから集計し、models.dev が公開している API 料金で換算しています。ご利用はサブスクリプションなので、これは同じ作業を API で行った場合の金額であり、実際の請求額ではありません。",
- "Couldn't save the login on this PC.": "この PC にログインを保存できませんでした。"
+ "Couldn't save the login on this PC.": "この PC にログインを保存できませんでした。",
+ "Pulse's sign-in window": "Pulse のサインインウィンドウ",
+ "Opens a window where you sign in to platform.deepseek.com.": "platform.deepseek.com にサインインするウィンドウを開きます。",
+ "Opens a window where you sign in to opencode.ai.": "opencode.ai にサインインするウィンドウを開きます。"
 }

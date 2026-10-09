@@ -1023,5 +1023,8 @@
  "Uses a browser session you import in Settings.": "使用你在設定中匯入的瀏覽器登入資訊。",
  "Nothing has been logged on this PC yet, so there is no history to add up.": "本機上還沒有紀錄，無從統計。",
  "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.": "依本機的 %@ 紀錄統計，按 models.dev 公布的 API 價格換算。你用的是訂閱方案，這裡顯示的是同樣用量改走 API 要花的錢，並非實際扣款。",
- "Couldn't save the login on this PC.": "無法在本機儲存登入資訊。"
+ "Couldn't save the login on this PC.": "無法在本機儲存登入資訊。",
+ "Pulse's sign-in window": "Pulse 的登入視窗",
+ "Opens a window where you sign in to platform.deepseek.com.": "會開啟一個視窗，讓你登入 platform.deepseek.com。",
+ "Opens a window where you sign in to opencode.ai.": "會開啟一個視窗，讓你登入 opencode.ai。"
 }

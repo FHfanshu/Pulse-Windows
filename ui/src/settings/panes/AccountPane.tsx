@@ -8,7 +8,14 @@ import { AccountsGroup } from "../account/AccountsGroup";
 import "../account/account.css";
 import { ConnectionGroup } from "../account/ConnectionGroup";
 import { LowBalanceRow } from "../account/ConnectionRows";
-import { AccountHistoryGroup, ServiceStatusGroup } from "../account";
+import {
+  AccountHistoryGroup,
+  CodexSignalsGroup,
+  DeepSeekConsoleGroup,
+  OpenCodeConsoleGroup,
+  ServiceStatusGroup,
+  WindowStarterGroup,
+} from "../account";
 import { DiagnosticsGroup } from "../account/DiagnosticsGroup";
 import { EstimatedValueGroup } from "../account/EstimatedValueGroup";
 import { LiveUsageGroup } from "../account/LiveUsageGroup";
@@ -57,7 +64,7 @@ export function AccountPane({ id, settings, onNavigate }: {
 
       <PanelGroup id={id} provider={provider} primary={primary} settings={settings} usage={usage} />
 
-      {/* Upstream places the window starter here, for Claude Code and Codex first accounts. */}
+      <WindowStarterGroup id={id} provider={provider} settings={settings} />
 
       {!needsProviderSelection && (
         <>
@@ -95,7 +102,8 @@ export function AccountPane({ id, settings, onNavigate }: {
         </Group>
       )}
 
-      {/* Upstream places the OpenCode Go and DeepSeek console groups here. */}
+      <OpenCodeConsoleGroup id={id} provider={provider} settings={settings} />
+      <DeepSeekConsoleGroup id={id} provider={provider} settings={settings} />
 
       {/* Live, so ahead of the history: which conversations still hold a prompt cache, and for how long. */}
       {primary && meta.keepsLocalTranscripts && settings.readsTokenSpend && enabled && (
@@ -109,7 +117,7 @@ export function AccountPane({ id, settings, onNavigate }: {
 
       {primary && <AccountHistoryGroup id={id} provider={provider} settings={settings} />}
 
-      {/* mount: starter, signals, console */}
+      <CodexSignalsGroup id={id} provider={provider} settings={settings} />
     </div>
   );
 }

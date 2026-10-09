@@ -1023,5 +1023,8 @@
  "Uses a browser session you import in Settings.": "Uses a browser session you import in Settings.",
  "Nothing has been logged on this PC yet, so there is no history to add up.": "Nothing has been logged on this PC yet, so there is no history to add up.",
  "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.": "Counted from this PC's %@ logs and priced at the published API rates from models.dev. Your plan is a subscription, so this is what the same work would cost through the API — not what you were charged.",
- "Couldn't save the login on this PC.": "Couldn't save the login on this PC."
+ "Couldn't save the login on this PC.": "Couldn't save the login on this PC.",
+ "Pulse's sign-in window": "Pulse's sign-in window",
+ "Opens a window where you sign in to platform.deepseek.com.": "Opens a window where you sign in to platform.deepseek.com.",
+ "Opens a window where you sign in to opencode.ai.": "Opens a window where you sign in to opencode.ai."
 }

@@ -8,8 +8,8 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use pulse_core::history::{self, AccountHistory};
-use pulse_core::AccountKey;
-use tauri::State;
+use pulse_core::{AccountKey, Provider};
+use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
 
@@ -22,8 +22,13 @@ fn home() -> PathBuf {
 /// `read` is `unsupported` for a provider whose history this build does not read, and the card is
 /// then left out.
 #[tauri::command]
-pub async fn account_history(state: State<'_, AppState>, id: String) -> Result<AccountHistory, String> {
+pub async fn account_history(app: AppHandle, id: String) -> Result<AccountHistory, String> {
     let account = AccountKey::from_id(&id).ok_or_else(|| format!("not an account: {id}"))?;
+    // Providers whose history is their own console's, not this PC's transcripts.
+    if account.is_primary() && matches!(account.provider, Provider::DeepSeek | Provider::OpenCodeGo | Provider::Zai) {
+        return crate::console_ipc::provider_history(app, id, None).await;
+    }
+    let state = app.state::<AppState>();
     let enabled = state.settings().enabled_accounts.contains(&id);
     tauri::async_runtime::spawn_blocking(move || {
         history::read(account.provider, enabled, account.is_primary(), &home(), Utc::now())
