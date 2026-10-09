@@ -103,6 +103,12 @@ The interface font is [Nunito](https://github.com/googlefonts/nunito), bundled t
 `@fontsource-variable/nunito` package. Copyright 2014 The Nunito Project Authors. Licensed under
 the SIL Open Font License, Version 1.1; the full text is in THIRD_PARTY_LICENSES.md.
 
+## Outfit
+
+The ring percentages use [Outfit](https://github.com/Outfitio/Outfit-Fonts), bundled through the
+`@fontsource-variable/outfit` package. Copyright 2021 The Outfit Project Authors. Licensed under the
+SIL Open Font License, Version 1.1; the full text is in THIRD_PARTY_LICENSES.md.
+
 ## Open-source dependencies
 
 Pulse for Windows is built with open-source Rust crates (among them Tauri, Tokio, reqwest,
