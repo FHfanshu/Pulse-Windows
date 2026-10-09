@@ -163,6 +163,12 @@ fn set_hit_rects(shared: State<SharedPanel>, rects: Vec<Rect>, grab: Option<Rect
     state.grab_area = grab;
 }
 
+/// The panel's shape animation (dock <-> float, a turn between axes) has come to rest.
+#[tauri::command]
+fn morph_settled(app: AppHandle, shared: State<SharedPanel>) {
+    panel::ui_settled(&app, &shared);
+}
+
 #[tauri::command]
 fn rail_press(shared: State<SharedPanel>, x: f64, y: f64) {
     panel::press(&shared, (x, y));
@@ -330,6 +336,7 @@ fn main() {
             set_geometry,
             set_hit_rects,
             rail_press,
+            morph_settled,
             get_placement,
             set_dock,
             status_line_installed,

@@ -13,12 +13,13 @@ import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelS
 import { Ring } from "./Ring";
 import { railSlots } from "./slots";
 import { berthPath } from "./shapes";
+import { useRailMorph, type Vec } from "./morph";
 import { GlassLook, useNativeBackdrop } from "./glass";
 import { ink, LightPanel, Surface } from "./scheme";
 import { pulseColors, spring, usageColor } from "./tint";
 
 interface Rect { x: number; y: number; w: number; h: number }
-interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean }
+interface PanelLayout { frame: Rect; rail: Rect; edge: Edge; docked: boolean; morph?: boolean }
 interface PointerEvent { point: [number, number] | null; pressed: boolean; dragging: boolean }
 
 const SLACK = 8;
@@ -120,6 +121,15 @@ export function App() {
     const pin = settings.pinned[account];
     return { id, account, usage: u, title: providerNames[u.account.provider] ?? u.account.provider, headline: headlineWindow(u, pin), second: settings.showsSecondRing ? secondWindow(u, pin) : null };
   });
+  // Windows difference: the rail is drawn from `shown`, which morphs between shapes (morph.ts); the layout
+  // from Rust is where it ends up. Each ring item sits at its centre's offset from the rail's centre.
+  const railSize = D.size(entries.length, axis, docked);
+  const itemOffsets = entries.map((_, i): Vec => {
+    const along = D.endPadding(docked) + i * D.ringStep(axis, docked) + D.itemLength(axis, docked) / 2 - (vertical ? railSize.h : railSize.w) / 2;
+    return vertical ? [0, along] : [along, 0];
+  });
+  const shown = useRailMorph(layout, railSize, itemOffsets, () => void invoke("morph_settled"));
+  const morphing = shown?.morphing ?? false;
   const selectedIndex = entries.findIndex((e) => e.id === selected);
   const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] : null;
 
@@ -180,8 +190,9 @@ export function App() {
 
   // Pointer → hover selection and deselection (upstream pointerMoved / isOverContent).
   useEffect(() => {
-    if (!layout || dragging) {
-      if (dragging) setSelected(null);
+    // Windows difference: no hover card while the rail is still morphing (the window is oversize for it).
+    if (!layout || dragging || morphing) {
+      if (dragging || morphing) setSelected(null);
       return;
     }
     if (!pointer) {
@@ -201,7 +212,7 @@ export function App() {
     const id = hit >= 0 ? entries[hit].id : null;
     if (id && id !== hoveredItem.current) setSelected(id);
     hoveredItem.current = id;
-  }, [pointer, dragging, layout]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pointer, dragging, layout, morphing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Tell Rust where input belongs; everything else stays click-through.
   useEffect(() => {
@@ -241,10 +252,9 @@ export function App() {
   }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
   void alert; // used by the collapsed sliver (auto-collapse), phase 1b
 
-  if (!layout || !slots.length) return null;
+  if (!layout || !slots.length || !shown) return null;
 
-  const railSize = D.size(entries.length, axis, docked);
-  const berth = berthPath(railSize.w, railSize.h, edge, docked, 1, {
+  const berth = berthPath(shown.w, shown.h, shown.edge, shown.d, 1, {
     flareHeight: D.flareHeight, flareWidth: D.flareWidth, cornerRadius: D.cornerRadius,
     collapsedWidth: D.collapsedWidth, usesRoundEnds: metrics.usesRoundEnds,
   });
@@ -276,32 +286,23 @@ export function App() {
     <div className={`panel${settings.light ? " light" : ""}`} onContextMenu={(e) => { e.preventDefault(); invoke("open_settings"); }}>
       <div
         className="rail"
-        style={{ left: rail.x, top: rail.y, width: railSize.w, height: railSize.h }}
+        style={{ left: shown.x, top: shown.y, width: shown.w, height: shown.h }}
         onPointerDown={(e) => { if (e.button === 0) invoke("rail_press", { x: e.clientX, y: e.clientY }); }}
       >
-        <svg className="berth" width={railSize.w} height={railSize.h}>
+        <svg className="berth" width={shown.w} height={shown.h}>
           <Surface
             d={berth}
-            width={railSize.w}
-            height={railSize.h}
+            width={shown.w}
+            height={shown.h}
             usesGlass={settings.usesGlass}
             glassTransparency={settings.glassTransparency}
             light={settings.light}
-            nativeBackdrop={nativeBackdrop && !docked}
-            screenEdge={docked ? edge : null}
+            nativeBackdrop={nativeBackdrop && !docked && !morphing}
+            screenEdge={shown.d > 0.5 ? shown.edge : null}
           />
         </svg>
-        <div
-          className="rings"
-          style={{
-            flexDirection: vertical ? "column" : "row",
-            gap: D.gap(axis, docked),
-            padding: vertical
-              ? `${D.endPadding(docked)}px ${D.crossPadding(axis, docked)}px`
-              : `${D.crossPadding(axis, docked)}px ${D.endPadding(docked)}px`,
-          }}
-        >
-          {entries.map((e) => {
+        <div className="rings">
+          {entries.map((e, index) => {
             const second = e.second;
             const clock = settings.showsWindowClock && e.headline ? elapsedFraction(e.headline) : null;
             const isSel = selected === e.id;
@@ -324,6 +325,10 @@ export function App() {
                 key={e.id}
                 className="item"
                 style={{
+                  position: "absolute",
+                  left: shown.w / 2 + shown.items[index][0],
+                  top: shown.h / 2 + shown.items[index][1],
+                  transform: "translate(-50%, -50%)",
                   flexDirection: "column",
                   gap: D.ringToTextSpacing,
                   [vertical ? "height" : "width"]: D.itemLength(axis, docked),
