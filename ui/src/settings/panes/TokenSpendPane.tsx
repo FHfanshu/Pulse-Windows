@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
 import { monthName } from "../../recap/format";
 import { t } from "../../shared/i18n";
-import { agentName, spendOverview, spendRelease, type SpendAgent, type SpendOverview, type SpendProgress } from "../../shared/spend";
+import { agentName, registerAgents, spendOverview, spendRelease, type SpendAgent, type SpendOverview, type SpendProgress } from "../../shared/spend";
 import { updateSettings, type AppSettings } from "../../shared/settings";
 import { Button } from "../controls";
 import { Group, Row } from "../Group";
@@ -77,7 +77,10 @@ export function TokenSpendPane({ settings }: { settings: AppSettings }) {
   // "Reading Claude Code…  1/2" while a scan runs; a quiet reread behind figures already on screen sends none.
   useEffect(() => {
     if (!enabled) return;
-    const un = listen<SpendProgress>("spend-progress", (e) => setProgress(e.payload));
+    const un = listen<SpendProgress>("spend-progress", (e) => {
+      registerAgents([{ id: e.payload.agent, name: e.payload.name, icon: null }]);
+      setProgress(e.payload);
+    });
     return () => { void un.then((off) => off()); };
   }, [enabled]);
 

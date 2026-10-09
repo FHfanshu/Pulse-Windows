@@ -1,4 +1,5 @@
 // Provider marks drawn as templates (currentColor), like upstream LobeIconView.
+import { agentIcon } from "../shared/spend";
 const raw = import.meta.glob("../../../assets/icons/*.svg", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 const icons: Record<string, string> = {};
@@ -27,7 +28,19 @@ export const providerNames: Record<string, string> = {
 };
 
 export function ProviderIcon({ provider, size, opacity = 1 }: { provider: string; size: number; opacity?: number }) {
-  const svg = icons[providerIcons[provider] ?? "extension"] ?? icons.extension;
+  return <StemIcon stem={providerIcons[provider] ?? "extension"} size={size} opacity={opacity} />;
+}
+
+/** A spend agent's mark. Where the icon set has none, an empty square of the same size: a borrowed or approximated mark would name the wrong company. */
+export function AgentIcon({ agent, size, opacity = 1 }: { agent: string; size: number; opacity?: number }) {
+  const stem = agentIcon(agent);
+  if (!stem || !icons[stem]) return <span aria-hidden style={{ width: size, height: size, display: "inline-flex" }} />;
+  return <StemIcon stem={stem} size={size} opacity={opacity} />;
+}
+
+/** A mark by its file stem in assets/icons. */
+export function StemIcon({ stem, size, opacity = 1 }: { stem: string; size: number; opacity?: number }) {
+  const svg = icons[stem] ?? icons.extension;
   return (
     <span
       aria-hidden

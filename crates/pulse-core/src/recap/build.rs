@@ -223,7 +223,7 @@ pub fn build(
             AgentShare {
                 agent: row.agent,
                 name: row.agent.display_name(),
-                icon: Some(row.agent.provider().icon_resource()),
+                icon: row.agent.icon_resource(),
                 tokens: row.tokens,
                 share: share_of(row.tokens),
                 active_days: active_dates.len(),

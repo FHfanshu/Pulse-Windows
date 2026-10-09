@@ -52,10 +52,7 @@ fn ledgers(calendar: &Calendar) -> Arc<HashMap<SpendAgent, Ledger>> {
             return kept.2;
         }
     }
-    let read: HashMap<SpendAgent, Ledger> = SpendAgent::ALL
-        .iter()
-        .filter_map(|agent| spend::read_ledger(agent.provider(), &home(), now).ok().map(|l| (*agent, l)))
-        .collect();
+    let read: HashMap<SpendAgent, Ledger> = spend::read_present_ledgers(&home(), now);
     let read = Arc::new(read);
     if let Ok(mut kept) = KEPT.lock() {
         *kept = Some(Kept { read_at: Instant::now(), day: today, ledgers: read.clone() });

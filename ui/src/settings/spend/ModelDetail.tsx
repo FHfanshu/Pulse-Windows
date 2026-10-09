@@ -1,7 +1,7 @@
 // Ported from upstream Settings/ModelSpendDetailView.swift: one model's usage, drawn in place of the
 // pane's lists so the span picker above it keeps working. The money is an API estimate for this model's
 // own raw ids, and only where a price exists; a category the summary could not fill in says so.
-import { ProviderIcon } from "../../panel/Icon";
+import { AgentIcon } from "../../panel/Icon";
 import { t } from "../../shared/i18n";
 import {
   agentName, exactTokens, money, moneyExact, reportsNoCache, shortDate, tokenCount, tokensText,
@@ -87,7 +87,7 @@ export function ModelSpendDetail({ model }: { model: ModelSpendSummary }) {
               key={row.agent}
               title={agentName[row.agent]}
               subtitle={tokensText(row.tokens)}
-              icon={<ProviderIcon provider={row.agent} size={18} />}
+              icon={<AgentIcon agent={row.agent} size={18} />}
             >
               <ShareBar share={model.tokens > 0 ? row.tokens / model.tokens : 0} />
               <span className="cost-slot"><CostText cost={row.cost} unpriced={row.unpricedTokens} /></span>

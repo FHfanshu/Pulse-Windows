@@ -342,6 +342,7 @@ fn main() {
             spend_ipc::spend_overview,
             spend_ipc::spend_release,
             spend_ipc::card_spend,
+            spend_ipc::spend_card_providers,
             spend_ipc::prompt_cache,
             recap_ipc::recap_report,
             recap_ipc::open_recap,

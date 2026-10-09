@@ -7,7 +7,7 @@ import { setLanguage } from "../shared/i18n";
 import { elapsedFraction, headlineWindow, isSpent, percentText, secondWindow } from "../shared/model";
 import { useSettings, useUsage } from "../shared/settings";
 import { Card } from "./Card";
-import { readCardSpend, readPromptCache, resetCardLedgers, spendProviders } from "./cardLedgers";
+import { readCardSpend, readPromptCache, resetCardLedgers, useCardSpendProviders } from "./cardLedgers";
 import { providerNames } from "./Icon";
 import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelSizeScale, RailSpacingScale, type Edge, type PanelMetrics } from "./layout";
 import { Ring } from "./Ring";
@@ -121,10 +121,11 @@ export function App() {
   // The detailed card's recent activity: this account's detailed switch is on, it is the first account of a
   // provider whose records are read here, and Token spend is on (upstream `showsSpend`).
   const readsSpend = stored?.readsTokenSpend ?? false;
+  const cardSpendProviders = useCardSpendProviders();
   const selectedProvider = selectedEntry?.usage.account.provider ?? null;
   const selectedIsDetailed = !!selectedEntry && (stored?.detailedCards.includes(selectedEntry.account) ?? false);
   const selectedShowsSpend =
-    selectedIsDetailed && readsSpend && !!selectedProvider && selectedEntry?.usage.account.slot === "" && spendProviders.has(selectedProvider);
+    selectedIsDetailed && readsSpend && !!selectedProvider && selectedEntry?.usage.account.slot === "" && cardSpendProviders.has(selectedProvider);
   // Fetched on selection and at most every five minutes per provider; the store lives outside React, so a
   // fast sweep across the rings cannot cancel a read.
   useEffect(() => {

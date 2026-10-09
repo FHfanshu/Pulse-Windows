@@ -437,7 +437,7 @@ fn a_reply_copied_into_a_resumed_sessions_transcript_is_counted_once_for_the_ori
     write(root.path(), ".claude/projects/-Users-me-Code-Pulse/resumed.jsonl", &resumed.join("\n"));
 
     let cache = root.path().join("cache");
-    let ledger = read(root.path(), &cache, ClaudeCode.provider(), &PriceTable::new());
+    let ledger = read(root.path(), &cache, ClaudeCode.provider().unwrap(), &PriceTable::new());
     assert_eq!(ledger.days.iter().map(|d| d.tally.output).sum::<i64>(), 500 + 300);
     let sessions: HashMap<_, _> = ledger.sessions.iter().map(|s| (s.name.clone(), s.tokens)).collect();
     assert_eq!(sessions["original"], 10 + 90 + 500);
@@ -523,9 +523,9 @@ fn the_folder_name_is_only_the_fallback_for_a_missing_directory() {
     // Claude Code replaces every separator with a dash, so the folder name cannot be turned back
     // into a path: the stated `cwd` is preferred wherever a transcript has one.
     let claude = "/Users/me/.claude/projects/-Users-me-Code-Pulse/abc.jsonl";
-    assert_eq!(project_of(claude, ClaudeCode.provider()).unwrap().name, "Pulse");
+    assert_eq!(project_of(claude, ClaudeCode.provider().unwrap()).unwrap().name, "Pulse");
     let windows = r"C:\Users\me\.claude\projects\D--code-Pulse\abc.jsonl";
-    assert_eq!(project_of(windows, ClaudeCode.provider()).unwrap().name, "Pulse");
+    assert_eq!(project_of(windows, ClaudeCode.provider().unwrap()).unwrap().name, "Pulse");
     assert!(project_of("/Users/me/.codex/sessions/2026/09/14/rollout-x.jsonl", Provider::Codex).is_none());
 }
 
@@ -621,7 +621,7 @@ fn claude_and_codex_sessions_retain_unpriced_buckets() {
         let calendar = Calendar::utc(2);
         let cache = root.path().join("cache");
         let ledger =
-            read_ledger_with(provider.provider(), &Sources::new(root.path()), &cache, &calendar, &test_prices(), Utc::now()).unwrap();
+            read_ledger_with(provider.provider().unwrap(), &Sources::new(root.path()), &cache, &calendar, &test_prices(), Utc::now()).unwrap();
         let session = &ledger.sessions[0];
         assert_eq!(session.tokens, 100);
         assert_eq!(session.unpriced_tokens, 90);
@@ -645,7 +645,7 @@ fn unchanged_rescans_reprice_without_rewriting_edits_and_deletions_persist() {
     };
     let log = write(home.path(), ".claude/projects/fixture/s.jsonl", &format!("{}\n", row("one")));
 
-    let first = read(home.path(), &cache, ClaudeCode.provider(), &PriceTable::new());
+    let first = read(home.path(), &cache, ClaudeCode.provider().unwrap(), &PriceTable::new());
     assert_eq!(first.all_time().tokens, 110);
     assert_eq!(first.all_time().cost, 0.0);
     let saved = cache.join("ledger-9-claudeCode.json");
@@ -653,21 +653,21 @@ fn unchanged_rescans_reprice_without_rewriting_edits_and_deletions_persist() {
     let sentinel = Utc.timestamp_opt(1_000_000, 0).unwrap();
     set_modified(&saved, sentinel);
     let prices = HashMap::from([("priced".to_string(), ModelPrice::new(1.0, 2.0, None, None, None))]);
-    let repriced = read(home.path(), &cache, ClaudeCode.provider(), &prices);
+    let repriced = read(home.path(), &cache, ClaudeCode.provider().unwrap(), &prices);
     assert_eq!(repriced.all_time().tokens, 110);
     assert!((repriced.all_time().cost - 0.00012).abs() < 1e-8);
     let modified = |path: &Path| DateTime::<Utc>::from(std::fs::metadata(path).unwrap().modified().unwrap());
     assert_eq!(modified(&saved), sentinel);
 
     std::fs::write(&log, format!("{}\n{}\n", row("one"), row("two"))).unwrap();
-    let changed = read(home.path(), &cache, ClaudeCode.provider(), &prices);
+    let changed = read(home.path(), &cache, ClaudeCode.provider().unwrap(), &prices);
     assert_eq!(changed.all_time().tokens, 220);
     assert_ne!(modified(&saved), sentinel);
-    let restored = read(home.path(), &cache, ClaudeCode.provider(), &prices);
+    let restored = read(home.path(), &cache, ClaudeCode.provider().unwrap(), &prices);
     assert_eq!(restored.all_time().tokens, 220);
 
     std::fs::remove_file(&log).unwrap();
-    let removed = read(home.path(), &cache, ClaudeCode.provider(), &prices);
+    let removed = read(home.path(), &cache, ClaudeCode.provider().unwrap(), &prices);
     assert_eq!(removed.all_time().tokens, 0);
     let object: serde_json::Value = serde_json::from_slice(&std::fs::read(&saved).unwrap()).unwrap();
     assert!(object["files"].as_object().unwrap().is_empty());
@@ -679,13 +679,13 @@ fn unchanged_files_are_served_from_the_cache_not_reparsed() {
     let cache = home.path().join("cache");
     let row = r#"{"type":"assistant","timestamp":"2026-09-20T10:00:00Z","message":{"id":"one","model":"m","usage":{"input_tokens":100,"output_tokens":10}}}"#;
     let log = write(home.path(), ".claude/projects/fixture/s.jsonl", row);
-    assert_eq!(read(home.path(), &cache, ClaudeCode.provider(), &PriceTable::new()).all_time().tokens, 110);
+    assert_eq!(read(home.path(), &cache, ClaudeCode.provider().unwrap(), &PriceTable::new()).all_time().tokens, 110);
     // Same size, same modification time, different contents: only the cache still knows the
     // original numbers, so this makes its reuse observable.
     let stamp = std::fs::metadata(&log).unwrap().modified().unwrap();
     std::fs::write(&log, row.replace("100", "999")).unwrap();
     std::fs::OpenOptions::new().write(true).open(&log).unwrap().set_modified(stamp).unwrap();
-    assert_eq!(read(home.path(), &cache, ClaudeCode.provider(), &PriceTable::new()).all_time().tokens, 110);
+    assert_eq!(read(home.path(), &cache, ClaudeCode.provider().unwrap(), &PriceTable::new()).all_time().tokens, 110);
 }
 
 #[test]
@@ -697,7 +697,7 @@ fn the_streamed_codex_parser_keeps_cumulative_deltas() {
     assert_eq!(scanned.cwd.as_deref(), Some("/work/project"));
     assert_eq!(tally_of(&scanned.all_days()), TokenTally::new(80, 0, 20, 10));
     let cache = root.path().join("cache");
-    assert_eq!(read(root.path(), &cache, Codex.provider(), &PriceTable::new()).all_time().tokens, 110);
+    assert_eq!(read(root.path(), &cache, Codex.provider().unwrap(), &PriceTable::new()).all_time().tokens, 110);
     assert!(cache.join("ledger-9-codex.json").exists());
 }
 
@@ -748,7 +748,7 @@ fn a_codex_fork_counts_only_its_own_work_archived_or_not_with_or_without_its_par
     write(root.path(), ".codex/archived_sessions/rollout-child.jsonl", &codex_fork("019f8f06-dfd5-7cd2-a871-b31a926f92b7"));
 
     let cache = root.path().join("cache");
-    assert_eq!(read(root.path(), &cache, Codex.provider(), &PriceTable::new()).all_time().tokens, 2_200 + 550);
+    assert_eq!(read(root.path(), &cache, Codex.provider().unwrap(), &PriceTable::new()).all_time().tokens, 2_200 + 550);
 
     // The parent gone, the replayed turn is still known by its `rollout-` id, and the opening
     // total is still the parent's.
@@ -774,7 +774,7 @@ fn a_fork_is_ordered_after_every_session_that_is_not_one() {
     .join("\n");
     write(root.path(), ".codex/sessions/a-fork.jsonl", &fork);
     write(root.path(), ".codex/sessions/z-parent.jsonl", &parent);
-    let ledger = read(root.path(), &root.path().join("cache"), Codex.provider(), &PriceTable::new());
+    let ledger = read(root.path(), &root.path().join("cache"), Codex.provider().unwrap(), &PriceTable::new());
     assert_eq!(ledger.all_time().tokens, 1_100);
 }
 
@@ -793,11 +793,11 @@ fn environment_overrides_move_the_transcript_roots() {
     let tokens = |sources: &Sources, provider| {
         read_ledger_with(provider, sources, &cache, &local(), &PriceTable::new(), Utc::now()).unwrap().all_time().tokens
     };
-    assert_eq!(tokens(&sources, ClaudeCode.provider()), 0);
+    assert_eq!(tokens(&sources, ClaudeCode.provider().unwrap()), 0);
     sources.claude_config_dir = Some(elsewhere.path().to_path_buf());
     sources.codex_home = Some(elsewhere.path().to_path_buf());
-    assert_eq!(tokens(&sources, ClaudeCode.provider()), 5);
-    assert_eq!(tokens(&sources, Codex.provider()), 7);
+    assert_eq!(tokens(&sources, ClaudeCode.provider().unwrap()), 5);
+    assert_eq!(tokens(&sources, Codex.provider().unwrap()), 7);
     assert!(matches!(
         read_ledger_with(Provider::Cursor, &sources, &cache, &local(), &PriceTable::new(), Utc::now()),
         Err(super::SpendError::Unsupported(_))
@@ -835,7 +835,7 @@ fn same_name_directories_stay_separate_after_the_per_file_cache_reloads() {
         let cache = root.path().join("cache");
         for pass in 0..2 {
             // A new read each time: the second pass restores the per-file cache.
-            let ledger = read(root.path(), &cache, provider.provider(), &PriceTable::new());
+            let ledger = read(root.path(), &cache, provider.provider().unwrap(), &PriceTable::new());
             let summary = SpendSummary::of(&HashMap::from([(provider, ledger)]), None, when, &local());
             assert_eq!(summary.projects.len(), 2);
             let counts: HashMap<_, _> = summary.projects.iter().map(|p| (p.name.clone(), p.tokens)).collect();

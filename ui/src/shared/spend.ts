@@ -6,7 +6,16 @@ import { locale, t } from "./i18n";
 
 // MARK: - Payloads
 
-export type SpendAgent = "claudeCode" | "codex";
+/** An agent's id: the `raw()` of a source registered in crates/pulse-core/src/spend/sources (`claudeCode`, `openCode`...). */
+export type SpendAgent = string;
+
+/** What the pane needs to name and draw one agent; the list comes from Rust, so a new source needs no change here. */
+export interface AgentInfo {
+  id: SpendAgent;
+  name: string;
+  /** File stem of its mark in assets/icons, where the set has one. */
+  icon: string | null;
+}
 
 /** Sparse on the wire: a kind that is zero is absent. */
 export interface TokenTally {
@@ -155,6 +164,8 @@ export interface SpendOverview {
   lists: SpendLists | null;
   /** Present sources that produced no records at all. */
   noRecords: SpendAgent[];
+  /** Every agent the pane can name; registered for `agentName` and `agentIcon` as the overview arrives. */
+  agents: AgentInfo[];
   hasReadLimitations: boolean;
   /** The recap period keys the two buttons open: "2026-09" and "2026". */
   recap: { month: string; year: string };
@@ -163,6 +174,8 @@ export interface SpendOverview {
 /** "Reading Codex…", 1/2: which agent a scan is on. */
 export interface SpendProgress {
   agent: SpendAgent;
+  /** The product name, so the row can be drawn before the first overview has arrived. */
+  name: string;
   index: number;
   total: number;
 }
@@ -212,7 +225,10 @@ export interface PromptCacheReading {
 }
 
 export const spendOverview = (overLast: number | null, agent: SpendAgent | null, model: string | null, rescan: boolean) =>
-  invoke<SpendOverview | null>("spend_overview", { overLast, agent, model, rescan });
+  invoke<SpendOverview | null>("spend_overview", { overLast, agent, model, rescan }).then((overview) => {
+    if (overview) registerAgents(overview.agents);
+    return overview;
+  });
 /** Lets the kept scan go: Token spend was switched off, or the Settings window closed. */
 /** What one limit is worth by this PC's reckoning (`estimated_value`); `elsewhere` limits have no figure. */
 export interface WindowEstimate {
@@ -227,7 +243,24 @@ export const spendRelease = () => invoke<void>("spend_release");
 export const cardSpend = (provider: string) => invoke<CardSpend | null>("card_spend", { provider });
 export const promptCache = (provider: string) => invoke<PromptCacheReading | null>("prompt_cache", { provider });
 
-export const agentName: Record<SpendAgent, string> = { claudeCode: "Claude Code", codex: "Codex" };
+const names = new Map<SpendAgent, string>();
+const icons = new Map<SpendAgent, string | null>();
+
+/** Remember how the agents are named and drawn (the Rust registry's answer). */
+export function registerAgents(agents: AgentInfo[]) {
+  for (const { id, name, icon } of agents) {
+    names.set(id, name);
+    if (icon !== null || !icons.has(id)) icons.set(id, icon);
+  }
+}
+
+/** Product names, left untranslated; an agent not heard of yet is shown by its id. */
+export const agentName: Record<SpendAgent, string> = new Proxy({} as Record<SpendAgent, string>, {
+  get: (_, id) => names.get(String(id)) ?? String(id),
+});
+
+/** The stem of an agent's mark in assets/icons, or null where the icon set has none (the row then draws no mark). */
+export const agentIcon = (id: SpendAgent): string | null => icons.get(id) ?? null;
 
 // MARK: - Tally helpers (upstream TokenTally)
 

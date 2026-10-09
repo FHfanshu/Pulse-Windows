@@ -1,7 +1,7 @@
 // Ported from upstream Settings/TokenSpendView.swift (`projects`, `sessions`, `sessionSubtitle`): where the work
 // happened. One row per project identity, heaviest first, and one row per transcript, newest first, paged.
 import { useState } from "react";
-import { ProviderIcon } from "../../panel/Icon";
+import { AgentIcon } from "../../panel/Icon";
 import { t } from "../../shared/i18n";
 import {
   dateTime, shortDate, sessionLabel, sessionNamesItself, tokensText,
@@ -62,7 +62,7 @@ export function SessionsGroup({ sessions }: { sessions: SessionRow[] }) {
           // never the transcript's file name.
           title={sessionLabel(row, row.project)}
           subtitle={sessionSubtitle(row)}
-          icon={<ProviderIcon provider={row.agent} size={18} />}
+          icon={<AgentIcon agent={row.agent} size={18} />}
         >
           <span className="secondary small nowrap num">{tokensText(row.tokens)}</span>
           <span className="nowrap num small-cost"><CostText cost={estimated(row)} unpriced={row.unpricedTokens} /></span>

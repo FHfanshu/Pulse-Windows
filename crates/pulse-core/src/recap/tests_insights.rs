@@ -339,7 +339,7 @@ fn agent(agent: SpendAgent, on: &[NaiveDate]) -> AgentShare {
     AgentShare {
         agent,
         name: agent.display_name(),
-        icon: Some(agent.provider().icon_resource()),
+        icon: agent.icon_resource(),
         tokens: 1,
         share: 0.5,
         active_days: on.len(),
