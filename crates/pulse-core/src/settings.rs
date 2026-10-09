@@ -96,6 +96,8 @@ pub struct AppSettings {
     pub tray_account: Option<String>,
     pub shows_usage_in_tray: bool,
     pub tray_style: TrayStyle,
+    /// The tray icon's left click opens the usage dashboard popup (upstream `showsMenuDashboard`).
+    pub shows_menu_dashboard: bool,
     pub open_settings_shortcut: Option<GlobalShortcut>,
     pub toggle_panel_shortcut: Option<GlobalShortcut>,
     pub language: AppLanguage,
@@ -172,6 +174,7 @@ impl Default for AppSettings {
             tray_account: None,
             shows_usage_in_tray: false,
             tray_style: TrayStyle::Figure,
+            shows_menu_dashboard: false,
             open_settings_shortcut: None,
             toggle_panel_shortcut: None,
             language: AppLanguage::System,

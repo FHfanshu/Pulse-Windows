@@ -5,7 +5,8 @@
     "panel",
     "settings",
     "chooser",
-    "recap"
+    "recap",
+    "dashboard"
   ],
   "permissions": [
     "core:default",
