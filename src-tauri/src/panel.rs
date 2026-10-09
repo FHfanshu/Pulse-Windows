@@ -212,7 +212,6 @@ fn settle(app: &AppHandle, shared: &SharedPanel) {
 
 fn apply(window: &WebviewWindow, monitor: &win::MonitorInfo, layout: &Layout) {
     win::set_frame_dip(window, layout.frame, monitor.scale);
-    crate::backdrop::record_layout(layout, monitor.scale);
 }
 
 /// Display changes do not change the device name. Refresh the cached DPI and
@@ -293,16 +292,18 @@ fn tick(app: &AppHandle, shared: &SharedPanel) -> bool {
     let pressed = state.press.is_some();
     let dragging = state.press.as_ref().is_some_and(|p| p.dragging);
     let wants_input = over_hit || pressed;
-    if state.click_through != Some(!wants_input) {
-        win::set_click_through(&window, !wants_input);
-        state.click_through = Some(!wants_input);
-    }
+    // Windows pitfall: the style change sends messages to the UI thread, so not under the panel lock.
+    let click_through = (state.click_through != Some(!wants_input)).then(|| !wants_input);
+    state.click_through = click_through.or(state.click_through);
 
     let rounded = inside_window.then(|| ((local.0 * 4.0) as i32, (local.1 * 4.0) as i32));
     // A stationary release must clear dragging in React too; otherwise the
     // hover card remains suppressed until a later pointer movement.
     let changed = state.record_pointer(rounded, pressed, dragging);
     drop(state);
+    if let Some(through) = click_through {
+        win::set_click_through(&window, through);
+    }
 
     if changed || click.is_some() {
         let _ = app.emit_to(

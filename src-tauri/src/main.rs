@@ -2,6 +2,7 @@
 
 mod account_ipc;
 mod backdrop;
+mod outline;
 mod codex_signals_ipc;
 mod console_ipc;
 mod dashboard;
@@ -326,6 +327,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
             backdrop::get_native_backdrop,
+            backdrop::set_backdrop_shapes,
             get_settings,
             update_settings,
             list_providers,

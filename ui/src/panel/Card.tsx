@@ -11,6 +11,7 @@ import { useCardLedger, useEstimatedValues } from "./cardLedgers";
 import { ProviderIcon } from "./Icon";
 import type { Edge } from "./layout";
 import { detailCardLayout, type PanelMetrics } from "./layout";
+import { useCardOutline } from "./nativeShapes";
 import { bubblePath } from "./shapes";
 import { ink, Surface, useLightPanel } from "./scheme";
 import { pulseColors, spring, usageColor } from "./tint";
@@ -25,6 +26,8 @@ export interface CardProps {
   warningAt: number;
   usesGlass: boolean;
   glassTransparency: number;
+  /** The native acrylic is drawn under the card (else the fallback gradient). */
+  nativeBackdrop: boolean;
   /** The detailed card: the plan, how fresh the figures are and (below) recent activity. Set per account. */
   detailed: boolean;
   /** Whether this account has records to show: detailed, the account the records are shown on, Token spend on. */
@@ -108,6 +111,9 @@ export function Card(p: CardProps) {
     usesRoundEnds: p.metrics.usesRoundEnds,
   });
 
+  const surface = useRef<SVGSVGElement>(null);
+  useCardOutline(surface, path, totalW);
+
   const u = p.usage;
   const unavailable = u.state.kind === "unavailable" ? u.state.reason : null;
   const saysNothing = u.windows.length === 0 && u.creditBalance == null && !unavailable;
@@ -148,8 +154,8 @@ export function Card(p: CardProps) {
 
   return (
     <div className={`card ${p.usesGlass ? "glass" : ""}`} style={{ width: totalW, height: totalH, [pointerSide]: L.pointerWidth } as React.CSSProperties}>
-      <svg className="card-surface" width={totalW} height={totalH}>
-        <Surface d={path} width={totalW} height={totalH} usesGlass={p.usesGlass} glassTransparency={p.glassTransparency} light={light} />
+      <svg ref={surface} className="card-surface" width={totalW} height={totalH}>
+        <Surface d={path} width={totalW} height={totalH} usesGlass={p.usesGlass} glassTransparency={p.glassTransparency} light={light} nativeBackdrop={p.nativeBackdrop} />
       </svg>
       <div className="card-clip" style={{ clipPath: `path("${path}")`, width: totalW, height: totalH, position: "absolute", left: 0, top: 0 }}>
         <div
