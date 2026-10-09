@@ -124,12 +124,14 @@ export function bubblePath(w: number, h: number, edge: Edge, pointerCenter: numb
   return sideways(h, w, edge, pointerCenter, m, part, [0, -1, 1, 0, 0, h]);
 }
 
-function continuousRoundedRect(p: PathBuilder, x: number, y: number, w: number, h: number, r: number) {
+function continuousRoundedRect(p: PathBuilder, x: number, y: number, w: number, h: number, r: number, tail?: { leads: boolean; append: () => void }) {
   r = Math.min(r, w / 2, h / 2);
   const k = 0.5523;
   p.move([x + r, y]).line([x + w - r, y]).curve([x + w, y + r], [x + w - r + r * k, y], [x + w, y + r - r * k]);
+  if (tail && !tail.leads) tail.append();
   p.line([x + w, y + h - r]).curve([x + w - r, y + h], [x + w, y + h - r + r * k], [x + w - r + r * k, y + h]);
   p.line([x + r, y + h]).curve([x, y + h - r], [x + r - r * k, y + h], [x, y + h - r + r * k]);
+  if (tail?.leads) tail.append();
   p.line([x, y + r]).curve([x + r, y], [x, y + r - r * k], [x + r - r * k, y]).close();
 }
 
@@ -137,8 +139,6 @@ function sideways(w: number, h: number, edge: Edge, pointerCenter: number, m: Bu
   const tailLeads = edge === "left" || edge === "bottom";
   const body = { x: tailLeads ? m.pointerWidth : 0, w: Math.max(w - m.pointerWidth, 0) };
   const p = new PathBuilder(matrix);
-  if (part !== "tail") continuousRoundedRect(p, body.x, 0, body.w, h, m.cornerRadius);
-  if (part === "body") return p.toString();
 
   const half = m.pointerHeight / 2;
   const centre = Math.min(Math.max(pointerCenter, m.cornerRadius + half), Math.max(h - m.cornerRadius - half, m.cornerRadius + half));
@@ -148,9 +148,22 @@ function sideways(w: number, h: number, edge: Edge, pointerCenter: number, m: Bu
   const sweep = tailLeads ? -half : half;
   const [nearAlong, nearAcross, farAlong, farAcross] = m.usesRoundEnds ? [0, 0.5, 0.55, 0.22] : [0.24, 0.44, 0.55, 0.24];
 
+  const appendTail = () => {
+    p.curve([tipX, centre], [baseX + reach * nearAlong, centre - sweep * nearAcross], [baseX + reach * farAlong, centre - sweep * farAcross]);
+    p.curve([baseX, centre + sweep], [baseX + reach * farAlong, centre + sweep * farAcross], [baseX + reach * nearAlong, centre + sweep * nearAcross]);
+  };
+  if (part !== "tail") {
+    // Windows difference: SVG strokes each subpath, including the body's edge across the tail.
+    // Trace one perimeter so the upstream filled silhouette has no internal outline at the join.
+    continuousRoundedRect(p, body.x, 0, body.w, h, m.cornerRadius, part === "whole" ? {
+      leads: tailLeads,
+      append: () => { p.line([baseX, centre - sweep]); appendTail(); },
+    } : undefined);
+    return p.toString();
+  }
+
   p.move([baseX, centre - sweep]);
-  p.curve([tipX, centre], [baseX + reach * nearAlong, centre - sweep * nearAcross], [baseX + reach * farAlong, centre - sweep * farAcross]);
-  p.curve([baseX, centre + sweep], [baseX + reach * farAlong, centre + sweep * farAcross], [baseX + reach * nearAlong, centre + sweep * nearAcross]);
+  appendTail();
   p.line([baseX - reach * 0.08, centre + sweep]);
   p.line([baseX - reach * 0.08, centre - sweep]);
   return p.close().toString();
