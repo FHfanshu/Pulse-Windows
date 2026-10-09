@@ -1,7 +1,9 @@
 //! Pulse core: providers, usage store, cache and refresh. No UI or Tauri dependency,
 //! so `pulse --json` can run headless.
 
+pub mod accounts;
 pub mod alerts;
+pub mod auth;
 pub mod discovery;
 pub mod i18n;
 pub mod history;

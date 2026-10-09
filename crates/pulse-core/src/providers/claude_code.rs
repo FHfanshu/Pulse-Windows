@@ -25,6 +25,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use crate::auth::{self, StoredLogin};
 use crate::model::{AccountKey, ProviderUsage, Unavailability, UsageRoute, UsageState, UsageWindow, WindowKind};
 use crate::provider::Provider;
 use crate::service::{FetchContext, UsageService};
@@ -57,11 +58,16 @@ impl UsageService for ClaudeCode {
     }
 
     async fn fetch(&self, ctx: &FetchContext, account: &AccountKey) -> ProviderUsage {
-        // Added accounts hold their own token and never borrow the CLI's routes.
+        // Added accounts hold their own login (renewed here) and never borrow the CLI's routes.
+        // A raw token saved by an older build is still read when no login is stored.
         if !account.is_primary() {
-            return match ctx.api_key(account) {
-                Some(token) => self.endpoint_usage(ctx, account, &token).await,
-                None => ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut),
+            return match auth::usable_login(ctx, account).await {
+                StoredLogin::Usable(login) => self.endpoint_usage(ctx, account, &login.access_token).await,
+                StoredLogin::Expired => ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut),
+                StoredLogin::Missing => match ctx.api_key(account) {
+                    Some(token) => self.endpoint_usage(ctx, account, &token).await,
+                    None => ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut),
+                },
             };
         }
 

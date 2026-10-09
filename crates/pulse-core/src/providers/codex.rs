@@ -23,6 +23,7 @@ use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+use crate::auth::{self, StoredLogin};
 use crate::model::{AccountKey, ProviderUsage, Unavailability, UsageRoute, UsageState, UsageWindow, WindowKind};
 use crate::provider::Provider;
 use crate::service::{FetchContext, UsageService};
@@ -52,15 +53,24 @@ impl UsageService for Codex {
     }
 
     async fn fetch(&self, ctx: &FetchContext, account: &AccountKey) -> ProviderUsage {
-        // Added accounts: a token Pulse holds, "<access token> <account id>".
+        // Added accounts: the login Pulse holds (renewed here). A raw token saved by an older
+        // build, "<access token> <account id>", is read when no login is stored.
         if !account.is_primary() {
-            let Some(stored) = ctx.api_key(account) else {
-                return ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut);
-            };
-            let mut parts = stored.split_whitespace();
-            let credentials = Credentials {
-                access_token: parts.next().unwrap_or_default().to_string(),
-                account_id: parts.next().unwrap_or_default().to_string(),
+            let credentials = match auth::usable_login(ctx, account).await {
+                StoredLogin::Usable(login) => {
+                    Credentials { access_token: login.access_token, account_id: login.account_id.unwrap_or_default() }
+                }
+                StoredLogin::Expired => return ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut),
+                StoredLogin::Missing => {
+                    let Some(stored) = ctx.api_key(account) else {
+                        return ProviderUsage::unavailable(account.clone(), Unavailability::SignedOut);
+                    };
+                    let mut parts = stored.split_whitespace();
+                    Credentials {
+                        access_token: parts.next().unwrap_or_default().to_string(),
+                        account_id: parts.next().unwrap_or_default().to_string(),
+                    }
+                }
             };
             return match over_http(ctx, &credentials, account).await {
                 HttpOutcome::Success(u) => u,

@@ -1,11 +1,13 @@
 // Ported from upstream Settings/AccountsGroup.swift: signing in to another subscription of the same provider, and
 // getting rid of one. Only shown where it can work: the other providers are read from a login their own tool
 // stored, and that store holds exactly one, so offering a second would be a control that cannot do anything.
+import { invoke } from "@tauri-apps/api/core";
 import { t } from "../../shared/i18n";
 import type { AppSettings } from "../../shared/settings";
 import { Button, TextField } from "../controls";
 import { Group, Row } from "../Group";
-import { removeAccount, renameAccount } from "./store";
+import { AddAccountRows } from "./SignIn";
+import { renameAccount } from "./store";
 
 export function AccountsGroup({ id, provider, primary, settings, multipleAccounts, onNavigate }: {
   id: string;
@@ -21,16 +23,7 @@ export function AccountsGroup({ id, provider, primary, settings, multipleAccount
 
   return (
     <Group title={t("Accounts")}>
-      <Row
-        title={primary ? t("Add another account") : t("Sign in again…")}
-        // The one thing someone should know before they start: whose name is on the page that opens.
-        subtitle={t("Opens the provider's own sign-in page.")}
-      >
-        {/* TODO(opus): sign-in flow. One sign-in at a time, with its Cancel, device code (Code row with Copy and
-            Open page) and error (Sign-in row) belonging to the provider it was started for. It saves the token
-            under a new `provider#slot` account id and adds it to `extraAccounts` and `enabledAccounts`. */}
-        <Button disabled onClick={() => {}}>{t("Sign in…")}</Button>
-      </Row>
+      <AddAccountRows id={id} provider={provider} primary={primary} />
       {!primary && extra && (
         <>
           <Row title={t("Name")}>
@@ -43,8 +36,8 @@ export function AccountsGroup({ id, provider, primary, settings, multipleAccount
           <Row title={t("Remove account")} subtitle={t("Forgets its login and takes it off the rail.")}>
             <Button
               onClick={() => {
-                // Back to a pane that exists, once the account is gone.
-                void removeAccount(settings, id, provider).then(() => onNavigate("appearance"));
+                // Forgets the stored login as well as the account, then back to a pane that exists.
+                void invoke("signin_remove_account", { account: id }).then(() => onNavigate("appearance"));
               }}
             >
               {t("Remove")}

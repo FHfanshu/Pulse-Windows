@@ -9,6 +9,7 @@ mod panel;
 mod placement;
 mod recap_ipc;
 mod shell;
+mod signin_ipc;
 mod spend_ipc;
 mod state;
 mod status_ipc;
@@ -333,6 +334,13 @@ fn main() {
             detect_providers,
             open_chooser,
             shell::shortcut_status,
+            signin_ipc::signin_state,
+            signin_ipc::signin_start,
+            signin_ipc::signin_cancel,
+            signin_ipc::signin_sign_out,
+            signin_ipc::signin_remove_account,
+            signin_ipc::signin_open_page,
+            signin_ipc::signin_copy_code,
             shell::set_glass_region,
             save_file,
             dashboard::dashboard_resize,

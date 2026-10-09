@@ -8,7 +8,7 @@ license.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
 reqwest.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
@@ -17,6 +17,9 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 base64 = "0.22"
 memchr = "2"
 regex = "1"
+sha2 = "0.10"
+getrandom = "0.3"
+uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_Globalization"] }
