@@ -28,6 +28,19 @@ for (const [dir, code] of Object.entries(langs)) {
   const out = {};
   let m;
   while ((m = re.exec(text))) out[unescape(m[1])] = unescape(m[2]);
-  fs.writeFileSync(path.join(outDir, `${code}.json`), JSON.stringify(out, null, 1) + "\n");
-  console.log(code, Object.keys(out).length);
+  // Keep keys that exist in the current locale file but not upstream (e.g. "Detected on this PC"),
+  // so re-importing upstream does not drop them. They are appended after the upstream keys.
+  const outPath = path.join(outDir, `${code}.json`);
+  let kept = 0;
+  if (fs.existsSync(outPath)) {
+    const existing = JSON.parse(fs.readFileSync(outPath, "utf8"));
+    for (const [k, v] of Object.entries(existing)) {
+      if (!(k in out)) {
+        out[k] = v;
+        kept++;
+      }
+    }
+  }
+  fs.writeFileSync(outPath, JSON.stringify(out, null, 1) + "\n");
+  console.log(code, Object.keys(out).length, kept ? `(kept ${kept} local-only keys)` : "");
 }
