@@ -24,6 +24,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn load() -> Self {
+        pulse_core::paths::seed_dev_data();
         let dir = pulse_core::paths::data_dir();
         let _ = std::fs::create_dir_all(&dir);
         let settings: AppSettings = std::fs::read(dir.join("settings.json"))
