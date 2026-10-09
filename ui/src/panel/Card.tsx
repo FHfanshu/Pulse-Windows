@@ -168,16 +168,20 @@ export function Card(p: CardProps) {
             top: p.edge === "top" ? L.pointerWidth : 0,
           }}
         >
+          {/* Hovering to another ring swaps the whole content as one layer: the old one fades where
+              it is, lifted out of the layout so it neither pushes the new one down nor counts in the
+              measured height, while the new one fades in at the top (the upstream demo, ~130 ms). */}
+          <AnimatePresence mode="popLayout" initial={false}>
+          <motion.div
+            key={`${u.account.provider}|${u.account.slot}`}
+            className="card-layer"
+            style={{ display: "flex", flexDirection: "column", gap: L.contentSpacing, width: L.width - L.padding * 2 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: { duration: 0.14, ease: "easeOut" } }}
+            exit={{ opacity: 0, transition: { duration: 0.12, ease: "easeOut" } }}
+          >
           <div className="card-header" style={{ height: p.detailed ? undefined : L.headerHeight, minHeight: L.headerHeight, gap: 8 }}>
-            <AnimatePresence mode="popLayout" initial={false}>
-              <motion.div
-                key={`${u.account.provider}|${u.account.slot}|${p.title}`}
-                className="card-header-line"
-                style={p.detailed ? { flex: "1 1 auto" } : undefined}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1, transition: { duration: 0.1, ease: "easeOut" } }}
-                exit={{ opacity: 0, transition: { duration: 0.06, ease: "easeOut" } }}
-              >
+              <div className="card-header-line" style={p.detailed ? { flex: "1 1 auto" } : undefined}>
                 {p.detailed ? (
                   <div className="card-header-stack" style={{ gap: L.headerLineSpacing }}>
                     <div className="card-header-top" style={{ minHeight: L.headerHeight }}>{head}</div>
@@ -187,8 +191,7 @@ export function Card(p: CardProps) {
                     )}
                   </div>
                 ) : head}
-              </motion.div>
-            </AnimatePresence>
+              </div>
           </div>
 
           <AnimatePresence initial={false}>
@@ -216,6 +219,8 @@ export function Card(p: CardProps) {
                 <ActivitySection state={activity} L={L} provider={u.account.provider} promptCache={ledger.promptCache} />
               </motion.div>
             )}
+          </AnimatePresence>
+          </motion.div>
           </AnimatePresence>
         </div>
       </div>
