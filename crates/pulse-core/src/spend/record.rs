@@ -152,6 +152,10 @@ pub fn build_ledger(
     // past the maximum.
     let mut accepted_total: i64 = 0;
     let mut lookup = ModelPriceLookup::new(prices);
+    // Many replies share a quarter-hour. Resolving its local slot and midnight for every
+    // reply repeatedly calls the Windows time-zone APIs during large OpenCode scans.
+    // Cache by the UTC quarter that slot_key rounds by, preserving its DST resolution.
+    let mut quarters: HashMap<i64, (String, DateTime<Utc>)> = HashMap::new();
 
     for record in records {
         if record.model.trim().is_empty() {
@@ -184,9 +188,17 @@ pub fn build_ledger(
         accepted_models.insert(model);
 
         let extra = record.unclassified_tokens;
-        let key = slot_key(record.timestamp, calendar);
-        let Some(start) = slot_start(&key, calendar) else { continue };
-        let day = calendar.start_of_day(start);
+        let quarter = record.timestamp.timestamp().div_euclid(15 * 60);
+        let (key, day) = match quarters.entry(quarter) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                let key = slot_key(record.timestamp, calendar);
+                let Some(start) = slot_start(&key, calendar) else { continue };
+                entry.insert((key, calendar.start_of_day(start)))
+            }
+        };
+        let key = key.clone();
+        let day = *day;
         if known > 0 {
             add_tally(&mut known_buckets, &key, model, tally);
             if !record.is_aggregate {

@@ -24,6 +24,13 @@ use super::record::{build_ledger, AgentUsageRecord};
 use super::transcripts::{Sources, TranscriptReader};
 use crate::provider::Provider;
 
+#[derive(Default)]
+pub struct SourceRead {
+    pub records: Vec<AgentUsageRecord>,
+    /// Some compressed history failed to decode; the readable subset is not the whole store.
+    pub has_read_limitations: bool,
+}
+
 /// What the rest of Pulse needs to know about one agent, and how to read it.
 pub trait SpendSource: Sync {
     /// The persisted id: the Swift case name upstream (`openCode`), the serialized form of
@@ -68,6 +75,10 @@ pub trait SpendSource: Sync {
     /// cannot decode something contributes no record for it.
     fn records(&self, _roots: &[PathBuf]) -> Vec<AgentUsageRecord> {
         Vec::new()
+    }
+
+    fn read_records(&self, roots: &[PathBuf]) -> SourceRead {
+        SourceRead { records: self.records(roots), has_read_limitations: false }
     }
 
     /// Whether the store records the prompt cache at all. False for a store with no cache column.
@@ -270,9 +281,10 @@ pub fn read_agent(agent: SpendAgent, sources: &Sources, cache_directory: &Path, 
         }
     }
 
-    let records = source.records(&roots);
+    let read = source.read_records(&roots);
     let origin = if source.requires_usage_export() { Origin::ImportedRecords } else { Origin::LocalTranscripts };
-    let mut ledger = build_ledger(&records, prices, agent.raw(), source.price_vendor(), calendar, origin);
+    let mut ledger = build_ledger(&read.records, prices, agent.raw(), source.price_vendor(), calendar, origin);
+    ledger.has_read_limitations = read.has_read_limitations;
     ledger.reports_cache_reads = source.reports_cache_reads();
 
     if Stamp::of(&existing(sources), prices) == before {

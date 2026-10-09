@@ -15,8 +15,7 @@
 //! **A total with no split is not input.** A legacy line with no usage block contributes nothing:
 //! its counts would have to be estimated from string lengths, which are not reported tokens.
 //!
-//! Where it lives on Windows: `%USERPROFILE%\.zcode` (unverified; the Electron-style
-//! `%APPDATA%\ZCode` spelling is not checked).
+//! Verified on Windows: `%USERPROFILE%\.zcode\cli\db\db.sqlite`.
 
 use std::path::{Path, PathBuf};
 
@@ -43,8 +42,10 @@ impl SpendSource for ZCode {
     fn display_name(&self) -> &'static str {
         "ZCode"
     }
+    fn has_captured_validation(&self) -> bool {
+        true
+    }
     fn inputs(&self, sources: &Sources) -> Vec<PathBuf> {
-        // WINDOWS-PATH: unverified
         let base = sources.home.join(".zcode");
         vec![base.join("projects"), base.join("cli").join("db").join("db.sqlite")]
     }
@@ -122,7 +123,8 @@ fn database(file: &Path) -> Vec<AgentUsageRecord> {
     if columns.is_empty() {
         return Vec::new();
     }
-    let has_session = table_exists(&connection, "session");
+    let session_columns = sqlite::columns(&connection, "session");
+    let has_session = columns.contains("session_id") && session_columns.contains("id");
 
     // Only the columns the schema actually has are selected, so a legacy table still reads.
     let prefix = if has_session { "mu." } else { "" };
@@ -138,10 +140,12 @@ fn database(file: &Path) -> Vec<AgentUsageRecord> {
         }
     }
     if has_session {
-        labels.push("directory");
-        expressions.push("s.directory".to_string());
-        labels.push("path");
-        expressions.push("s.path".to_string());
+        for name in ["directory", "path", "title", "slug"] {
+            if session_columns.contains(name) {
+                labels.push(name);
+                expressions.push(format!("s.{name}"));
+            }
+        }
     }
     let from = if has_session { " FROM model_usage mu LEFT JOIN session s ON s.id = mu.session_id" } else { " FROM model_usage" };
     let sql = format!("SELECT {}{from}", expressions.join(", "));
@@ -175,16 +179,12 @@ fn database(file: &Path) -> Vec<AgentUsageRecord> {
             .session(&session_id)
             .unclassified(unclassified);
         record.project = project;
+        record.title = column("title").filter(|s| !s.trim().is_empty());
+        record.session_name = column("slug").filter(|s| !s.trim().is_empty());
         record.deduplication_id = Some(format!("zcode:{path}:{identifier}"));
         found.push(record);
     });
     found
-}
-
-fn table_exists(connection: &rusqlite::Connection, table: &str) -> bool {
-    let mut exists = false;
-    sqlite::each(connection, &format!("SELECT name FROM sqlite_master WHERE type = 'table' AND name = '{table}'"), |_| exists = true);
-    exists
 }
 
 #[cfg(test)]
@@ -294,4 +294,24 @@ mod tests {
         let cache = tempfile::tempdir().unwrap();
         assert!(read_agent(SpendAgent::ZCode, &Sources::new(empty.path()), cache.path(), &Calendar::utc(2), &PriceTable::new()).days.is_empty());
     }
+    #[test]
+    fn session_titles_and_projects_survive_a_legacy_session_schema_without_path() {
+        let home = tempfile::tempdir().unwrap();
+        let db = home.path().join(".zcode/cli/db/db.sqlite");
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        make_database(&db,&[
+            "CREATE TABLE session (id TEXT, directory TEXT, title TEXT, slug TEXT)",
+            "CREATE TABLE model_usage (id TEXT, session_id TEXT, model_id TEXT, started_at INTEGER, input_tokens INTEGER, output_tokens INTEGER)",
+            "INSERT INTO session VALUES ('s','C:\\code\\Pulse','Fix dock','dock')",
+            &format!("INSERT INTO model_usage VALUES ('m','s','model',{MIDNIGHT_MS},12,3)"),
+        ]);
+        let cache = tempfile::tempdir().unwrap();
+        let ledger = read_agent(SpendAgent::ZCode,&Sources::new(home.path()),cache.path(),&Calendar::utc(2),&PriceTable::new());
+        assert_eq!(ledger.all_time().tokens,15);
+        assert_eq!(ledger.sessions.len(),1);
+        assert_eq!(ledger.sessions[0].title.as_deref(),Some("Fix dock"));
+        assert_eq!(ledger.sessions[0].name,"dock");
+        assert_eq!(ledger.sessions[0].project.as_ref().unwrap().name,"Pulse");
+    }
+
 }

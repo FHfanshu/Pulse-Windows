@@ -163,8 +163,7 @@ pub struct SpendOverview {
     /// Present sources that produced no records at all, named together at the foot of the combined
     /// page so a silent source is not mistaken for a zero reading.
     pub no_records: Vec<SpendAgent>,
-    /// Whether any present source held history a reader could not decode (a compressed
-    /// transcript, say). No source read here has such history yet, so this is false.
+    /// Whether any present source held compressed history a reader could not decode.
     pub has_read_limitations: bool,
     /// Every agent the pane can name (id, product name, mark), so a new source needs no change in
     /// the UI to be listed, named and drawn.
@@ -256,7 +255,7 @@ pub async fn spend_overview(
             model: model.map(|name| ModelSpendSummary::of(scope, &name, over_last, now, &calendar)),
             lists,
             no_records,
-            has_read_limitations: false,
+            has_read_limitations: snapshot.ledgers.values().any(|l| l.has_read_limitations),
             agents: AgentInfo::all(),
             recap: {
                 let earliest = periods::earliest(&snapshot.ledgers, &calendar);

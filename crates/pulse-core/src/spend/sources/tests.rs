@@ -33,7 +33,7 @@ fn a_finished_ledger_is_served_from_the_cache_until_a_file_or_the_prices_change(
     std::fs::write(&log, turn(100)).unwrap();
     let none = PriceTable::new();
     assert_eq!(read(home.path(), cache.path(), &none).all_time().tokens, 100);
-    assert!(cache.path().join("agent-1-grok.json").exists());
+    assert!(cache.path().join(agent_cache::file_name(SpendAgent::Grok)).exists());
 
     // Same size and modification time, different contents: only the cache still knows the
     // original number, which makes its reuse observable.
