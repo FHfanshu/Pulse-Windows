@@ -395,6 +395,7 @@ fn main() {
             dashboard::sync(&handle, None);
             shell::start_watcher(handle.clone());
             backdrop::start(handle.clone());
+            backdrop::acrylic_experiment(handle.clone());
 
             // First launch with nothing chosen: the provider chooser, not Settings.
             if needs_choice {
