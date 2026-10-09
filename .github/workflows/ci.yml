@@ -34,6 +34,14 @@ jobs:
     timeout-minutes: 45
     outputs:
       version: ${{ steps.version.outputs.version }}
+    env:
+      # No debug info for test/dev builds: CI only needs pass/fail, and it is most of the compile
+      # time and of the cache that has to be restored.
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      # Pull requests only check and test; the release build and installer (about 4 minutes) are
+      # made on main, on demand and for releases.
+      PACKAGE: ${{ github.event_name != 'pull_request' }}
     defaults:
       run:
         shell: pwsh
@@ -62,7 +70,7 @@ jobs:
       - name: Test Rust workspace
         run: cargo test --workspace --all-targets --locked
       - name: Build Windows installer
-        if: ${{ !inputs.sign-updates }}
+        if: ${{ env.PACKAGE == 'true' && !inputs.sign-updates }}
         run: npm run tauri build -- --target x86_64-pc-windows-msvc -- --locked
       # The updater artifacts need the private key, which pull requests do not have: only a release
       # build (release.yml passes sign-updates) signs the installer.
@@ -73,8 +81,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build -- --target x86_64-pc-windows-msvc --config src-tauri/tauri.release.conf.json -- --locked
       - name: Package distributables and checksums
+        if: ${{ env.PACKAGE == 'true' }}
         run: ./scripts/package-windows.ps1 -RequireUpdaterArtifacts:$${{ inputs.sign-updates && 'true' || 'false' }}
       - name: Upload Windows build
+        if: ${{ env.PACKAGE == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pulse-windows-x64
