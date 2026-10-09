@@ -118,14 +118,14 @@ export function App() {
   const selectedIndex = entries.findIndex((e) => e.id === selected);
   const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex] : null;
 
-  // The detailed card's recent activity: this account's detailed switch is on, it is the first account of a
-  // provider whose records are read here, and Token spend is on (upstream `showsSpend`).
+  // Local activity is aggregated per provider, so any detailed account card can
+  // show it. It must not be used to estimate an extra account's quota value.
   const readsSpend = stored?.readsTokenSpend ?? false;
   const cardSpendProviders = useCardSpendProviders();
   const selectedProvider = selectedEntry?.usage.account.provider ?? null;
   const selectedIsDetailed = !!selectedEntry && (stored?.detailedCards.includes(selectedEntry.account) ?? false);
   const selectedShowsSpend =
-    selectedIsDetailed && readsSpend && !!selectedProvider && selectedEntry?.usage.account.slot === "" && cardSpendProviders.has(selectedProvider);
+    selectedIsDetailed && readsSpend && !!selectedProvider && cardSpendProviders.has(selectedProvider);
   // Fetched on selection and at most every five minutes per provider; the store lives outside React, so a
   // fast sweep across the rings cannot cancel a read.
   useEffect(() => {

@@ -27,7 +27,7 @@ export interface CardProps {
   glassTransparency: number;
   /** The detailed card: the plan, how fresh the figures are and (below) recent activity. Set per account. */
   detailed: boolean;
-  /** Whether this account has records to show: detailed, a primary account, Token spend on. */
+  /** Provider-wide local records: detailed, supported provider, Token spend on. */
   showsSpend: boolean;
   onHeight: (h: number) => void;
 }
@@ -125,7 +125,7 @@ export function Card(p: CardProps) {
   const values = useEstimatedValues(
     accountId(u.account),
     `${u.observedAt ?? ""}|${u.windows.map((w) => `${w.id}:${w.usedFraction}`).join(",")}`,
-    p.detailed && p.showsSpend && u.state.kind === "live",
+    p.detailed && p.showsSpend && u.account.slot === "" && u.state.kind === "live",
   );
   const valueText = (w: UsageWindow): string | null => {
     const v = values.find((x) => x.window === w.id);

@@ -52,7 +52,7 @@ export function ActivitySection({ state, L, provider, promptCache }: {
   return (
     <div className="activity" style={{ display: "flex", flexDirection: "column", gap: L.activitySpacing }}>
       <div style={{ height: 1, background: faint(0.12) }} />
-      <div style={{ ...line(L.footnoteFontSize, L.figureLabelHeight), fontWeight: 500, opacity: 0.5 }}>{t("On this Mac")}</div>
+      <div className="ellipsis" title={t("On this PC · all accounts")} style={{ ...line(L.footnoteFontSize, L.figureLabelHeight), fontWeight: 500, opacity: 0.5 }}>{t("On this PC · all accounts")}</div>
       {state.kind === "reading" && message(t("Reading local records…"))}
       {state.kind === "empty" && message(t("No history yet"))}
       {state.kind === "failed" && message(t("Couldn't read the history."))}

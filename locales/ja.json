@@ -1027,5 +1027,7 @@
  "Pulse's sign-in window": "Pulse のサインインウィンドウ",
  "Opens a window where you sign in to platform.deepseek.com.": "platform.deepseek.com にサインインするウィンドウを開きます。",
  "Opens a window where you sign in to opencode.ai.": "opencode.ai にサインインするウィンドウを開きます。",
- "%1$@ of it came between %2$@ and %3$@.": "%1$@ が %2$@ から %3$@ の間に集中しました。"
+ "%1$@ of it came between %2$@ and %3$@.": "%1$@ が %2$@ から %3$@ の間に集中しました。",
+  "On this PC · all accounts": "この PC の活動 · 全アカウント",
+  "Adds the plan, when the figures were read and, with Token spend on, this PC's activity across all accounts for this service.": "プランと更新時刻を追加します。トークン使用量が有効な場合、この PC にある同じサービスの全アカウントの活動も表示します。"
 }

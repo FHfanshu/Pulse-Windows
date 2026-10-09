@@ -1027,5 +1027,7 @@
  "Pulse's sign-in window": "Pulse 的登入視窗",
  "Opens a window where you sign in to platform.deepseek.com.": "會開啟一個視窗，讓你登入 platform.deepseek.com。",
  "Opens a window where you sign in to opencode.ai.": "會開啟一個視窗，讓你登入 opencode.ai。",
- "%1$@ of it came between %2$@ and %3$@.": "%1$@ 的用量發生在 %2$@ 到 %3$@ 之間。"
+ "%1$@ of it came between %2$@ and %3$@.": "%1$@ 的用量發生在 %2$@ 到 %3$@ 之間。",
+  "On this PC · all accounts": "本機活動 · 所有帳號",
+  "Adds the plan, when the figures were read and, with Token spend on, this PC's activity across all accounts for this service.": "新增方案、資料更新時間；開啟 Token 用量後，還會顯示本機該服務所有帳號的活動。"
 }

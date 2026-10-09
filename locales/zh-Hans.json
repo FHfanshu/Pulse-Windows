@@ -1027,5 +1027,7 @@
  "Pulse's sign-in window": "Pulse 的登录窗口",
  "Opens a window where you sign in to platform.deepseek.com.": "会打开一个窗口，让你登录 platform.deepseek.com。",
  "Opens a window where you sign in to opencode.ai.": "会打开一个窗口，让你登录 opencode.ai。",
- "%1$@ of it came between %2$@ and %3$@.": "%1$@ 的用量发生在 %2$@ 到 %3$@ 之间。"
+ "%1$@ of it came between %2$@ and %3$@.": "%1$@ 的用量发生在 %2$@ 到 %3$@ 之间。",
+  "On this PC · all accounts": "本机活动 · 所有账号",
+  "Adds the plan, when the figures were read and, with Token spend on, this PC's activity across all accounts for this service.": "添加套餐、数据更新时间；开启 Token 用量后，还会显示本机该服务所有账号的活动。"
 }

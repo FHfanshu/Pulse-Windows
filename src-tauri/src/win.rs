@@ -19,7 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::placement::Rect;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MonitorInfo {
     pub name: String,
     /// Physical pixels.
@@ -88,13 +88,16 @@ pub fn set_click_through(window: &WebviewWindow, through: bool) {
 /// Places the window at `frame` (DIPs on a monitor of `scale`), rounding size up.
 pub fn set_frame_dip(window: &WebviewWindow, frame: Rect, scale: f64) {
     let Some(hwnd) = hwnd(window) else { return };
+    let (x, y, right, bottom) = frame_px(frame, scale);
+    unsafe {
+        let _ = SetWindowPos(hwnd, HWND_TOPMOST, x, y, right - x, bottom - y, SWP_NOACTIVATE);
+    }
+}
+
+pub fn frame_px(frame: Rect, scale: f64) -> (i32, i32, i32, i32) {
     let x = (frame.x * scale).round() as i32;
     let y = (frame.y * scale).round() as i32;
-    let w = (frame.w * scale).ceil() as i32;
-    let h = (frame.h * scale).ceil() as i32;
-    unsafe {
-        let _ = SetWindowPos(hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
-    }
+    (x, y, x + (frame.w * scale).ceil() as i32, y + (frame.h * scale).ceil() as i32)
 }
 
 pub fn raise_topmost(window: &WebviewWindow) {

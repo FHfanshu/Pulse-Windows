@@ -8,14 +8,14 @@ import type { AppSettings } from "../../shared/settings";
 import { Segmented, Select } from "../controls";
 import { Group, Row } from "../Group";
 import { ToggleRow } from "../panes/ToggleRow";
-import { metaOf, pc } from "./meta";
+import { metaOf } from "./meta";
 import { setDetailedCard, setEnabled, setPinnedWindow, setRingTint, setSplit } from "./store";
 
 /** Upstream `RingTint.suggestions.first`: a visibly chosen colour to land on when Custom is picked. */
 const FIRST_SUGGESTION = "#4099FF";
 
 /** An account's Panel card: whether it is on the rail, which limit its ring follows, its detailed card, and its ring colour. */
-export function PanelGroup({ id, provider, primary, settings, usage }: {
+export function PanelGroup({ id, provider, settings, usage }: {
   id: string;
   provider: string;
   primary: boolean;
@@ -50,7 +50,7 @@ export function PanelGroup({ id, provider, primary, settings, usage }: {
           pulse-core and a Codex app-server read of the limit reset credits. */}
       <ToggleRow
         title="Detailed card"
-        subtitle={detailedCardSubtitle(primary && meta.keepsLocalTranscripts ? "transcripts" : null)}
+        subtitle={detailedCardSubtitle(meta.keepsLocalTranscripts ? "transcripts" : null)}
         checked={settings.detailedCards.includes(id)}
         onChange={(on) => void setDetailedCard(settings, id, on)}
       />
@@ -108,7 +108,7 @@ function RingWindowRow({ id, settings, usage }: { id: string; settings: AppSetti
 /** What the detailed card adds, said the way it will happen (upstream `detailedCardSubtitle`). */
 export function detailedCardSubtitle(history: "transcripts" | null): string {
   return history === "transcripts"
-    ? pc("Adds the plan, when the figures were read and, with Token spend on, this Mac's recent activity.")
+    ? t("Adds the plan, when the figures were read and, with Token spend on, this PC's activity across all accounts for this service.")
     : t("Adds the plan and when the figures were read.");
 }
 

@@ -37,6 +37,38 @@ pub struct PanelState {
     press: Option<Press>,
     last_pointer: Option<(i32, i32)>,
     click_through: Option<bool>,
+    last_buttons: (bool, bool),
+    pointer_dirty: bool,
+}
+
+impl PanelState {
+    fn display_update(&mut self, monitor: win::MonitorInfo, frame_px: Option<(i32, i32, i32, i32)>) -> Option<Layout> {
+        let geometry = self.geometry?;
+        let changed = self.monitor.as_ref() != Some(&monitor);
+        // Keep an active drag authoritative unless its coordinate system changed.
+        if !changed && self.press.is_some() {
+            return None;
+        }
+        let layout = self.placement.layout(monitor.work_dip(), &geometry);
+        if !changed && frame_px == Some(win::frame_px(layout.frame, monitor.scale)) {
+            return None;
+        }
+        self.press = None;
+        self.last_pointer = None;
+        self.last_buttons = (false, false);
+        self.pointer_dirty = true;
+        self.monitor = Some(monitor);
+        self.layout = Some(layout);
+        Some(layout)
+    }
+
+    fn record_pointer(&mut self, point: Option<(i32, i32)>, pressed: bool, dragging: bool) -> bool {
+        let changed = self.pointer_dirty || point != self.last_pointer || (pressed, dragging) != self.last_buttons;
+        self.pointer_dirty = false;
+        self.last_pointer = point;
+        self.last_buttons = (pressed, dragging);
+        changed
+    }
 }
 
 struct Press {
@@ -96,6 +128,20 @@ pub fn place(app: &AppHandle, shared: &SharedPanel) {
 
 fn apply(window: &WebviewWindow, monitor: &win::MonitorInfo, layout: &Layout) {
     win::set_frame_dip(window, layout.frame, monitor.scale);
+}
+
+/// Display changes do not change the device name. Refresh the cached DPI and
+/// work area even while hidden, and repair a native DPI-suggested window frame.
+pub fn reconcile_display(app: &AppHandle, shared: &SharedPanel) {
+    let Some(window) = app.get_webview_window(LABEL) else { return };
+    let mut state = shared.lock().unwrap();
+    let monitor = win::monitor_named(state.placement.display.as_deref()).unwrap_or_else(win::primary_monitor);
+    let Some(layout) = state.display_update(monitor.clone(), win::window_rect_px(&window)) else { return };
+    apply(&window, &monitor, &layout);
+    drop(state);
+    // The sampler reports a fresh pointer even if it has not moved. Emitting a
+    // reset here could race and overwrite that fresh event after unlocking.
+    let _ = app.emit_to(LABEL, "panel-layout", layout);
 }
 
 pub fn start_sampler(app: AppHandle, shared: SharedPanel) {
@@ -164,8 +210,9 @@ fn tick(app: &AppHandle, shared: &SharedPanel) -> bool {
     }
 
     let rounded = inside_window.then(|| ((local.0 * 4.0) as i32, (local.1 * 4.0) as i32));
-    let changed = rounded != state.last_pointer;
-    state.last_pointer = rounded;
+    // A stationary release must clear dragging in React too; otherwise the
+    // hover card remains suppressed until a later pointer movement.
+    let changed = state.record_pointer(rounded, pressed, dragging);
     drop(state);
 
     if changed || click.is_some() {
@@ -271,4 +318,95 @@ fn carry(app: &AppHandle, shared: &SharedPanel, window: &WebviewWindow, cursor_p
     crate::store::save_placement(app, &placement);
     let _ = app.emit_to(LABEL, "panel-layout", layout);
     let _ = app.emit("placement-changed", &placement);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::placement::Shapes;
+    use windows::Win32::Foundation::RECT;
+
+    fn monitor() -> win::MonitorInfo {
+        win::MonitorInfo {
+            name: "display".into(),
+            bounds: RECT { left: 0, top: 0, right: 1920, bottom: 1080 },
+            work: RECT { left: 0, top: 0, right: 1920, bottom: 1040 },
+            scale: 1.0,
+        }
+    }
+
+    fn state() -> PanelState {
+        let shapes = Shapes { panel: Size { w: 342.0, h: 600.0 }, rail: Size { w: 64.0, h: 400.0 } };
+        let mut state = PanelState {
+            geometry: Some(Geometry {
+                vertical_docked: shapes, vertical_free: shapes,
+                horizontal_docked: shapes, horizontal_free: shapes,
+            }),
+            ..Default::default()
+        };
+        state.display_update(monitor(), None).unwrap();
+        state
+    }
+
+    fn press() -> Press {
+        Press { grab: (32.0, 20.0), start: (1800.0, 400.0), local: (310.0, 120.0), dragging: true }
+    }
+
+    #[test]
+    fn same_display_dpi_change_reanchors_and_refreshes_hit_coordinates() {
+        let mut state = state();
+        state.press = Some(press());
+        state.record_pointer(Some((1240, 480)), true, true);
+        let mut target = monitor();
+        target.scale = 1.5;
+        let old_frame = win::frame_px(state.layout.unwrap().frame, 1.0);
+        let layout = state.display_update(target.clone(), Some(old_frame)).unwrap();
+        assert_eq!(win::frame_px(layout.frame, target.scale).2, target.work.right);
+        assert_eq!(state.monitor.as_ref().unwrap().scale, 1.5);
+        assert!(state.press.is_none() && state.last_pointer.is_none());
+        assert!(state.record_pointer(None, false, false));
+        // The pointer at the newly scaled ring still resolves to window-local DIPs.
+        let ring_x_px = (layout.frame.x + layout.rail.x + 32.0) * target.scale;
+        let local_x = (ring_x_px - layout.frame.x * target.scale) / state.monitor.unwrap().scale;
+        assert!(layout.rail.contains(local_x, layout.rail.y + 20.0));
+    }
+
+    #[test]
+    fn resolution_work_area_and_monitor_removal_recompute_layout() {
+        let mut state = state();
+        for target in [
+            win::MonitorInfo { bounds: RECT { right: 2560, bottom: 1440, ..monitor().bounds }, work: RECT { right: 2560, bottom: 1400, ..monitor().work }, ..monitor() },
+            win::MonitorInfo { work: RECT { left: 80, top: 40, right: 1840, bottom: 1000 }, ..monitor() },
+            win::MonitorInfo { name: "fallback display".into(), ..monitor() },
+        ] {
+            let layout = state.display_update(target.clone(), None).unwrap();
+            assert_eq!(layout.frame.right(), target.work_dip().right());
+            assert_eq!(state.monitor.as_ref(), Some(&target));
+            assert_eq!(state.placement.vertical_ratio, 0.5);
+            assert_eq!(state.placement.dock, Dock::Edge(Edge::Right));
+        }
+    }
+
+    #[test]
+    fn native_frame_drift_is_repaired_without_interrupting_an_unchanged_drag() {
+        let mut state = state();
+        let expected = win::frame_px(state.layout.unwrap().frame, 1.0);
+        assert!(state.display_update(monitor(), Some(expected)).is_none());
+        state.press = Some(press());
+        assert!(state.display_update(monitor(), Some((0, 0, 342, 600))).is_none());
+        assert!(state.press.is_some());
+        state.press = None;
+        let layout = state.display_update(monitor(), Some((0, 0, 342, 600))).unwrap();
+        assert_eq!(win::frame_px(layout.frame, 1.0), expected);
+    }
+
+    #[test]
+    fn stationary_drag_release_reports_state_change_for_hover_card() {
+        let mut state = state();
+        let point = Some((1240, 480));
+        assert!(state.record_pointer(point, true, true));
+        assert!(!state.record_pointer(point, true, true));
+        assert!(state.record_pointer(point, false, false));
+        assert!(!state.record_pointer(point, false, false));
+    }
 }

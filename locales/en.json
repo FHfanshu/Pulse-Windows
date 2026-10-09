@@ -1027,5 +1027,7 @@
  "Pulse's sign-in window": "Pulse's sign-in window",
  "Opens a window where you sign in to platform.deepseek.com.": "Opens a window where you sign in to platform.deepseek.com.",
  "Opens a window where you sign in to opencode.ai.": "Opens a window where you sign in to opencode.ai.",
- "%1$@ of it came between %2$@ and %3$@.": "%1$@ of it came between %2$@ and %3$@."
+ "%1$@ of it came between %2$@ and %3$@.": "%1$@ of it came between %2$@ and %3$@.",
+  "On this PC · all accounts": "On this PC · all accounts",
+  "Adds the plan, when the figures were read and, with Token spend on, this PC's activity across all accounts for this service.": "Adds the plan, when the figures were read and, with Token spend on, this PC's activity across all accounts for this service."
 }
