@@ -138,6 +138,16 @@ registry! {
     Amp => amp::Amp,
     Droid => droid::Droid,
     OpenClaw => openclaw::OpenClaw,
+    // batch B
+    RooCode => roocode::RooCode,
+    KiloCode => kilocode::KiloCode,
+    Cline => cline::Cline,
+    CodeBuddy => codebuddy::CodeBuddy,
+    WorkBuddy => workbuddy::WorkBuddy,
+    CherryStudio => cherrystudio::CherryStudio,
+    CommandCode => commandcode::CommandCode,
+    OpenCodeReview => opencodereview::OpenCodeReview,
+    ZCode => zcode::ZCode,
 }
 
 /// A count out of a JSON value the way the Swift readers took one: a number, whole or not,
