@@ -38,7 +38,7 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 
 ### 账号额度与余额
 
-当前代码注册了以下 20 个服务。注册支持不代表每种套餐、地区和认证方式都已经在真实账号上验证。
+可连接以下服务；额度、重置时间和余额等信息因服务、套餐及登录方式而异。
 
 | 类型 | 服务 |
 | --- | --- |
@@ -47,7 +47,7 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 
 ### 本机 Token 记录
 
-本地消耗来源与账号额度服务是两套独立的支持列表：能读取某个工具的日志，不表示它有对应的额度圆环。当前来源包括：
+本机 Token 统计来自工具日志，与服务端额度独立。可读取以下工具的记录：
 
 - Claude Code、Codex、OpenCode、Kilo CLI、Grok、Kimi CLI、Devin CLI。
 - Pi、Oh My Pi、Senpi、Kimchi、Prime Agent、Gemini CLI、Qwen Code、Amp、Factory Droid、OpenClaw。
@@ -56,17 +56,17 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 - Mux、Codebuff、Freebuff、JCode、Augment、GJC、Junie、DSH、FX、LM Studio、Reasonix。
 - Cursor、Antigravity 导出、Trae、Warp、Hindsight、MiniMax Code、GitHub Copilot；其中部分来源需要工具导出或采集文件。
 
-具体记录格式、Windows 路径和统计能力以[来源注册表](crates/pulse-core/src/spend/sources/mod.rs)及各来源实现为准。缺失日志、未记录模型或未提供缓存计数时，统计可能不完整；没有可用价格的模型无法可靠估算费用。
+不同工具记录的字段不同，可提供的统计信息也有所差异。缺失日志、未记录模型或未提供缓存计数时，统计可能不完整；没有可用价格的模型无法可靠估算费用。
 
 ## 界面截图
 
-以下为 Windows 版实际运行截图，额度使用 `PULSE_MOCK=1` 的内置样例读数，Token 明细使用隔离目录中的演示会话记录，不包含真实账号信息。背景使用实际桌面壁纸；趋势图为有起伏的演示数据。点击图片查看原图。
+以下截图来自 Windows 版实际运行界面，使用演示数据，不包含真实账号信息。点击图片可查看原图。
 
 <table>
   <tr>
     <td align="center" valign="top" width="33%">
-      <a href="docs/screenshots/windows-sidebar-glass.png"><img src="docs/screenshots/windows-sidebar-glass.png" alt="Windows 版 Pulse 侧边贴靠面板和详情卡片，展示原生亚克力玻璃的透色与模糊" width="240" /></a>
-      <br /><sub><b>侧边贴靠与玻璃材质</b></sub>
+      <a href="docs/screenshots/windows-sidebar-glass.png"><img src="docs/screenshots/windows-sidebar-glass.png" alt="Pulse 侧边面板与额度详情卡片，展示亚克力效果" width="240" /></a>
+      <br /><sub><b>侧边面板与亚克力效果</b></sub>
     </td>
     <td align="center" valign="top" width="33%">
       <a href="docs/screenshots/windows-detail-claude.png"><img src="docs/screenshots/windows-detail-claude.png" alt="Windows 版 Pulse 的 Claude Code 详细用量卡片，展示本机 Token 趋势和缓存命中率" width="240" /></a>
@@ -79,18 +79,18 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
   </tr>
 </table>
 
-- **侧边贴靠与玻璃材质**：额度圆环沿屏幕边缘排列，悬停展开详情卡片。面板与卡片使用 Windows 原生亚克力玻璃，透出并模糊后方桌面；左图关闭闪粉以展示材质本身。
-- **详细用量卡片**：显示套餐、额度重置时间和本机 Token 统计，包括今日、7 天、31 天用量、每日柱状图、主要模型、缓存命中率及费用估算。
+- **侧边面板与亚克力效果**：面板贴靠屏幕边缘，悬停圆环可展开额度详情。原生亚克力效果让面板与卡片透出背景颜色，并对背景进行模糊处理。
+- **详细用量卡片**：显示套餐、额度用量和重置时间；开启本机 Token 统计后，可查看今日、近 7 天和近 31 天用量、每日趋势、主要模型与缓存命中率。费用按 API 价格估算，不代表实际账单。
 
 <table>
   <tr>
     <td align="center" valign="top" width="50%">
       <a href="docs/screenshots/windows-panel.png"><img src="docs/screenshots/windows-panel.png" alt="Windows 版 Pulse 横向浮动额度面板与详情卡片" width="380" /></a>
-      <br /><sub><b>横向浮动面板</b>：支持切换布局，按需显示百分比和闪粉。</sub>
+      <br /><sub><b>横向浮动面板</b>：面板可横向悬浮，支持显示额度百分比和闪粉效果。</sub>
     </td>
     <td align="center" valign="top" width="50%">
       <a href="docs/screenshots/windows-settings.png"><img src="docs/screenshots/windows-settings.png" alt="Windows 版 Pulse 外观设置与原生标题栏" width="380" /></a>
-      <br /><sub><b>外观设置</b>：调整大小、间距、玻璃、闪粉和透明度。</sub>
+      <br /><sub><b>外观设置</b>：调整面板大小、圆环间距、亚克力效果、闪粉和透明度。</sub>
     </td>
   </tr>
 </table>
@@ -106,9 +106,7 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 
 也可下载 `Pulse_<版本>_windows-x64.zip`，解压后运行 `pulse.exe`。免安装包同样依赖 WebView2，并使用相同的数据目录。
 
-发行流程会先生成 **Release 草稿**。草稿只有仓库维护者可见；如果 Releases 暂时没有下载项，说明尚未发布。开发构建可从 [Actions](https://github.com/FHfanshu/Pulse-Windows/actions/workflows/ci.yml) 的运行详情下载 `pulse-windows-x64` artifact（需登录 GitHub）。
-
-当前流水线生成未签名的 Windows 安装包，系统可能显示 SmartScreen 提示。每次构建附带 `SHA256SUMS.txt`，可用 PowerShell 核对文件：
+安装包尚未提供 Windows 代码签名，系统可能显示 SmartScreen 提示。发布文件附带 `SHA256SUMS.txt`，可用 PowerShell 核对文件：
 
 ```powershell
 Get-FileHash .\Pulse_0.1.2_x64-setup.exe -Algorithm SHA256
