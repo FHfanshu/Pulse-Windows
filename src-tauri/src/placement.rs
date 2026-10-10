@@ -118,11 +118,6 @@ pub struct Layout {
 }
 
 impl Layout {
-    /// The rail on screen, DIPs.
-    pub fn rail_on_screen(&self) -> Rect {
-        Rect { x: self.frame.x + self.rail.x, y: self.frame.y + self.rail.y, w: self.rail.w, h: self.rail.h }
-    }
-
     /// Whether the rail changes shape between `self` and `next`: docks or undocks, or turns between
     /// axes. Another docked edge on the same axis, or a floating rail whose card side flips, is the
     /// same shape (mirrored or not drawn differently) and is not morphed.
@@ -130,18 +125,7 @@ impl Layout {
         self.docked != next.docked || self.edge.is_vertical() != next.edge.is_vertical()
     }
 
-    /// The same layout in a window that also covers `room`, a rect relative to the rail's screen
-    /// origin (so it travels with the rail). Where the rail is on screen does not change.
-    pub fn with_room(self, room: Rect) -> Layout {
-        let rail = self.rail_on_screen();
-        let (rx, ry) = (rail.x + room.x, rail.y + room.y);
-        let left = self.frame.x.min(rx);
-        let top = self.frame.y.min(ry);
-        let right = self.frame.right().max(rx + room.w);
-        let bottom = self.frame.bottom().max(ry + room.h);
-        let frame = Rect { x: left, y: top, w: right - left, h: bottom - top };
-        Layout { frame, rail: Rect { x: rail.x - left, y: rail.y - top, ..rail }, morph: true, ..self }
-    }
+
 }
 
 impl Placement {
@@ -285,20 +269,4 @@ mod tests {
         assert!(!docked.reshapes(&docked));
     }
 
-    #[test]
-    fn with_room_covers_both_windows_and_keeps_the_rail_on_screen() {
-        let old = at(Placement::default());
-        let next = at(Placement { dock: Dock::Edge(Edge::Top), ..Placement::default() });
-        let wide = next.with_room(Rect { x: old.frame.x - next.rail_on_screen().x, y: old.frame.y - next.rail_on_screen().y, ..old.frame });
-        assert!(wide.morph);
-        assert_eq!(wide.rail_on_screen(), next.rail_on_screen());
-        for r in [old.frame, next.frame] {
-            assert!(wide.frame.x <= r.x && wide.frame.y <= r.y);
-            assert!(wide.frame.right() >= r.right() && wide.frame.bottom() >= r.bottom());
-        }
-        // The old window's rail is inside it too.
-        let rail = old.rail_on_screen();
-        assert!(rail.x >= wide.frame.x && rail.right() <= wide.frame.right());
-        assert!(rail.y >= wide.frame.y && rail.bottom() <= wide.frame.bottom());
-    }
 }

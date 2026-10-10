@@ -31,6 +31,21 @@ const DRAG_SLOP: f64 = 3.0;
 /// long after the change.
 const SETTLE_FALLBACK: Duration = Duration::from_millis(1500);
 
+// Windows difference: animate the HWND origin on upstream’s spring. Its final shrink changes
+// only size, so WebView2 never has to repaint a rebased canvas at that boundary.
+const GLIDE_RESPONSE: f64 = 0.32;
+const GLIDE_DAMPING: f64 = 0.86;
+/// The spring is at rest when it is within this of its end.
+const GLIDE_REST: f64 = 0.0005;
+
+/// How far along a spring (response 0.32, damping 0.86) is, `t` seconds after it started: 0 to 1.
+fn spring(t: f64) -> f64 {
+    let omega = 2.0 * std::f64::consts::PI / GLIDE_RESPONSE;
+    let decay = GLIDE_DAMPING * omega;
+    let damped = omega * (1.0 - GLIDE_DAMPING * GLIDE_DAMPING).sqrt();
+    1.0 - (-decay * t).exp() * ((damped * t).cos() + decay / damped * (damped * t).sin())
+}
+
 #[derive(Default)]
 pub struct PanelState {
     pub geometry: Option<Geometry>,
@@ -44,11 +59,37 @@ pub struct PanelState {
     click_through: Option<bool>,
     last_buttons: (bool, bool),
     pointer_dirty: bool,
-    /// Windows difference: extra window the morph still needs, relative to the rail's screen origin
-    /// (so it travels with the rail under the pointer). `layout` is `placement.layout` grown by it.
-    room: Option<Rect>,
+    /// Windows difference: local canvas dimensions held until both springs settle.
+    room: Option<Size>,
+    glide: Option<Glide>,
+    glide_thread: bool,
     ui_settled: bool,
     settle_by: Option<Instant>,
+}
+
+#[derive(Clone, Copy)]
+struct Glide {
+    since: Instant,
+    /// The window's origin minus the placement's, DIPs, when it started.
+    from: (f64, f64),
+}
+
+impl Glide {
+    fn age(&self, now: Instant) -> f64 {
+        now.saturating_duration_since(self.since).as_secs_f64()
+    }
+
+    /// What is left of `from` after `age` seconds.
+    fn residual(&self, now: Instant) -> (f64, f64) {
+        let left = 1.0 - spring(self.age(now));
+        (self.from.0 * left, self.from.1 * left)
+    }
+
+    /// Whether it has come to rest (the spring never lands exactly: when it is within `GLIDE_REST`
+    /// of its end, and past the first swing, where it starts out near it).
+    fn done(&self, now: Instant) -> bool {
+        self.age(now) > 0.1 && (1.0 - spring(self.age(now))).abs() < GLIDE_REST
+    }
 }
 
 impl PanelState {
@@ -62,8 +103,9 @@ impl PanelState {
         let natural = self.placement.layout(monitor.work_dip(), &geometry);
         if changed {
             self.room = None;
+            self.glide = None;
         }
-        let layout = self.show(natural);
+        let layout = self.show(natural, Instant::now());
         if !changed && frame_px == Some(win::frame_px(layout.frame, monitor.scale)) {
             return None;
         }
@@ -76,35 +118,52 @@ impl PanelState {
         Some(layout)
     }
 
-    /// The layout the window shows for `natural`: grown by the room an animation still needs.
-    fn show(&self, natural: Layout) -> Layout {
-        match self.room {
-            Some(room) => natural.with_room(room),
-            None => natural,
+    /// Keep one local canvas throughout the morph, then shrink without rebasing its origin.
+    fn show(&self, mut natural: Layout, now: Instant) -> Layout {
+        if let Some(room) = self.room {
+            natural.frame.w = natural.frame.w.max(room.w);
+            natural.frame.h = natural.frame.h.max(room.h);
+            natural.morph = true;
         }
+        if let Some(glide) = self.glide {
+            let (x, y) = glide.residual(now);
+            natural.frame.x += x;
+            natural.frame.y += y;
+        }
+        natural
     }
 
-    /// Take `natural` (from the placement) as the layout now. When the rail changes shape on the same
-    /// display, the window first keeps covering the old one, so the UI can animate between the two.
     fn commit(&mut self, natural: Layout, same_display: bool, now: Instant) -> Layout {
         if !same_display {
             self.room = None;
-        } else if let Some(prev) = self.layout.filter(|prev| prev.reshapes(&natural)) {
-            // The previous window (already grown by earlier room), relative to the new rail.
-            let rail = natural.rail_on_screen();
-            self.room = Some(Rect { x: prev.frame.x - rail.x, y: prev.frame.y - rail.y, w: prev.frame.w, h: prev.frame.h });
+            self.glide = None;
+        } else if let Some(prev) = self.layout.filter(|prev| prev.reshapes(&natural) || prev.edge != natural.edge) {
+            self.room = Some(Size { w: prev.frame.w.max(natural.frame.w), h: prev.frame.h.max(natural.frame.h) });
+            self.glide = Some(Glide { since: now, from: (prev.frame.x - natural.frame.x, prev.frame.y - natural.frame.y) });
             self.ui_settled = false;
             self.settle_by = Some(now + SETTLE_FALLBACK);
         }
-        let layout = self.show(natural);
+        if self.glide.is_some_and(|g| g.done(now)) {
+            self.glide = None;
+        }
+        let layout = self.show(natural, now);
         self.layout = Some(layout);
         layout
+    }
+
+    fn needs_glide_thread(&mut self) -> bool {
+        if self.glide.is_some() && !self.glide_thread {
+            self.glide_thread = true;
+            true
+        } else {
+            false
+        }
     }
 
     /// Time to shrink back to the rail's own window: nothing is pressed, and the UI has finished
     /// animating (or has had long enough).
     fn settle_due(&self, now: Instant) -> bool {
-        self.room.is_some() && self.press.is_none() && (self.ui_settled || self.settle_by.is_some_and(|t| now >= t))
+        self.room.is_some() && self.glide.is_none() && self.press.is_none() && (self.ui_settled || self.settle_by.is_some_and(|t| now >= t))
     }
 
     fn settle(&mut self) -> Option<(Layout, win::MonitorInfo)> {
@@ -180,11 +239,28 @@ pub fn place(app: &AppHandle, shared: &SharedPanel) {
     let natural = state.placement.layout(monitor.work_dip(), &geometry);
     let same_display = state.same_display(&monitor);
     let layout = state.commit(natural, same_display, Instant::now());
-    apply(&window, &monitor, &layout);
-    state.monitor = Some(monitor);
+    state.monitor = Some(monitor.clone());
+    let glide = state.needs_glide_thread();
     drop(state);
-    crate::backdrop::sync_native(app);
-    let _ = app.emit_to(LABEL, "panel-layout", layout);
+    if glide { start_glide(app.clone(), shared.clone()); }
+    publish(app, &window, &monitor, layout);
+}
+
+fn start_glide(app: AppHandle, shared: SharedPanel) {
+    std::thread::spawn(move || loop {
+        let started = Instant::now();
+        let _ = unsafe { windows::Win32::Graphics::Dwm::DwmFlush() };
+        // DwmFlush returns at once when composition is off; do not spin.
+        if started.elapsed() < Duration::from_millis(4) {
+            std::thread::sleep(Duration::from_millis(8));
+        }
+        place(&app, &shared);
+        let mut state = shared.lock().unwrap();
+        if state.glide.is_none() {
+            state.glide_thread = false;
+            return;
+        }
+    });
 }
 
 /// The UI's animation of a change of shape has come to rest: shrink the window to the rail's own
@@ -204,14 +280,24 @@ fn settle(app: &AppHandle, shared: &SharedPanel) {
     let Some(window) = app.get_webview_window(LABEL) else { return };
     let mut state = shared.lock().unwrap();
     let Some((layout, monitor)) = state.settle() else { return };
-    apply(&window, &monitor, &layout);
+    let glide = state.needs_glide_thread();
     drop(state);
-    crate::backdrop::sync_native(app);
-    let _ = app.emit_to(LABEL, "panel-layout", layout);
+    if glide { start_glide(app.clone(), shared.clone()); }
+    publish(app, &window, &monitor, layout);
 }
 
-fn apply(window: &WebviewWindow, monitor: &win::MonitorInfo, layout: &Layout) {
-    win::set_frame_dip(window, layout.frame, monitor.scale);
+// Windows difference: moving the HWND and publishing its coordinates belong to one UI-thread pass.
+// Posting SetWindowPos off-thread and emitting immediately could deliver the future layout while the
+// window was still at its old origin. No panel lock is held here (SetWindowPos sends window messages).
+fn publish(app: &AppHandle, window: &WebviewWindow, monitor: &win::MonitorInfo, layout: Layout) {
+    let next = app.clone();
+    let window = window.clone();
+    let scale = monitor.scale;
+    let _ = app.run_on_main_thread(move || {
+        win::set_frame_dip(&window, layout.frame, scale);
+        crate::backdrop::sync_native(&next);
+        let _ = next.emit_to(LABEL, "panel-layout", layout);
+    });
 }
 
 /// Display changes do not change the device name. Refresh the cached DPI and
@@ -221,12 +307,10 @@ pub fn reconcile_display(app: &AppHandle, shared: &SharedPanel) {
     let mut state = shared.lock().unwrap();
     let monitor = win::monitor_named(state.placement.display.as_deref()).unwrap_or_else(win::primary_monitor);
     let Some(layout) = state.display_update(monitor.clone(), win::window_rect_px(&window)) else { return };
-    apply(&window, &monitor, &layout);
     drop(state);
-    crate::backdrop::sync_native(app);
     // The sampler reports a fresh pointer even if it has not moved. Emitting a
     // reset here could race and overwrite that fresh event after unlocking.
-    let _ = app.emit_to(LABEL, "panel-layout", layout);
+    publish(app, &window, &monitor, layout);
 }
 
 pub fn start_sampler(app: AppHandle, shared: SharedPanel) {
@@ -402,13 +486,13 @@ fn carry(app: &AppHandle, shared: &SharedPanel, window: &WebviewWindow, cursor_p
     let natural = state.placement.layout(visible, &geometry);
     let same_display = state.same_display(&monitor);
     let layout = state.commit(natural, same_display, Instant::now());
-    apply(window, &monitor, &layout);
-    state.monitor = Some(monitor);
+    state.monitor = Some(monitor.clone());
     let placement = state.placement.clone();
+    let glide = state.needs_glide_thread();
     drop(state);
-    crate::backdrop::sync_native(app);
+    if glide { start_glide(app.clone(), shared.clone()); }
+    publish(app, window, &monitor, layout);
     crate::store::save_placement(app, &placement);
-    let _ = app.emit_to(LABEL, "panel-layout", layout);
     let _ = app.emit("placement-changed", &placement);
 }
 
@@ -510,20 +594,26 @@ mod tests {
         let natural = state.placement.layout(monitor().work_dip(), &state.geometry.unwrap());
         let layout = state.commit(natural, true, now);
         assert!(layout.morph);
-        // The rail stays where the placement put it; the window also covers where the old one was.
-        assert_eq!(layout.rail_on_screen(), natural.rail_on_screen());
-        assert!(layout.frame.x <= before.frame.x && layout.frame.right() >= before.frame.right());
-        assert!(layout.frame.y <= natural.frame.y && layout.frame.bottom() >= natural.frame.bottom());
+        assert_eq!((layout.frame.x, layout.frame.y), (before.frame.x, before.frame.y));
+        assert_eq!(layout.rail, natural.rail);
+        assert!(layout.frame.w >= before.frame.w.max(natural.frame.w));
+        assert!(layout.frame.h >= before.frame.h.max(natural.frame.h));
+        assert!(state.glide.is_some());
         // The grown layout is what later placements (a drag tick, a display change) show too.
-        assert_eq!(state.show(natural), layout);
+        assert_eq!(state.show(natural, now), layout);
         assert!(!state.settle_due(now));
         state.ui_settled = true;
-        assert!(state.settle_due(now));
-        state.press = Some(press());
         assert!(!state.settle_due(now));
+        let finished_at = now + Duration::from_secs(2);
+        let finished = state.commit(natural, true, finished_at);
+        assert!(state.glide.is_none());
+        assert!(state.settle_due(finished_at));
+        state.press = Some(press());
+        assert!(!state.settle_due(finished_at));
         state.press = None;
         let (settled, _) = state.settle().unwrap();
         assert_eq!(settled, natural);
+        assert_eq!((settled.frame.x, settled.frame.y), (finished.frame.x, finished.frame.y));
         assert!(!settled.morph && state.room.is_none() && state.settle().is_none());
     }
 
@@ -535,7 +625,55 @@ mod tests {
         let natural = state.placement.layout(monitor().work_dip(), &state.geometry.unwrap());
         state.commit(natural, true, now);
         assert!(!state.settle_due(now + Duration::from_millis(1000)));
-        assert!(state.settle_due(now + SETTLE_FALLBACK));
+        let finished_at = now + Duration::from_secs(2);
+        let finished = state.commit(natural, true, finished_at);
+        assert!(state.glide.is_none());
+        assert!(state.settle_due(finished_at));
+        let (settled, _) = state.settle().unwrap();
+        assert_eq!(settled, natural);
+        assert_eq!((settled.frame.x, settled.frame.y), (finished.frame.x, finished.frame.y));
+    }
+
+    fn assert_morph_keeps_origin_until_shrink(state: &mut PanelState, dock: Dock, now: Instant) {
+        let before = state.layout.unwrap();
+        state.placement.dock = dock;
+        let natural = state.placement.layout(monitor().work_dip(), &state.geometry.unwrap());
+        let started = state.commit(natural, true, now);
+        assert_eq!((started.frame.x, started.frame.y), (before.frame.x, before.frame.y));
+        assert_eq!(started.rail, natural.rail);
+        assert!(started.frame.w >= before.frame.w.max(natural.frame.w));
+        assert!(started.frame.h >= before.frame.h.max(natural.frame.h));
+        assert!(started.morph && state.glide.is_some());
+
+        let finished_at = now + Duration::from_secs(2);
+        let finished = state.commit(natural, true, finished_at);
+        assert!(state.glide.is_none());
+        assert!(state.settle_due(finished_at));
+        let (settled, _) = state.settle().unwrap();
+        assert_eq!(settled, natural);
+        assert_eq!((settled.frame.x, settled.frame.y), (finished.frame.x, finished.frame.y));
+    }
+
+    #[test]
+    fn four_axis_rotation_keeps_the_window_origin_continuous() {
+        let mut state = turned_state();
+        let now = Instant::now();
+        for (step, dock) in [
+            Dock::Edge(Edge::Top),
+            Dock::Edge(Edge::Left),
+            Dock::Edge(Edge::Bottom),
+            Dock::Edge(Edge::Right),
+        ].into_iter().enumerate() {
+            assert_morph_keeps_origin_until_shrink(&mut state, dock, now + Duration::from_secs(step as u64 * 3));
+        }
+    }
+
+    #[test]
+    fn docking_and_floating_on_one_axis_keep_the_window_origin_continuous() {
+        let mut state = turned_state();
+        let now = Instant::now();
+        assert_morph_keeps_origin_until_shrink(&mut state, Dock::Floating(true), now);
+        assert_morph_keeps_origin_until_shrink(&mut state, Dock::Edge(Edge::Right), now + Duration::from_secs(3));
     }
 
     #[test]

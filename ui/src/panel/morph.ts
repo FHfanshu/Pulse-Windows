@@ -7,7 +7,7 @@
 // the window, how docked the outline is, and where each ring sits.
 import { animate } from "motion/react";
 import { useEffect, useReducer, useRef } from "react";
-import { axisOf, type Edge } from "./layout";
+import { type Edge } from "./layout";
 import { spring } from "./tint";
 
 export type Vec = [number, number];
@@ -64,7 +64,7 @@ export function morphShape(from: { edge: Edge; d: number }, to: { edge: Edge; do
   return p < 0.5 ? { edge: from.edge, d: clamp(from.d * (1 - 2 * p)) } : { edge: to.edge, d: clamp(2 * p - 1) };
 }
 
-const shapeKey = (t: RailTarget) => `${axisOf(t.edge)}|${t.docked}`;
+const shapeKey = (t: RailTarget) => `${t.edge}|${t.docked}`;
 
 /**
  * The rail as it is drawn now. `size` and `items` are the target layout's; a change of shape starts a
@@ -83,14 +83,15 @@ export function useRailMorph(target: RailTarget | null, size: { w: number; h: nu
 
   const next = target ? shapeKey(target) : null;
   if (target && next && key.current !== null && key.current !== next) {
-    // The shape changed: start from the outline last drawn (kept on screen, whatever the window did).
+    // Windows difference: Rust keeps one local canvas and glides its origin on the same spring.
+    // Start from the last local outline; no rebasing is needed when that canvas later shrinks.
     const prev = shown.current;
     run.current = null;
     progress.current = 1;
     if (target.morph && prev) {
       run.current = {
-        dx: prev.x + prev.origin[0] - (target.rail.x + target.frame.x),
-        dy: prev.y + prev.origin[1] - (target.rail.y + target.frame.y),
+        dx: prev.x - target.rail.x,
+        dy: prev.y - target.rail.y,
         dw: prev.w - size.w,
         dh: prev.h - size.h,
         d0: prev.d,
