@@ -21,7 +21,7 @@ A Windows desktop monitor for AI coding plan limits, token usage and estimated s
 
 Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Windows 移植版。使用多个 AI 编程工具时，你可以通过常驻屏幕边缘的额度圆环，查看各账号已用比例；悬停打开详情卡片，查看不同额度窗口、重置时间、余额及可用的本地消耗记录。
 
-项目使用 **Rust + Tauri 2 + React + TypeScript**，保留上游的交互与视觉思路，接入 Windows 托盘、窗口管理和凭据加密。目前版本为 **0.1.1**，仍在持续完善；各服务的可用信息取决于账号权限、认证方式和服务接口。
+项目使用 **Rust + Tauri 2 + React + TypeScript**，保留上游的交互与视觉思路，接入 Windows 托盘、窗口管理和凭据加密。目前版本为 **0.1.2**，仍在持续完善；各服务的可用信息取决于账号权限、认证方式和服务接口。
 
 ## 功能
 
@@ -60,25 +60,40 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 
 ## 界面截图
 
-以下为 Windows 版实际运行截图，额度使用 `PULSE_MOCK=1` 的内置样例读数，Token 明细使用隔离目录中的演示会话记录，不包含真实账号信息。背景使用实际桌面壁纸；趋势图为有起伏的演示数据。
+以下为 Windows 版实际运行截图，额度使用 `PULSE_MOCK=1` 的内置样例读数，Token 明细使用隔离目录中的演示会话记录，不包含真实账号信息。背景使用实际桌面壁纸；趋势图为有起伏的演示数据。点击图片查看原图。
 
-**侧边贴靠与玻璃材质**：额度圆环沿屏幕边缘排列，悬停展开详情卡片。面板与卡片使用 Windows 原生亚克力玻璃，透出并模糊后方桌面；下图关闭闪粉以展示材质本身。
+<table>
+  <tr>
+    <td align="center" valign="top" width="33%">
+      <a href="docs/screenshots/windows-sidebar-glass.png"><img src="docs/screenshots/windows-sidebar-glass.png" alt="Windows 版 Pulse 侧边贴靠面板和详情卡片，展示原生亚克力玻璃的透色与模糊" width="240" /></a>
+      <br /><sub><b>侧边贴靠与玻璃材质</b></sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <a href="docs/screenshots/windows-detail-claude.png"><img src="docs/screenshots/windows-detail-claude.png" alt="Windows 版 Pulse 的 Claude Code 详细用量卡片，展示本机 Token 趋势和缓存命中率" width="240" /></a>
+      <br /><sub><b>详细用量卡片 · Claude Code</b></sub>
+    </td>
+    <td align="center" valign="top" width="33%">
+      <a href="docs/screenshots/windows-detail-codex.png"><img src="docs/screenshots/windows-detail-codex.png" alt="Windows 版 Pulse 的 Codex 详细用量卡片，展示额度与本机 Token 明细" width="240" /></a>
+      <br /><sub><b>详细用量卡片 · Codex</b></sub>
+    </td>
+  </tr>
+</table>
 
-<img src="docs/screenshots/windows-sidebar-glass.png" alt="Windows 版 Pulse 侧边贴靠面板和详情卡片，展示原生亚克力玻璃的透色与模糊" width="680" />
+- **侧边贴靠与玻璃材质**：额度圆环沿屏幕边缘排列，悬停展开详情卡片。面板与卡片使用 Windows 原生亚克力玻璃，透出并模糊后方桌面；左图关闭闪粉以展示材质本身。
+- **详细用量卡片**：显示套餐、额度重置时间和本机 Token 统计，包括今日、7 天、31 天用量、每日柱状图、主要模型、缓存命中率及费用估算。
 
-**详细用量卡片**：显示套餐、额度重置时间和本机 Token 统计，包括今日、7 天、31 天用量、每日柱状图、主要模型、缓存命中率及费用估算。
-
-<img src="docs/screenshots/windows-detail-claude.png" alt="Windows 版 Pulse 的 Claude Code 详细用量卡片，展示本机 Token 趋势和缓存命中率" width="680" />
-
-<img src="docs/screenshots/windows-detail-codex.png" alt="Windows 版 Pulse 的 Codex 详细用量卡片，展示额度与本机 Token 明细" width="680" />
-
-**横向浮动面板**：支持切换布局，按需显示百分比和闪粉。
-
-<img src="docs/screenshots/windows-panel.png" alt="Windows 版 Pulse 横向浮动额度面板与详情卡片" width="860" />
-
-**外观设置**：调整大小、间距、玻璃、闪粉和透明度。
-
-<img src="docs/screenshots/windows-settings.png" alt="Windows 版 Pulse 外观设置与原生标题栏" width="1000" />
+<table>
+  <tr>
+    <td align="center" valign="top" width="50%">
+      <a href="docs/screenshots/windows-panel.png"><img src="docs/screenshots/windows-panel.png" alt="Windows 版 Pulse 横向浮动额度面板与详情卡片" width="380" /></a>
+      <br /><sub><b>横向浮动面板</b>：支持切换布局，按需显示百分比和闪粉。</sub>
+    </td>
+    <td align="center" valign="top" width="50%">
+      <a href="docs/screenshots/windows-settings.png"><img src="docs/screenshots/windows-settings.png" alt="Windows 版 Pulse 外观设置与原生标题栏" width="380" /></a>
+      <br /><sub><b>外观设置</b>：调整大小、间距、玻璃、闪粉和透明度。</sub>
+    </td>
+  </tr>
+</table>
 
 ## 下载与安装
 
@@ -96,7 +111,7 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 当前流水线生成未签名的 Windows 安装包，系统可能显示 SmartScreen 提示。每次构建附带 `SHA256SUMS.txt`，可用 PowerShell 核对文件：
 
 ```powershell
-Get-FileHash .\Pulse_0.1.1_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\Pulse_0.1.2_x64-setup.exe -Algorithm SHA256
 ```
 
 ### 数据与隐私
