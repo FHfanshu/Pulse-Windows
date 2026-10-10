@@ -17,6 +17,7 @@
 //! [`refresh_prices`] now and then (it refetches at most once a day) to keep it current.
 
 pub mod activity;
+pub mod account;
 pub mod agent;
 pub mod archive;
 pub mod agent_archive;

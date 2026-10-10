@@ -278,6 +278,10 @@ pub enum UsageRoute {
 #[serde(rename_all = "camelCase")]
 pub struct ProviderUsage {
     pub account: AccountKey,
+    /// Windows difference: verified billing identity for local spend matching. Kept only in
+    /// memory: never sent to the UI, copied by --json, or restored from a stale usage cache.
+    #[serde(skip)]
+    pub spend_identity: Option<crate::spend::account::AccountIdentity>,
     /// Ordered as the provider reports them.
     pub windows: Vec<UsageWindow>,
     pub observed_at: Option<DateTime<Utc>>,
@@ -300,6 +304,7 @@ impl ProviderUsage {
     pub fn unavailable(account: AccountKey, reason: Unavailability) -> Self {
         Self {
             account,
+            spend_identity: None,
             windows: Vec::new(),
             observed_at: None,
             state: UsageState::Unavailable(reason),
@@ -314,6 +319,7 @@ impl ProviderUsage {
     pub fn live(account: AccountKey, windows: Vec<UsageWindow>, now: DateTime<Utc>) -> Self {
         Self {
             account,
+            spend_identity: None,
             windows,
             observed_at: Some(now),
             state: UsageState::Live,

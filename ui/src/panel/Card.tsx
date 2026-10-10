@@ -35,6 +35,8 @@ export interface CardProps {
   detailed: boolean;
   /** Whether this account has records to show: detailed, the account the records are shown on, Token spend on. */
   showsSpend: boolean;
+  // Windows difference: estimates are matched to each account by Rust, independently of the provider-wide activity section.
+  showsValue: boolean;
   onHeight: (h: number) => void;
 }
 
@@ -154,7 +156,7 @@ export function Card(p: CardProps) {
   const values = useEstimatedValues(
     accountId(u.account),
     `${u.observedAt ?? ""}|${u.windows.map((w) => `${w.id}:${w.usedFraction}`).join(",")}`,
-    p.detailed && p.showsSpend && u.state.kind === "live",
+    p.detailed && p.showsValue && u.state.kind === "live",
   );
   const valueText = (w: UsageWindow): string | null => {
     const v = values.find((x) => x.window === w.id);
