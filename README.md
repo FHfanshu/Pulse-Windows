@@ -58,11 +58,13 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 
 具体记录格式、Windows 路径和统计能力以[来源注册表](crates/pulse-core/src/spend/sources/mod.rs)及各来源实现为准。缺失日志、未记录模型或未提供缓存计数时，统计可能不完整；没有可用价格的模型无法可靠估算费用。
 
-## 界面参考
+## 界面截图
 
-以下是仓库保留的**上游 macOS 界面参考**，不是 Windows 实机截图。Windows 版使用原生标题栏与系统托盘，支持范围也可能不同。
+以下为 Windows 版实际运行截图，使用 PULSE_MOCK=1 的内置样例读数，不包含真实账号信息。
 
-<img src="docs/settings.webp" alt="上游 Pulse 的 macOS 设置界面参考" width="900" />
+<img src="docs/screenshots/windows-panel.png" alt="Windows 版 Pulse 额度面板与详情卡片" width="860" />
+
+<img src="docs/screenshots/windows-settings.png" alt="Windows 版 Pulse 面板设置与原生标题栏" width="1000" />
 
 ## 下载与安装
 
