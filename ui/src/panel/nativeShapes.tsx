@@ -6,7 +6,7 @@
 // moved by motion's spring outside React, so its box is read back from the DOM every animation frame
 // until it has been still for a while. Only changed outlines are sent.
 import { invoke } from "@tauri-apps/api/core";
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useRef } from "react";
 
 interface Placed {
   d: string;
@@ -18,13 +18,37 @@ interface Placed {
   o: number;
 }
 
-let rail: { d: string; x: number; y: number } | null = null;
-let card: { d: string; svg: SVGSVGElement; width: number } | null = null;
+let rail: { d: string; x: number; y: number; owner: symbol } | null = null;
+let card: { d: string; svg: SVGSVGElement; width: number; owner: symbol } | null = null;
 let active = false;
 let request = 0;
 let stillFor = 0;
 let sent = "";
 let seq = 0;
+let epoch: number | null = null;
+let opening = false;
+let disposed = false;
+let retry = 0;
+
+// Windows difference: a new WebView/HMR producer must fence delayed commands from the old one.
+function begin() {
+  if (opening || disposed) return;
+  opening = true;
+  void invoke<number>("begin_backdrop_shapes").then((value) => {
+    if (disposed) return;
+    epoch = value;
+    sent = "";
+    wakeNativeShapes();
+  }).catch(() => {
+    if (!disposed) retry = window.setTimeout(wakeNativeShapes, 250);
+  }).finally(() => { opening = false; });
+}
+
+import.meta.hot?.dispose(() => {
+  disposed = true;
+  cancelAnimationFrame(request);
+  clearTimeout(retry);
+});
 
 /** Frames the card may stand still before the loop rests (until the next change wakes it). */
 const REST_AFTER = 30;
@@ -41,45 +65,51 @@ function cardOutline(): Placed | null {
 
 /** Sends the outlines if they differ from the last ones sent. Returns whether they did. */
 function flush(): boolean {
-  if (!active) return false;
-  const shapes = { rail: rail ? { ...rail, x: round(rail.x), y: round(rail.y), s: 1, o: 1 } : null, card: cardOutline() };
+  if (disposed) return false;
+  if (epoch === null) { begin(); return false; }
+  const shapes = { rail: rail ? { d: rail.d, x: round(rail.x), y: round(rail.y), s: 1, o: 1 } : null, card: cardOutline() };
   const key = JSON.stringify(shapes);
   if (key === sent) return false;
   sent = key;
-  void invoke("set_backdrop_shapes", { shapes: { seq: ++seq, ...shapes } }).catch(() => {});
+  const payload = { epoch, seq: ++seq, ...shapes };
+  // Opt-in development evidence contains geometry only.
+  if (import.meta.env.DEV) Reflect.get(window, "traceNativeShapes")?.({ at: Date.now(), ...payload });
+  void invoke("set_backdrop_shapes", { shapes: payload }).catch(() => {});
   return true;
 }
 
 function frame() {
   request = 0;
-  if (!active) return;
+  if (disposed) return;
   stillFor = flush() ? 0 : stillFor + 1;
   if (stillFor <= REST_AFTER) request = requestAnimationFrame(frame);
 }
 
-/** Something that may move a shape happened: send now, and keep watching the card. */
+/** Coalesce a React commit into one painted-frame snapshot, and keep watching motion. */
 export function wakeNativeShapes() {
-  if (!active) return;
+  if (disposed) return;
   stillFor = 0;
-  flush();
+  // Windows difference: layout-effect cleanup and registration must never send an intermediate hole.
   if (!request) request = requestAnimationFrame(frame);
 }
 
-/** Whether Rust is drawing the native acrylic (so the outlines are wanted). */
+/** Native mode changed: resubmit the current snapshot, including during initial readiness. */
 export function setNativeActive(on: boolean) {
   if (on === active) return;
   active = on;
   sent = ""; // Rust may be holding nothing: say everything again
-  if (on) wakeNativeShapes();
+  wakeNativeShapes();
 }
 
 /** Registers the rail's outline (window coordinates of its box) for as long as it is mounted. */
 export function RailOutline({ d, x, y }: { d: string; x: number; y: number }) {
+  const owner = useRef(Symbol("rail"));
   useLayoutEffect(() => {
-    rail = { d, x, y };
+    rail = { d, x, y, owner: owner.current };
     wakeNativeShapes();
   });
   useLayoutEffect(() => () => {
+    if (rail?.owner !== owner.current) return;
     rail = null;
     wakeNativeShapes();
   }, []);
@@ -88,12 +118,14 @@ export function RailOutline({ d, x, y }: { d: string; x: number; y: number }) {
 
 /** Registers the open card's outline: `svg` is the element the outline is drawn in, at `width` DIPs. */
 export function useCardOutline(svg: React.RefObject<SVGSVGElement>, d: string, width: number) {
+  const owner = useRef(Symbol("card"));
   useLayoutEffect(() => {
     if (!svg.current) return;
-    card = { d, svg: svg.current, width };
+    card = { d, svg: svg.current, width, owner: owner.current };
     wakeNativeShapes();
   });
   useLayoutEffect(() => () => {
+    if (card?.owner !== owner.current) return;
     card = null;
     wakeNativeShapes();
   }, []);

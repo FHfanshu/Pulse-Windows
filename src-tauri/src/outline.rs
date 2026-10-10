@@ -35,8 +35,28 @@ pub struct Shapes {
     /// Counts the UI's updates, so a late one is not applied over a newer.
     #[serde(default)]
     pub seq: u64,
+    /// Windows difference: fences commands from an earlier WebView producer.
+    #[serde(default)]
+    pub epoch: u64,
     pub rail: Option<Outline>,
     pub card: Option<Outline>,
+}
+
+impl Shapes {
+    pub fn begin(&mut self) -> u64 {
+        self.epoch += 1;
+        self.seq = 0;
+        // Keep the last clip while the new producer prepares its first painted-frame snapshot.
+        self.epoch
+    }
+
+    pub fn accept(&mut self, next: Self) -> bool {
+        if next.epoch != self.epoch || next.seq <= self.seq {
+            return false;
+        }
+        *self = next;
+        true
+    }
 }
 
 fn is_space(b: u8) -> bool {
@@ -122,6 +142,58 @@ pub fn place(segs: &[Seg], outline: &Outline, px: f64) -> Vec<Seg> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture_outline(x: f64) -> Outline {
+        Outline { d: "M0 0L1 0L1 1Z".into(), x, y: 0.0, s: 1.0, o: 1.0 }
+    }
+
+    fn fixture_shapes(epoch: u64, seq: u64, rail_x: f64, card_x: f64) -> Shapes {
+        Shapes { epoch, seq, rail: Some(fixture_outline(rail_x)), card: Some(fixture_outline(card_x)) }
+    }
+
+    #[test]
+    fn beginning_a_stream_keeps_shapes_and_advances_epoch() {
+        let mut current = fixture_shapes(4, 9, 1.0, 2.0);
+        let previous = current.clone();
+
+        assert_eq!(current.begin(), 5);
+        assert_eq!(current.epoch, 5);
+        assert_eq!(current.seq, 0);
+        assert_eq!(current.rail, previous.rail);
+        assert_eq!(current.card, previous.card);
+    }
+
+    #[test]
+    fn only_a_strictly_newer_snapshot_in_the_current_epoch_is_accepted() {
+        let mut current = fixture_shapes(3, 4, 1.0, 2.0);
+        let newer = fixture_shapes(3, 5, 3.0, 4.0);
+        assert!(current.accept(newer.clone()));
+        assert_eq!(current, newer);
+
+        assert!(!current.accept(fixture_shapes(3, 4, 5.0, 6.0)));
+        assert!(!current.accept(fixture_shapes(3, 5, 7.0, 8.0)));
+        assert_eq!(current, newer);
+    }
+
+    #[test]
+    fn an_old_epoch_cannot_replace_shapes_after_begin_even_with_a_larger_sequence() {
+        let mut current = fixture_shapes(8, 100, 1.0, 2.0);
+        current.begin();
+        let after_begin = current.clone();
+
+        assert!(!current.accept(fixture_shapes(8, u64::MAX, 3.0, 4.0)));
+        assert_eq!(current, after_begin);
+    }
+
+    #[test]
+    fn a_new_epoch_accepts_its_first_snapshot_at_sequence_one() {
+        let mut current = fixture_shapes(2, 19, 1.0, 2.0);
+        let epoch = current.begin();
+        let first = fixture_shapes(epoch, 1, 3.0, 4.0);
+
+        assert!(current.accept(first.clone()));
+        assert_eq!(current, first);
+    }
 
     #[test]
     fn reads_what_shapes_ts_writes() {

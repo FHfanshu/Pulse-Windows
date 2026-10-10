@@ -1,7 +1,7 @@
 // Ported from upstream Panel/FloatingUsagePanelContent.swift and UsageDockView.swift.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useMotionValue } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setLanguage } from "../shared/i18n";
 import { elapsedFraction, headlineWindow, isSpent, percentText, secondWindow } from "../shared/model";
@@ -46,6 +46,7 @@ export function App() {
   const [pointer, setPointer] = useState<[number, number] | null>(null);
   const [dragging, setDragging] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const cardOpacity = useMotionValue(0);
   const [cardHeight, setCardHeight] = useState<number | null>(null);
   const refreshing = useMemo(() => new Set(refreshingIds), [refreshingIds]);
   const hoveredItem = useRef<string | null>(null);
@@ -401,7 +402,11 @@ export function App() {
           <motion.div
             key="card"
             className="card-host"
-            style={{ position: "absolute", transformOrigin: revealOrigin(selectedIndex) }}
+            // Windows difference: keep opacity in Motion’s JS frame pass. WAAPI cancellation during
+            // a ring swap briefly exposed the underlying opacity (0 or 1), which the native clip
+            // sampler then applied a frame later as a clear hole or a flash after the exit.
+            style={{ position: "absolute", transformOrigin: revealOrigin(selectedIndex), opacity: cardOpacity }}
+            onUpdate={wakeNativeShapes}
             initial={{ opacity: 0, scale: 0.88, ...slide, ...cardStyle(selectedIndex) }}
             animate={{ opacity: 1, scale: 1, x: 0, y: 0, ...cardStyle(selectedIndex) }}
             exit={{ opacity: 0, scale: 0.88, ...slide }}

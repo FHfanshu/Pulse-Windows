@@ -460,7 +460,7 @@ impl Layer {
     }
 
     /// Clips the layer to `outline` (window DIPs; `px` is the window's scale) or hides it.
-    fn set(&self, backdrop: &HostBackdrop, size: windows::Foundation::Numerics::Vector2, outline: Option<&crate::outline::Outline>, px: f64) -> windows::core::Result<()> {
+    fn set(&self, backdrop: &HostBackdrop, size: windows::Foundation::Numerics::Vector2, outline: Option<&crate::outline::Outline>, px: f64, layer: &str) -> windows::core::Result<()> {
         let key = (outline.cloned(), [size.X, size.Y], px.to_bits());
         if self.applied.borrow().as_ref() == Some(&key) {
             return Ok(());
@@ -475,6 +475,10 @@ impl Layer {
                 self.sprite.SetIsVisible(true)?;
             }
             _ => self.sprite.SetIsVisible(false)?,
+        }
+        if std::env::var_os("PULSE_BACKDROP_TRACE").is_some() {
+            let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+            eprintln!("LAYER {at} {layer} visible={} opacity={}", self.sprite.IsVisible().unwrap_or(false), self.sprite.Opacity().unwrap_or(0.0));
         }
         *self.applied.borrow_mut() = Some(key);
         Ok(())
@@ -512,8 +516,8 @@ pub fn host_backdrop(window: &WebviewWindow, active: bool, shapes: &crate::outli
         unsafe { GetClientRect(hwnd, &mut client)? };
         let size = Vector2 { X: (client.right - client.left) as f32, Y: (client.bottom - client.top) as f32 };
         let px = (unsafe { GetDpiForWindow(hwnd) }.max(96) as f64) / 96.0;
-        surface.rail.set(surface, size, shapes.rail.as_ref(), px)?;
-        surface.card.set(surface, size, shapes.card.as_ref(), px)?;
+        surface.rail.set(surface, size, shapes.rail.as_ref(), px, "rail")?;
+        surface.card.set(surface, size, shapes.card.as_ref(), px, "card")?;
         Ok(true)
     })
 }
