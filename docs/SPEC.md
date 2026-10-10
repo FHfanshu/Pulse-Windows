@@ -33,6 +33,7 @@ lists the difference under **Deliberate differences**.
 | Sparkle | Tauri updater (GitHub Releases) | platform |
 | Raycast integration | not ported | owner decision |
 | Providers | first 20 (§6), others later | owner decision |
+| Estimated value on added accounts | Claude/Codex accounts use billing identity matching rather than a primary-account gate | owner decision; local spend must belong to the account whose percentage is used |
 
 ## 3. Layout tokens (all multiplied by `scale`)
 
@@ -77,6 +78,25 @@ observedAt, state, plan, creditBalance, creditRemaining, origin, isCached }`, `U
 same case names; messages are localized in the UI from the same English keys).
 Rules ported verbatim: `percentValue` (never 0 when used, never 100 when not all), `headlineWindow`,
 `secondWindow`, `current(at)`, `hasTurnedOver`, `elapsedFraction`.
+
+Estimated value keeps upstream's formula and thresholds: this PC's API-equivalent spend during
+the window, up to the usage observation, divided by the account's used fraction (at least 5%
+used and $0.20 spent). Account matching is a Windows difference approved by the owner. Claude
+uses both user and organization UUIDs from the existing OAuth profile request; Codex uses both
+user and workspace IDs from the token used for the existing usage request. Names, emails,
+account order and the default/added distinction are not matching evidence. The IDs stay in
+memory and are omitted from IPC JSON and persisted usage caches.
+
+Local transcripts do not reliably record billing identity. The current local login can be used
+only for windows opened after the login and identity metadata files were last written, with
+unchanged file stamps before and after the scan. A switch, renewal or unrelated metadata write
+can therefore suppress estimates until a later complete window. Missing identity, helper-only
+readings without identity, stale readings, incomplete logs and unpriced tokens in the window
+also suppress estimates. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honored; Claude's new metadata
+path remains `WINDOWS-PATH: unverified` until validated on a real installation. This does not
+reconstruct historical account ownership or distinguish simultaneous clients using different
+credentials while sharing one transcript directory. The provider's "this PC" activity section
+retains its existing first-account placement, independently of account-specific estimates.
 
 Provider trait:
 

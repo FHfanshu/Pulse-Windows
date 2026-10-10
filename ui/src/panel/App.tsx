@@ -7,7 +7,7 @@ import { setLanguage } from "../shared/i18n";
 import { elapsedFraction, headlineWindow, isSpent, percentText, secondWindow } from "../shared/model";
 import { recordsAccount, useSettings, useUsage } from "../shared/settings";
 import { Card } from "./Card";
-import { readCardSpend, readPromptCache, resetCardLedgers, useCardSpendProviders } from "./cardLedgers";
+import { readCardSpend, readPromptCache, resetCardLedgers, spendProviders, useCardSpendProviders } from "./cardLedgers";
 import { providerNames } from "./Icon";
 import { axisOf, defaultMetrics, detailCardLayout, dockLayout, panelSize, PanelSizeScale, RailSpacingScale, type Edge, type PanelMetrics } from "./layout";
 import { Ring } from "./Ring";
@@ -443,6 +443,7 @@ export function App() {
               maxHeight={cardRoom()}
               detailed={selectedIsDetailed}
               showsSpend={selectedShowsSpend}
+              showsValue={readsSpend && !!selectedProvider && spendProviders.has(selectedProvider)}
               onHeight={(h) => setCardHeight((old) => (old != null && Math.abs(old - h) < 0.5 ? old : h))}
             />
           </motion.div>
