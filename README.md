@@ -60,11 +60,25 @@ Pulse for Windows 是 [qunqin24/Pulse](https://github.com/qunqin24/Pulse) 的 Wi
 
 ## 界面截图
 
-以下为 Windows 版实际运行截图，使用 PULSE_MOCK=1 的内置样例读数，不包含真实账号信息。
+以下为 Windows 版实际运行截图，额度使用 `PULSE_MOCK=1` 的内置样例读数，Token 明细使用隔离目录中的演示会话记录，不包含真实账号信息。背景使用实际桌面壁纸；趋势图为有起伏的演示数据。
 
-<img src="docs/screenshots/windows-panel.png" alt="Windows 版 Pulse 额度面板与详情卡片" width="860" />
+**侧边贴靠与玻璃材质**：额度圆环沿屏幕边缘排列，悬停展开详情卡片。面板与卡片使用 Windows 原生亚克力玻璃，透出并模糊后方桌面；下图关闭闪粉以展示材质本身。
 
-<img src="docs/screenshots/windows-settings.png" alt="Windows 版 Pulse 面板设置与原生标题栏" width="1000" />
+<img src="docs/screenshots/windows-sidebar-glass.png" alt="Windows 版 Pulse 侧边贴靠面板和详情卡片，展示原生亚克力玻璃的透色与模糊" width="680" />
+
+**详细用量卡片**：显示套餐、额度重置时间和本机 Token 统计，包括今日、7 天、31 天用量、每日柱状图、主要模型、缓存命中率及费用估算。
+
+<img src="docs/screenshots/windows-detail-claude.png" alt="Windows 版 Pulse 的 Claude Code 详细用量卡片，展示本机 Token 趋势和缓存命中率" width="680" />
+
+<img src="docs/screenshots/windows-detail-codex.png" alt="Windows 版 Pulse 的 Codex 详细用量卡片，展示额度与本机 Token 明细" width="680" />
+
+**横向浮动面板**：支持切换布局，按需显示百分比和闪粉。
+
+<img src="docs/screenshots/windows-panel.png" alt="Windows 版 Pulse 横向浮动额度面板与详情卡片" width="860" />
+
+**外观设置**：调整大小、间距、玻璃、闪粉和透明度。
+
+<img src="docs/screenshots/windows-settings.png" alt="Windows 版 Pulse 外观设置与原生标题栏" width="1000" />
 
 ## 下载与安装
 
