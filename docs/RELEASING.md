@@ -16,7 +16,7 @@ Release 构建还会用更新签名密钥给安装包签名（见下文“应用
 4. 依赖有变动（`Cargo.lock` 或 `package-lock.json`）时，安装 `cargo install --locked cargo-about --features cli`，在 `npm ci` 后运行 `node scripts/third-party-licenses.mjs`，提交更新后的 `THIRD_PARTY_LICENSES.md`。
 5. 将改动提交并推送到 `main`。
 
-已有版本的正文保存在 [releases/](releases/)，例如 [releases/v0.1.1.md](releases/v0.1.1.md)。
+已有版本的正文保存在 [releases/](releases/)，例如 [releases/v0.1.2.md](releases/v0.1.2.md)。
 
 ## 触发发行
 
