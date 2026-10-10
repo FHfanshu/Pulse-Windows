@@ -1,8 +1,8 @@
 // Ported from upstream Panel/FloatingUsagePanelContent.swift and UsageDockView.swift.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { AnimatePresence, motion, useMotionValue } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useMotionValue, useMotionValueEvent, useSpring } from "motion/react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { setLanguage } from "../shared/i18n";
 import { elapsedFraction, headlineWindow, isSpent, percentText, secondWindow } from "../shared/model";
 import { recordsAccount, useSettings, useUsage } from "../shared/settings";
@@ -173,12 +173,29 @@ export function App() {
   const panelAlong = vertical ? layout?.frame.h ?? 0 : layout?.frame.w ?? 0;
   const railAlong = vertical ? rail.y : rail.x;
   const cardAlong = vertical ? cardHeight ?? C.estimatedHeight : C.width;
+  // Windows difference: SwiftUI animates the card and its pointer together. Spring the ring anchor
+  // once, then derive placement and the pointer from it and the height actually drawn. Springing
+  // placement again on every height frame made the card lag while the pointer jumped ahead.
+  const cardAnchor = useSpring(0, spring(0.28, 0.84));
+  const [shownAnchor, setShownAnchor] = useState(0);
+  useMotionValueEvent(cardAnchor, "change", setShownAnchor);
+  const previousSelection = useRef<string | null>(null);
+  const targetAnchor = selectedIndex < 0 ? null : ringCentre(selectedIndex);
+  useLayoutEffect(() => {
+    if (targetAnchor == null) {
+      previousSelection.current = null;
+      return;
+    }
+    if (previousSelection.current == null) cardAnchor.jump(targetAnchor);
+    else cardAnchor.set(targetAnchor);
+    previousSelection.current = selected;
+  }, [selected, targetAnchor, cardAnchor]);
   // Windows difference: the window is as big as the biggest card needs, which a small display can be
   // too short for, so it can reach past the screen. The card is kept to what the screen shows of it:
   // slid along the rail only that far, and (below) shortened when even that is not enough.
   const onScreen = layout ? shownOfWindow(layout, vertical) : { lo: 0, hi: panelAlong };
-  const cardPadding = (i: number) => {
-    const raw = ringCentre(i) - cardAlong / 2;
+  const cardPadding = (i: number, anchor = ringCentre(i)) => {
+    const raw = anchor - cardAlong / 2;
     const first = onScreen.lo - railAlong;
     const last = Math.max(onScreen.hi - railAlong - cardAlong, first);
     return Math.min(Math.max(raw, first), last);
@@ -194,7 +211,7 @@ export function App() {
     return Math.max(room - C.horizontalGap - C.pointerWidth, 0);
   };
   const pointerCentre = (i: number) => {
-    const raw = ringCentre(i) - cardPadding(i);
+    const raw = shownAnchor - cardPadding(i, shownAnchor);
     const inset = C.cornerRadius + C.pointerHeight / 2;
     const first = Math.min(inset, cardAlong / 2);
     const last = Math.max(cardAlong - inset, first);
@@ -213,7 +230,7 @@ export function App() {
 
   const cardBand = (): Rect | null => {
     if (selectedIndex < 0 || !layout) return null;
-    const start = railAlong + cardPadding(selectedIndex) - SLACK;
+    const start = railAlong + cardPadding(selectedIndex, shownAnchor) - SLACK;
     const length = cardAlong + SLACK * 2;
     return vertical
       ? { x: 0, y: start, w: layout.frame.w, h: length }
@@ -251,7 +268,7 @@ export function App() {
     if (!layout) return;
     const band = cardBand();
     invoke("set_hit_rects", { rects: band ? [rail, band] : [rail], grab: rail });
-  }, [layout, selected, cardHeight]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layout, selected, cardHeight, shownAnchor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clickAt = useCallback((x: number, y: number) => {
     setLayout((current) => {
@@ -294,7 +311,7 @@ export function App() {
   // Card placement relative to the rail (upstream cardAlignment + cardOffset + padding).
   const reach = C.width + C.pointerWidth + C.horizontalGap;
   const cardStyle = (i: number): { left: number; top: number } => {
-    const along = cardPadding(i);
+    const along = cardPadding(i, shownAnchor);
     switch (edge) {
       case "right": return { left: rail.x - reach, top: rail.y + along };
       case "left": return { left: rail.x + rail.w + C.horizontalGap, top: rail.y + along };
@@ -405,10 +422,10 @@ export function App() {
             // Windows difference: keep opacity in Motion’s JS frame pass. WAAPI cancellation during
             // a ring swap briefly exposed the underlying opacity (0 or 1), which the native clip
             // sampler then applied a frame later as a clear hole or a flash after the exit.
-            style={{ position: "absolute", transformOrigin: revealOrigin(selectedIndex), opacity: cardOpacity }}
+            style={{ position: "absolute", ...cardStyle(selectedIndex), transformOrigin: revealOrigin(selectedIndex), opacity: cardOpacity }}
             onUpdate={wakeNativeShapes}
-            initial={{ opacity: 0, scale: 0.88, ...slide, ...cardStyle(selectedIndex) }}
-            animate={{ opacity: 1, scale: 1, x: 0, y: 0, ...cardStyle(selectedIndex) }}
+            initial={{ opacity: 0, scale: 0.88, ...slide }}
+            animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
             exit={{ opacity: 0, scale: 0.88, ...slide }}
             transition={spring(0.28, 0.84)}
           >
