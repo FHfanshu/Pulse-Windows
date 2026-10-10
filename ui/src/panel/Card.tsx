@@ -28,6 +28,9 @@ export interface CardProps {
   glassTransparency: number;
   /** The native acrylic is drawn under the card (else the fallback gradient). */
   nativeBackdrop: boolean;
+  /** The tallest the card may be, pointer excluded, or null for no limit: the room the screen leaves it
+   *  (upstream `UsageDetailCard.maxHeight`). A taller card scrolls inside the same outline. */
+  maxHeight: number | null;
   /** The detailed card: the plan, how fresh the figures are and (below) recent activity. Set per account. */
   detailed: boolean;
   /** Whether this account has records to show: detailed, the account the records are shown on, Token spend on. */
@@ -63,10 +66,18 @@ export function Card(p: CardProps) {
   // offsetHeight, not getBoundingClientRect: the reveal animation scales the
   // card, and a transformed measurement would size the outline too short.
   const [contentH, setContentH] = useState<number>(L.estimatedHeight);
+  // Upstream `bounded`: the contents scroll **only when the screen cannot hold them**, inside the same
+  // outline, which is then as tall as the room.
+  const limit = p.maxHeight == null ? Infinity : Math.max(p.maxHeight, 0);
+  const bounded = contentH > limit + 0.5;
+  const targetH = bounded ? limit : contentH;
+  const limitRef = useRef(limit);
+  limitRef.current = limit;
+  const scroller = useRef<HTMLDivElement>(null);
   // The outline's height. Hovering from one ring to another swaps the content under the same card,
   // and the bubble grows or shrinks to the new content on the spring that moves the card (upstream
   // animates the shape with the selection), rather than snapping while the card is still sliding.
-  const [shownH, setShownH] = useState<number>(L.estimatedHeight);
+  const [shownH, setShownH] = useState<number>(Math.min(L.estimatedHeight, limit));
   const shownRef = useRef(shownH);
   const measured = useRef(false);
   const running = useRef<AnimationPlaybackControls | null>(null);
@@ -78,11 +89,10 @@ export function Card(p: CardProps) {
       // The first measurement is the card appearing: it is drawn at its size straight away.
       if (!measured.current) {
         measured.current = true;
-        shownRef.current = h;
-        setShownH(h);
+        shownRef.current = Math.min(h, limitRef.current);
+        setShownH(shownRef.current);
       }
       setContentH((old) => (Math.abs(old - h) < 0.5 ? old : h));
-      p.onHeight(h);
     };
     report();
     const ro = new ResizeObserver(report);
@@ -90,20 +100,32 @@ export function Card(p: CardProps) {
     return () => ro.disconnect();
   });
   useEffect(() => {
-    if (Math.abs(shownRef.current - contentH) < 0.5) return;
+    // Stop the run towards an earlier target first (the estimate, before the first measurement).
     running.current?.stop();
-    running.current = animate(shownRef.current, contentH, {
+    if (Math.abs(shownRef.current - targetH) < 0.5) return;
+    running.current = animate(shownRef.current, targetH, {
       ...spring(0.28, 0.84),
       onUpdate: (v) => {
         shownRef.current = v;
         setShownH(v);
       },
     });
-  }, [contentH]);
+  }, [targetH]);
   useEffect(() => () => running.current?.stop(), []);
+  // A changing work area and spring overshoot must never draw beyond the available room.
+  const drawnH = Math.min(Math.max(shownH, 0), limit);
+  // Placement, hit testing and both outlines follow the height actually drawn, including during the spring.
+  const reported = useRef(p.onHeight);
+  reported.current = p.onHeight;
+  useLayoutEffect(() => reported.current(drawnH), [drawnH]);
+  // Another ring's card starts at its top.
+  const cardKey = `${p.usage.account.provider}|${p.usage.account.slot}|${p.usage.windows.map((w) => w.id).join(",")}`;
+  useEffect(() => {
+    if (scroller.current) scroller.current.scrollTop = 0;
+  }, [cardKey]);
 
   const totalW = L.width + (vertical ? L.pointerWidth : 0);
-  const totalH = shownH + (vertical ? 0 : L.pointerWidth);
+  const totalH = drawnH + (vertical ? 0 : L.pointerWidth);
   const path = bubblePath(totalW, totalH, p.edge, p.pointerCenter, {
     cornerRadius: L.cornerRadius,
     pointerWidth: L.pointerWidth,
@@ -159,15 +181,25 @@ export function Card(p: CardProps) {
       </svg>
       <div className="card-clip" style={{ clipPath: `path("${path}")`, width: totalW, height: totalH, position: "absolute", left: 0, top: 0 }}>
         <div
-          ref={ref}
-          className="card-content"
+          ref={scroller}
+          className={`card-scroll${bounded ? " scrolls" : ""}`}
           style={{
             width: L.width,
-            padding: L.padding,
-            gap: L.contentSpacing,
+            height: drawnH,
             position: "absolute",
             left: p.edge === "left" ? L.pointerWidth : 0,
             top: p.edge === "top" ? L.pointerWidth : 0,
+          }}
+        >
+        <div
+          ref={ref}
+          className="card-content"
+          style={{
+            // The scrollbar takes its share of the width: the contents fit what is left.
+            width: bounded ? undefined : L.width,
+            padding: L.padding,
+            gap: L.contentSpacing,
+            position: "relative",
           }}
         >
           {/* Hovering to another ring swaps the whole content as one layer: the old one fades where
@@ -177,7 +209,7 @@ export function Card(p: CardProps) {
           <motion.div
             key={`${u.account.provider}|${u.account.slot}`}
             className="card-layer"
-            style={{ display: "flex", flexDirection: "column", gap: L.contentSpacing, width: L.width - L.padding * 2 }}
+            style={{ display: "flex", flexDirection: "column", gap: L.contentSpacing, width: "100%" }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { duration: 0.14, ease: "easeOut" } }}
             exit={{ opacity: 0, transition: { duration: 0.12, ease: "easeOut" } }}
@@ -224,6 +256,7 @@ export function Card(p: CardProps) {
           </AnimatePresence>
           </motion.div>
           </AnimatePresence>
+        </div>
         </div>
       </div>
     </div>
