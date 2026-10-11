@@ -1,9 +1,10 @@
 // Ported from upstream Panel/UsageRingView.swift (bot mark omitted by decision).
 import { motion } from "motion/react";
 import { useId } from "react";
+import { drawnFraction } from "../shared/model";
 import { ProviderIcon } from "./Icon";
 import { ink, useLightPanel } from "./scheme";
-import { spring, usageColor } from "./tint";
+import { pulseColors, spring, usageColor } from "./tint";
 
 const CENTRE_GAP = 4;
 const ICON_SCALE = 0.8;
@@ -21,6 +22,8 @@ export interface RingProps {
   chosenTint?: string | null;
   isSpent: boolean;
   showsRemaining: boolean;
+  /** Keep a spent ring filled while counting down; off draws the true remainder and a red track. */
+  keepsExhaustedRingFilled: boolean;
   diameter: number;
   lineWidth: number;
   scale: number;
@@ -68,11 +71,20 @@ export function Ring(p: RingProps) {
   const spent = p.isSpent || (p.usedFraction ?? 0) >= 1;
   const automatic = usageColor(p.usedFraction ?? 0, spent, p.warningAt, light);
   const arcColour = p.chosenTint && !spent ? p.chosenTint : automatic;
+  // Windows difference (owner-approved #29): opted out while counting down, a spent ring is
+  // drawn empty and its track turns red, so the warning is not lost with the arc. Dimmed, so an
+  // empty countdown ring does not read as the full arc it replaced.
+  const trackSpent = spent && p.showsRemaining && !p.keepsExhaustedRingFilled;
+  const track = trackSpent ? pulseColors(light).exhausted : ink(light, 0.18);
+  const trackOpacity = trackSpent ? 0.35 : undefined;
 
   let arcFraction = 0;
   if (p.usedFraction != null) {
-    const used = Math.min(Math.max(p.usedFraction, 0), 1);
-    arcFraction = spent || used >= 1 ? 1 : p.showsRemaining ? 1 - used : used;
+    arcFraction = drawnFraction(p.usedFraction, spent, {
+      remaining: p.showsRemaining,
+      keepsExhaustedRingFilled: p.keepsExhaustedRingFilled,
+      spentFills: true,
+    });
   }
 
   const hasSecond = p.secondFraction != null;
@@ -89,13 +101,19 @@ export function Ring(p: RingProps) {
   if (hasSecond) {
     const used = Math.min(Math.max(p.secondFraction!, 0), 1);
     const sSpent = !!p.secondIsSpent || used >= 1;
-    const shown = p.showsRemaining && !sSpent ? 1 - used : used;
+    const shown = drawnFraction(p.secondFraction!, sSpent, {
+      remaining: p.showsRemaining,
+      keepsExhaustedRingFilled: p.keepsExhaustedRingFilled,
+      spentFills: true,
+    });
     const colour = (p.chosenTint && !sSpent ? p.chosenTint : null) ?? usageColor(used, sSpent, p.warningAt, light);
+    const secondTrackSpent = sSpent && p.showsRemaining && !p.keepsExhaustedRingFilled;
+    const secondTrack = secondTrackSpent ? pulseColors(light).exhausted : ink(light, 0.18);
     const sr = p.secondDiameter / 2;
     second = (
       <g>
-        <circle r={sr} fill="none" stroke={ink(light, 0.18)} strokeWidth={p.secondLineWidth} />
-        <Arc r={sr} fraction={sSpent ? 1 : shown} color={colour} width={p.secondLineWidth} transition={{ duration: 0.35, ease: "easeOut" }} />
+        <circle r={sr} fill="none" stroke={secondTrack} strokeWidth={p.secondLineWidth} strokeOpacity={secondTrackSpent ? 0.35 : undefined} />
+        <Arc r={sr} fraction={shown} color={colour} width={p.secondLineWidth} transition={{ duration: 0.35, ease: "easeOut" }} />
       </g>
     );
   }
@@ -118,7 +136,7 @@ export function Ring(p: RingProps) {
           </mask>
         </defs>
 
-        <circle r={r} fill="none" stroke={ink(light, 0.18)} strokeWidth={p.lineWidth} />
+        <circle r={r} fill="none" stroke={track} strokeWidth={p.lineWidth} strokeOpacity={trackOpacity} />
         <motion.g animate={{ opacity: refreshing ? 0.3 : 1 }} transition={{ duration: 0.2, ease: "easeOut" }} mask={`url(#mask-${id})`} filter={`url(#halo-${id})`}>
           <Arc r={r} fraction={arcFraction} color={arcColour} width={p.lineWidth} />
         </motion.g>

@@ -41,6 +41,8 @@ export interface AppSettings {
   windowClockDirection: "elapsed" | "remaining";
   showsForecast: boolean;
   showsRemaining: boolean;
+  /** Keep a spent ring filled while counting down (upstream); off draws the true remainder. */
+  keepsExhaustedRingFilled: boolean;
   warningThreshold: number;
   dockShowsAlertColor: boolean;
   showsSecondRing: boolean;

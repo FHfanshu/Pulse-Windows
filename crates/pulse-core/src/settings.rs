@@ -147,6 +147,9 @@ pub struct AppSettings {
     pub window_clock_direction: WindowClockDirection,
     pub shows_forecast: bool,
     pub shows_remaining: bool,
+    /// Keep a spent limit's ring drawn full while the panel counts down (upstream). Off draws
+    /// the true remainder, down to nothing, and turns the ring's track red.
+    pub keeps_exhausted_ring_filled: bool,
     /// Percent, 60–90.
     pub warning_threshold: u8,
     pub dock_shows_alert_color: bool,
@@ -236,6 +239,7 @@ impl Default for AppSettings {
             window_clock_direction: WindowClockDirection::Elapsed,
             shows_forecast: false,
             shows_remaining: false,
+            keeps_exhausted_ring_filled: true,
             warning_threshold: 75,
             dock_shows_alert_color: true,
             shows_second_ring: false,
@@ -324,6 +328,15 @@ mod tests {
         assert!(s.checks_updates_automatically, "a file from before the switch existed keeps the default");
         let s: AppSettings = serde_json::from_str(r#"{"checksUpdatesAutomatically":false}"#).unwrap();
         assert!(!s.checks_updates_automatically);
+    }
+
+    #[test]
+    fn exhausted_ring_fill_is_on_unless_switched_off() {
+        assert!(AppSettings::default().keeps_exhausted_ring_filled);
+        let s: AppSettings = serde_json::from_str(r#"{"panelSize":"large"}"#).unwrap();
+        assert!(s.keeps_exhausted_ring_filled, "a file from before the switch existed keeps the default");
+        let s: AppSettings = serde_json::from_str(r#"{"keepsExhaustedRingFilled":false}"#).unwrap();
+        assert!(!s.keeps_exhausted_ring_filled);
     }
 
     #[test]

@@ -57,6 +57,7 @@ export function App() {
 
   const settings = {
     showsRemaining: stored?.showsRemaining ?? false,
+    keepsExhaustedRingFilled: stored?.keepsExhaustedRingFilled ?? true,
     warningAt: (stored?.warningThreshold ?? 75) / 100,
     usesGlass: stored?.usesGlass ?? false,
     glassTransparency: stored?.glassTransparency ?? 0.5,
@@ -392,6 +393,7 @@ export function App() {
                     hasReading={!!e.headline}
                     isSpent={isSpent(e.headline)}
                     showsRemaining={settings.showsRemaining}
+                    keepsExhaustedRingFilled={settings.keepsExhaustedRingFilled}
                     diameter={D.ringDiameter}
                     lineWidth={D.ringLineWidth}
                     scale={metrics.scale}

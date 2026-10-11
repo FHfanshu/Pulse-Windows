@@ -77,12 +77,13 @@ fn paint(rgb: (u8, u8, u8), alpha: u8) -> Paint<'static> {
     p
 }
 
-/// A ring track plus an arc from 12 o'clock clockwise.
-fn ring(pixmap: &mut Pixmap, radius: f32, width: f32, fraction: f64, rgb: (u8, u8, u8), ink: (u8, u8, u8)) {
+/// A ring track plus an arc from 12 o'clock clockwise. `track` is the empty-ring colour, which
+/// the reader's exhausted-ring choice turns red for an opted-out spent limit.
+fn ring(pixmap: &mut Pixmap, radius: f32, width: f32, fraction: f64, rgb: (u8, u8, u8), track: (u8, u8, u8)) {
     let c = SIZE as f32 / 2.0;
     let stroke = Stroke { width, line_cap: LineCap::Round, ..Stroke::default() };
-    if let Some(track) = PathBuilder::from_circle(c, c, radius) {
-        pixmap.stroke_path(&track, &paint(ink, 70), &stroke, Transform::identity(), None);
+    if let Some(track_ring) = PathBuilder::from_circle(c, c, radius) {
+        pixmap.stroke_path(&track_ring, &paint(track, 70), &stroke, Transform::identity(), None);
     }
     let fraction = fraction.clamp(0.0, 1.0) as f32;
     if fraction <= 0.0 {
@@ -140,17 +141,24 @@ fn render(reading: &TrayReading, settings: &AppSettings) -> Option<Image<'static
     let warning_at = settings.warning_threshold as f64 / 100.0;
     let ink = if taskbar_is_light() { (0, 0, 0) } else { (255, 255, 255) };
     let remaining = settings.shows_remaining;
-    let shown = |w: &pulse_core::UsageWindow| {
-        let used = w.used_fraction.clamp(0.0, 1.0);
-        if remaining && !w.is_spent() { 1.0 - used } else { used }
-    };
+    let keeps_filled = settings.keeps_exhausted_ring_filled;
+    // Windows difference (owner-approved #29): opted out while counting down, a spent ring is
+    // drawn empty and its track turns red, so the warning is not lost with the arc.
+    let track_of = |spent: bool| if remaining && !keeps_filled && spent { SPENT } else { ink };
 
     match (settings.tray_style, &reading.window) {
-        (TrayStyle::Ring, Some(w)) => ring(&mut pixmap, 12.0, 5.0, shown(w), tint(w.used_fraction, w.is_spent(), warning_at), ink),
+        (TrayStyle::Ring, Some(w)) => ring(
+            &mut pixmap,
+            12.0,
+            5.0,
+            w.drawn_fraction(remaining, keeps_filled, false),
+            tint(w.used_fraction, w.is_spent(), warning_at),
+            track_of(w.is_spent()),
+        ),
         (TrayStyle::Split, Some(_)) if reading.split.len() == 2 => {
             let (outer, inner) = (&reading.split[0].0, &reading.split[1].0);
-            ring(&mut pixmap, 13.0, 4.0, shown(outer), tint(outer.used_fraction, outer.is_spent(), warning_at), ink);
-            ring(&mut pixmap, 6.5, 4.0, shown(inner), tint(inner.used_fraction, inner.is_spent(), warning_at), ink);
+            ring(&mut pixmap, 13.0, 4.0, outer.drawn_fraction(remaining, keeps_filled, false), tint(outer.used_fraction, outer.is_spent(), warning_at), track_of(outer.is_spent()));
+            ring(&mut pixmap, 6.5, 4.0, inner.drawn_fraction(remaining, keeps_filled, false), tint(inner.used_fraction, inner.is_spent(), warning_at), track_of(inner.is_spent()));
         }
         (_, Some(w)) => {
             let rgb = if reading.is_alert { WARNING } else { ink };
@@ -209,6 +217,46 @@ mod tests {
 
     fn opaque_pixels(image: &Image) -> usize {
         image.rgba().chunks(4).filter(|p| p[3] > 40).count()
+    }
+
+    /// Spent red, `rgb(217, 23, 33)`, or the warning red beside it.
+    fn has_red(image: &Image) -> bool {
+        image.rgba().chunks(4).any(|p| p[3] > 40 && p[0] > 150 && p[1] < 90 && p[2] < 90)
+    }
+
+    #[test]
+    fn opted_out_spent_ring_keeps_a_red_track() {
+        let w = UsageWindow::new("w", WindowKind::FiveHour, 1.0, 18_000).exhausted(true);
+        let spent = TrayReading { account: AccountKey::primary(Provider::Codex), window: Some(w), money: None, is_alert: true, split: vec![] };
+        let settings = AppSettings { tray_style: TrayStyle::Ring, shows_remaining: true, keeps_exhausted_ring_filled: false, ..AppSettings::default() };
+        let image = render(&spent, &settings).expect("image");
+        assert!(opaque_pixels(&image) > 20, "an opted-out spent ring still draws its track");
+        assert!(has_red(&image), "the track turns red");
+    }
+
+    #[test]
+    fn the_choice_only_changes_a_countdown_ring() {
+        let reading = TrayReading {
+            account: AccountKey::primary(Provider::Codex),
+            window: Some(UsageWindow::new("w", WindowKind::FiveHour, 0.5, 18_000).exhausted(true)),
+            money: None,
+            is_alert: true,
+            split: vec![],
+        };
+        let kept = AppSettings { tray_style: TrayStyle::Ring, shows_remaining: false, ..AppSettings::default() };
+        let opted_out = AppSettings { keeps_exhausted_ring_filled: false, ..kept.clone() };
+        assert_eq!(
+            render(&reading, &kept).unwrap().rgba(),
+            render(&reading, &opted_out).unwrap().rgba(),
+            "consumed mode draws the same ring either way",
+        );
+        let down = AppSettings { shows_remaining: true, ..kept.clone() };
+        let down_out = AppSettings { shows_remaining: true, keeps_exhausted_ring_filled: false, ..kept };
+        assert_ne!(
+            render(&reading, &down).unwrap().rgba(),
+            render(&reading, &down_out).unwrap().rgba(),
+            "counting down, the choice changes the ring",
+        );
     }
 
     #[test]

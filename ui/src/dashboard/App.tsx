@@ -6,7 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { resetText, unavailableMessage, windowName } from "../shared/copy";
 import { setLanguage, t } from "../shared/i18n";
-import { accountId, headlineWindow, isSpent, percentText, remainingFraction, type ProviderUsage, type UsageWindow } from "../shared/model";
+import { accountId, drawnFraction, headlineWindow, isSpent, percentText, type ProviderUsage, type UsageWindow } from "../shared/model";
 import { updateSettings, useSettings, useUsage, type AppSettings } from "../shared/settings";
 import { intlLocale, money, tokensText, chartDate, exactTokens } from "../shared/spend";
 import { spendProviders } from "../panel/cardLedgers";
@@ -205,7 +205,7 @@ function Detail({ usage, label, settings }: { usage: ProviderUsage; label: strin
 
       {usage.state.kind === "unavailable" && <p className="unavailable">{unavailableMessage(usage.state.reason)}</p>}
 
-      {usage.windows.map((w) => <Limit key={w.id} window={w} remaining={remaining} warningAt={warningAt} />)}
+      {usage.windows.map((w) => <Limit key={w.id} window={w} remaining={remaining} keepsFilled={settings.keepsExhaustedRingFilled} warningAt={warningAt} />)}
 
       {usage.creditBalance && (
         <div className="credit">
@@ -240,11 +240,11 @@ function useLightAppearance(): boolean {
   return light;
 }
 
-function Limit({ window: w, remaining, warningAt }: { window: UsageWindow; remaining: boolean; warningAt: number }) {
+function Limit({ window: w, remaining, keepsFilled, warningAt }: { window: UsageWindow; remaining: boolean; keepsFilled: boolean; warningAt: number }) {
   const light = useLightAppearance();
   const spent = isSpent(w);
   const percent = percentText(w, remaining);
-  const fraction = Math.min(Math.max(remaining && !spent ? remainingFraction(w) : w.usedFraction, 0), 1);
+  const fraction = drawnFraction(w.usedFraction, spent, { remaining, keepsExhaustedRingFilled: keepsFilled, spentFills: false });
   return (
     <div className="limit">
       <div className="row-line">

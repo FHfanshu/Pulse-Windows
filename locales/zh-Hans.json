@@ -129,6 +129,8 @@
  "Draw a bot that reacts to this account instead of the provider's logo.": "代替服务商图标，跟着这个账号的状态做动作。",
  "Figure above the ring": "数字显示在圆环上方",
  "Show what's left": "显示剩余额度",
+ "Keep ring filled when exhausted": "额度用尽时保持圆环填满",
+ "A spent limit stays a full ring while counting down. Off, the ring shows what is truly left — down to nothing — and its track turns red.": "倒计时时，已用尽的额度仍显示为完整的圆环。关闭后，圆环显示真正剩余的比例（直到 0%），轨道变为红色。",
  "Forecast": "用尽预测",
  "Whether each limit lasts its window, on the card.": "在卡片上预估每条限额能否用到最后一次重置。",
  "Counts down instead of up, figure and ring together.": "百分比与圆环改为显示剩余量，而非已用量。",

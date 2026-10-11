@@ -163,6 +163,28 @@ impl UsageWindow {
         self.is_exhausted || self.used_fraction >= 1.0
     }
 
+    /// How full a surface draws this limit's arc, with the reader's exhausted-ring choice.
+    ///
+    /// `spent_fills` is the surface's upstream default for a spent limit that is being kept
+    /// filled: the panel ring draws it full (`true`), the tray ring and the dashboard bar keep
+    /// the used figure instead (`false`). Windows difference (owner-approved #29): with
+    /// `keeps_filled` off, a countdown fraction is the true remainder, including 0% — the red
+    /// track, not a full arc, carries the warning. Consumed mode is unchanged either way.
+    pub fn drawn_fraction(&self, remaining: bool, keeps_filled: bool, spent_fills: bool) -> f64 {
+        let used = if self.used_fraction.is_finite() { self.used_fraction.clamp(0.0, 1.0) } else { 0.0 };
+        if remaining && !keeps_filled && self.is_spent() {
+            return 1.0 - used;
+        }
+        if self.is_spent() {
+            return if spent_fills { 1.0 } else { used };
+        }
+        if remaining {
+            1.0 - used
+        } else {
+            used
+        }
+    }
+
     /// How much of the window has elapsed; None unless both reset and a stated length are known.
     pub fn elapsed_fraction(&self, now: DateTime<Utc>) -> Option<f64> {
         let resets_at = self.resets_at?;
@@ -403,6 +425,49 @@ mod tests {
         assert_eq!(w(0.996).percent_value(true), 1);
         assert_eq!(w(1.0).percent_value(false), 100);
         assert_eq!(w(f64::NAN).percent_value(false), 0);
+    }
+
+    #[test]
+    fn exhausted_ring_fill_choice_shows_the_true_remainder() {
+        let w = |f: f64, exhausted: bool| UsageWindow::new("a", WindowKind::Weekly, f, 604_800).exhausted(exhausted);
+
+        // Kept filled (the default): the panel ring fills a spent limit, the tray ring and
+        // dashboard bar keep the used figure. Consumed mode is the same either way.
+        assert_eq!(w(0.5, true).drawn_fraction(true, true, true), 1.0);
+        assert_eq!(w(0.5, true).drawn_fraction(true, true, false), 0.5);
+        assert_eq!(w(0.5, true).drawn_fraction(false, true, true), 1.0);
+        assert_eq!(w(0.5, true).drawn_fraction(false, true, false), 0.5);
+
+        // Opted out: a countdown fraction is the true remainder, including 0%. Both surfaces
+        // agree, and consumed mode does not change.
+        assert_eq!(w(0.5, true).drawn_fraction(true, false, true), 0.5);
+        assert_eq!(w(0.5, true).drawn_fraction(true, false, false), 0.5);
+        assert_eq!(w(0.5, true).drawn_fraction(false, false, true), 1.0);
+        assert_eq!(w(0.5, true).drawn_fraction(false, false, false), 0.5);
+    }
+
+    #[test]
+    fn drawn_fraction_clamps_and_counts_down_to_zero() {
+        let spent = |f: f64| UsageWindow::new("a", WindowKind::FiveHour, f, 18_000).exhausted(true);
+        let plain = |f: f64| UsageWindow::new("a", WindowKind::FiveHour, f, 18_000);
+
+        // At 100% and over: nothing is left, so an opted-out countdown arc is empty.
+        assert_eq!(spent(1.0).drawn_fraction(true, false, true), 0.0);
+        assert_eq!(spent(1.4).drawn_fraction(true, false, true), 0.0);
+        assert_eq!(plain(1.4).drawn_fraction(true, false, false), 0.0);
+        // Negative clamps: empty used, full while counting down.
+        assert_eq!(plain(-0.2).drawn_fraction(false, false, false), 0.0);
+        assert_eq!(plain(-0.2).drawn_fraction(true, false, false), 1.0);
+        // Near zero keeps the sliver.
+        assert!((plain(0.004).drawn_fraction(true, false, false) - 0.996).abs() < 1e-9);
+        // Near 100% used, the actual remainder is near zero and is what both surfaces draw;
+        // kept filled, the same limit still draws full.
+        assert!((plain(0.996).drawn_fraction(true, false, false) - 0.004).abs() < 1e-9);
+        assert!((spent(0.996).drawn_fraction(true, false, true) - 0.004).abs() < 1e-9);
+        assert!((spent(0.996).drawn_fraction(true, false, false) - 0.004).abs() < 1e-9);
+        assert_eq!(spent(0.996).drawn_fraction(true, true, true), 1.0);
+        // A plain 0% is not spent, so it stays full while counting down even opted out.
+        assert_eq!(plain(0.0).drawn_fraction(true, false, true), 1.0);
     }
 
     #[test]
