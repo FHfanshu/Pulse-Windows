@@ -60,9 +60,17 @@ out 0.10 s on collapse; refresh mark sweep 0.16 / 0.85 s; busy mark sweep 0.22 /
   (`WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_LAYERED`), skip taskbar, sized by `Layout.size(edge)`,
   rounded **up** to whole pixels (DIP). The window never resizes while a card opens; the card is an
   overlay on the rail. Axis change (side ↔ top) may resize.
-- Click-through: the window is `WS_EX_TRANSPARENT` except while the pointer is over the rail's hit
-  rect or the open card. A Rust pointer sampler (60 Hz while near, 4 Hz idle) toggles it and drives
-  hover enter/leave — mirroring upstream's "enter from tracking, leave from sampling".
+- Click-through: the window is `WS_EX_TRANSPARENT` except while the pointer is inside the **outline** of
+  the rail's berth or the open card — the same SVG paths the UI sends for the acrylic (`Shapes`, parsed
+  by `outline::parse`/`contains`, tested per point at the monitor's DPI). Not their bounding rectangles: a
+  card's full-width hover band and a rail's rectangular corners must not take clicks meant for the app
+  behind. A Rust pointer sampler (60 Hz while near, 4 Hz idle) toggles the style and drives hover
+  enter/leave — mirroring upstream's "enter from tracking, leave from sampling". `WM_NCHITTEST`'s
+  `HTTRANSPARENT` is deliberately not used (it only skips windows on the same thread, so it cannot pass a
+  click to another process); `WS_EX_TRANSPARENT` does, whatever the stacking. Until the UI reports its
+  shapes the first time the sampler falls back to the rail/card rects it is also sent; after that first
+  report the outlines are authoritative, so a report with no shapes leaves the whole window
+  click-through instead of falling back to a rectangle.
 - Drag: press on the rail starts a native move loop driven from Rust; on release `PanelPlacement`
   snaps to the nearest edge within the snap distance or stays free. Click (no drag) on a ring refreshes it.
   Right-click opens the panel menu.
