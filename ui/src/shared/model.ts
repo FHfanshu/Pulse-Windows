@@ -56,6 +56,24 @@ export const percentText = (w: UsageWindow, remaining = false) =>
   `${figure(remaining ? remainingFraction(w) : w.usedFraction)}%`;
 export const isSpent = (w: UsageWindow | null | undefined) => !!w && (w.isExhausted || w.usedFraction >= 1);
 
+/** How full a surface draws one limit, with the reader's exhausted-ring choice.
+ *
+ *  Mirrors `UsageWindow::drawn_fraction`. `spentFills` is the surface's upstream default for a
+ *  spent limit that is being kept filled: the panel ring draws it full, the tray ring and the
+ *  dashboard bar keep the used figure instead. Windows difference (owner-approved #29): with
+ *  `keepsExhaustedRingFilled` off, a countdown fraction is the true remainder, including 0% —
+ *  the red track, not a full arc, carries the warning. Consumed mode is unchanged either way. */
+export function drawnFraction(
+  usedFraction: number,
+  spent: boolean,
+  { remaining, keepsExhaustedRingFilled, spentFills }: { remaining: boolean; keepsExhaustedRingFilled: boolean; spentFills: boolean },
+): number {
+  const used = Number.isFinite(usedFraction) ? Math.min(Math.max(usedFraction, 0), 1) : 0;
+  if (remaining && !keepsExhaustedRingFilled && spent) return 1 - used;
+  if (spent) return spentFills ? 1 : used;
+  return remaining ? 1 - used : used;
+}
+
 function maxByUsed(ws: UsageWindow[]): UsageWindow | null {
   let best: UsageWindow | null = null;
   for (const w of ws) if (!best || w.usedFraction > best.usedFraction) best = w;

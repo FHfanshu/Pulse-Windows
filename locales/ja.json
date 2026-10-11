@@ -129,6 +129,8 @@
  "Draw a bot that reacts to this account instead of the provider's logo.": "プロバイダのロゴの代わりに、このアカウントの状態に反応するボットを表示します。",
  "Figure above the ring": "数値をリングの上に",
  "Show what's left": "残りを表示",
+ "Keep ring filled when exhausted": "上限を使い切ってもリングを満杯に保つ",
+ "A spent limit stays a full ring while counting down. Off, the ring shows what is truly left — down to nothing — and its track turns red.": "カウントダウン中でも、使い切った上限は満杯のリングのまま表示します。オフにすると、実際に残っている割合（0% まで）を表示し、トラックが赤くなります。",
  "Forecast": "使い切り予測",
  "Whether each limit lasts its window, on the card.": "各上限が次のリセットまで保つかをカードに表示します。",
  "Counts down instead of up, figure and ring together.": "数値もリングも、使った量ではなく残りを表示します。",

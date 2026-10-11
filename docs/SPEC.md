@@ -33,6 +33,7 @@ lists the difference under **Deliberate differences**.
 | Sparkle | Tauri updater (GitHub Releases) | platform |
 | Raycast integration | not ported | owner decision |
 | Providers | first 20 (§6), others later | owner decision |
+| A spent limit fills the ring, whichever way it counts | On by default, with a "Keep ring filled when exhausted" switch; off, a countdown fraction on the panel (outer and second), the tray and the dashboard bar is the true remainder, down to 0%. The panel and tray tracks turn red (the panel's dimmed to 0.35, so an empty ring never reads as the full arc it replaced); the dashboard keeps its existing red spent caption (owner-approved #29) | the full arc hid how much was truly left while counting down |
 
 ## 3. Layout tokens (all multiplied by `scale`)
 

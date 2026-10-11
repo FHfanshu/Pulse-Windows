@@ -49,6 +49,13 @@ export function RingsPane({ settings }: { settings: AppSettings }) {
           onChange={(showsRemaining) => updateSettings({ showsRemaining })}
         />
         <ToggleRow
+          title="Keep ring filled when exhausted"
+          subtitle="A spent limit stays a full ring while counting down. Off, the ring shows what is truly left — down to nothing — and its track turns red."
+          checked={settings.keepsExhaustedRingFilled}
+          disabled={off}
+          onChange={(keepsExhaustedRingFilled) => updateSettings({ keepsExhaustedRingFilled })}
+        />
+        <ToggleRow
           title="Forecast"
           subtitle="Whether each limit lasts its window, on the card."
           checked={settings.showsForecast}

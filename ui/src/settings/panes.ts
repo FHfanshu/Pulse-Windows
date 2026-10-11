@@ -37,7 +37,7 @@ function fixed(id: FixedPane): SidebarItem {
     case "appearance":
       return { id, title: t("Appearance"), icon: { glyph: "appearance" }, terms: ["Size", "Spacing", "Round ends", "Panel colour", "Liquid Glass", "Glitter", "Transparency", "Ring activity animation"].map((k) => t(k)) };
     case "rings":
-      return { id, title: t("Rings and figures"), icon: { glyph: "rings" }, terms: ["Percentages at the side", "Percentages across", "Figures beside the rings", "Figure above the ring", "Show what's left", "Forecast", "Second limit inside the ring", "Time until reset", "Time ring direction", "Turn red at", "Alert colour when docked"].map((k) => t(k)) };
+      return { id, title: t("Rings and figures"), icon: { glyph: "rings" }, terms: ["Percentages at the side", "Percentages across", "Figures beside the rings", "Figure above the ring", "Show what's left", "Keep ring filled when exhausted", "Forecast", "Second limit inside the ring", "Time until reset", "Time ring direction", "Turn red at", "Alert colour when docked"].map((k) => t(k)) };
     case "placement":
       return { id, title: t("Position and behavior"), icon: { glyph: "placement" }, terms: ["Show floating panel", "Hide in full screen", "Hide until pointed at", "Position", "Follow the active display", "Order"].map((k) => t(k)) };
     case "spend":
