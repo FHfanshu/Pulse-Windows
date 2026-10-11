@@ -1,7 +1,7 @@
 //! Thin Win32 helpers for the panel window. Everything geometric is converted
 //! to DIPs here and nowhere else.
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use tauri::WebviewWindow;
 use windows::Win32::Foundation::{BOOL, COLORREF, HWND, LPARAM, POINT, RECT};
@@ -17,6 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 
+use crate::outline::Seg;
 use crate::placement::Rect;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -79,8 +80,104 @@ pub fn make_panel_window(window: &WebviewWindow) {
     }
 }
 
+/// Windows difference: the panel's click-through *region* is the shape that is actually drawn, not the
+/// window's rectangle. macOS routes clicks through the transparent pixels of a non-opaque window by
+/// itself; Windows does not, so the panel toggles `WS_EX_TRANSPARENT` (which passes input to windows
+/// underneath, in other processes too — `WM_NCHITTEST`'s `HTTRANSPARENT` would only skip windows on
+/// this thread) as the pointer enters and leaves the visible shapes. The test that decides that is the
+/// same SVG outline the acrylic is clipped to (`crate::outline`), so a card's full-width hover band and
+/// a rail's rectangular corners no longer take clicks meant for the app behind them.
+///
+/// One shape's path in its own space together with where it sits in the window (DIPs).
+struct InputShape {
+    segs: Vec<Seg>,
+    x: f64,
+    y: f64,
+    s: f64,
+}
+
+#[derive(Default)]
+struct InputRegion {
+    rail: Option<InputShape>,
+    card: Option<InputShape>,
+}
+
+impl InputRegion {
+    /// Whether a window-local DIP point is inside either visible shape.
+    fn hit(&self, local: (f64, f64)) -> bool {
+        let inside = |shape: &Option<InputShape>| {
+            shape.as_ref().is_some_and(|shape| {
+                let sx = (local.0 - shape.x) / shape.s;
+                let sy = (local.1 - shape.y) / shape.s;
+                crate::outline::contains(&shape.segs, sx as f32, sy as f32)
+            })
+        };
+        inside(&self.rail) || inside(&self.card)
+    }
+}
+
+/// The shapes the UI last reported, ready to test, with the `(epoch, seq)` snapshot they came from so
+/// the sampler re-parses a path only when it moved. `host_backdrop` on the UI thread writes it and the
+/// 60 Hz sampler reads it; the sampler is at most one sample behind, so the region and the shape being
+/// drawn can differ for a frame while a shape moves. The writer takes only this lock; the sampler may
+/// hold the panel lock as well, which the writer never takes, so the order cannot deadlock.
+static INPUT_REGION: Mutex<InputState> =
+    Mutex::new(InputState { epoch: 0, seq: 0, ready: false, region: InputRegion { rail: None, card: None } });
+
+struct InputState {
+    epoch: u64,
+    seq: u64,
+    /// Whether the UI has reported shapes at all. Separates "nothing to test against yet" (the sampler
+    /// falls back to the rects) from a reported region that happens to have no shapes (nothing takes
+    /// input), so an empty report never falls back to the coarser rectangles.
+    ready: bool,
+    region: InputRegion,
+}
+
+fn input_shape(outline: Option<&crate::outline::Outline>) -> Option<InputShape> {
+    let outline = outline?;
+    // A faded-out card must not take a click, and a degenerate scale would divide the point away.
+    if outline.o <= 0.01 || !outline.s.is_finite() || outline.s <= 0.0 {
+        return None;
+    }
+    Some(InputShape { segs: crate::outline::parse(&outline.d)?, x: outline.x, y: outline.y, s: outline.s })
+}
+
+/// Remember the visible shapes as the panel's input region. UI thread, from `host_backdrop`, which the
+/// UI reports every frame the shapes move.
+fn remember_input(shapes: &crate::outline::Shapes) {
+    let mut state = INPUT_REGION.lock().unwrap();
+    if state.ready && (state.epoch, state.seq) == (shapes.epoch, shapes.seq) {
+        return;
+    }
+    state.epoch = shapes.epoch;
+    state.seq = shapes.seq;
+    state.ready = true;
+    state.region = InputRegion {
+        rail: input_shape(shapes.rail.as_ref()),
+        card: input_shape(shapes.card.as_ref()),
+    };
+}
+
+/// Whether a window-local DIP point belongs to the panel. `None` until the UI has reported its shapes,
+/// when the caller falls back to the rougher rects `set_hit_rects` carries. Once they have been
+/// reported the outlines decide — a report with no shapes means nothing is interactive. Readiness and
+/// the test share one lock, so the two cannot disagree about which frame they saw.
+pub fn input_hit(local: (f64, f64)) -> Option<bool> {
+    let state = INPUT_REGION.lock().unwrap();
+    if state.ready {
+        Some(state.region.hit(local))
+    } else {
+        None
+    }
+}
+
 pub fn set_click_through(window: &WebviewWindow, through: bool) {
     let Some(hwnd) = hwnd(window) else { return };
+    set_click_through_hwnd(hwnd, through);
+}
+
+fn set_click_through_hwnd(hwnd: HWND, through: bool) {
     unsafe {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
         let ex = if through { ex | WS_EX_TRANSPARENT.0 } else { ex & !WS_EX_TRANSPARENT.0 };
@@ -498,6 +595,9 @@ pub fn host_backdrop(window: &WebviewWindow, active: bool, shapes: &crate::outli
     use windows::Foundation::Numerics::Vector2;
     use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+    // The same shapes clip the acrylic and define what may take input, so this runs even when no
+    // native layer is wanted (glass off, transparency effects off, remote session).
+    remember_input(shapes);
     let Some(hwnd) = hwnd(window) else { return Ok(false) };
     HOST_BACKDROP.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -526,4 +626,144 @@ pub fn host_backdrop(window: &WebviewWindow, active: bool, shapes: &crate::outli
 pub fn remote_session() -> bool {
     use windows::Win32::UI::WindowsAndMessaging::SM_REMOTESESSION;
     unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+    use crate::outline::Outline;
+    use std::sync::OnceLock;
+    use windows::core::w;
+    use windows::Win32::Foundation::{HANDLE, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::System::StationsAndDesktops::{
+        GetProcessWindowStation, GetUserObjectInformationW, USEROBJECTFLAGS, UOI_FLAGS,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, DestroyWindow, HMENU, RegisterClassW, SetWindowPos, WindowFromPoint,
+        WNDCLASSW, WSF_VISIBLE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+    };
+
+    /// Windows difference, being tested: the panel is a rectangle whose visible shapes fill only part of
+    /// it. The sampler clears `WS_EX_TRANSPARENT` when the pointer is inside a shape and sets it when the
+    /// pointer is not; this test drives that pair of calls against a real, isolated HWND and asks Win32
+    /// itself (`WindowFromPoint`) which window owns the point. The shapes and the toggle come from the
+    /// same functions the app uses, so it fails if either the geometry or the style stops working.
+    const CLASS: windows::core::PCWSTR = w!("PulseInputRegionTest");
+
+    /// The region is process-wide state (as it is in the app); the tests that drive it run one at a time.
+    static REGION_LOCK: Mutex<()> = Mutex::new(());
+
+    unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+
+    /// An isolated test window, destroyed when it goes out of scope however the test ends: a failed
+    /// `assert` must not leave a topmost layered window on the desktop.
+    struct TestWindow(HWND);
+    impl Drop for TestWindow {
+        fn drop(&mut self) {
+            let _ = unsafe { DestroyWindow(self.0) };
+        }
+    }
+
+    /// Whether this process has a visible desktop to make windows on. False under a service or another
+    /// non-interactive session, where `CreateWindowExW` fails for reasons the geometry test is not about.
+    fn interactive_desktop() -> bool {
+        unsafe {
+            let Ok(station) = GetProcessWindowStation() else { return false };
+            let mut flags = USEROBJECTFLAGS::default();
+            let read = GetUserObjectInformationW(
+                HANDLE(station.0),
+                UOI_FLAGS,
+                Some((&mut flags as *mut USEROBJECTFLAGS).cast()),
+                std::mem::size_of::<USEROBJECTFLAGS>() as u32,
+                None,
+            );
+            read.is_ok() && flags.dwFlags & WSF_VISIBLE as u32 != 0
+        }
+    }
+
+    fn a_window(rect: RECT) -> Option<TestWindow> {
+        static ATOM: OnceLock<u16> = OnceLock::new();
+        let atom = *ATOM.get_or_init(|| unsafe {
+            RegisterClassW(&WNDCLASSW { lpfnWndProc: Some(wndproc), lpszClassName: CLASS, ..Default::default() })
+        });
+        if atom == 0 {
+            return None;
+        }
+        unsafe {
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_LAYERED,
+                CLASS,
+                w!("PulseInputRegionTest"),
+                WS_POPUP | WS_VISIBLE,
+                rect.left,
+                rect.top,
+                rect.right - rect.left,
+                rect.bottom - rect.top,
+                HWND::default(),
+                HMENU::default(),
+                windows::Win32::Foundation::HINSTANCE::default(),
+                None,
+            )
+            .ok()
+            .map(TestWindow)
+        }
+    }
+
+    #[test]
+    fn only_the_drawn_shape_takes_input() {
+        let _guard = REGION_LOCK.lock().unwrap();
+
+        // The outline decides with or without a window: a point on the drawn rail is the panel's, a
+        // point in the window's transparent corner is not. These never depend on the desktop.
+        let shapes = crate::outline::Shapes {
+            epoch: 1,
+            seq: 1,
+            rail: Some(Outline { d: "M50 50L150 50L150 150L50 150Z".into(), x: 0.0, y: 0.0, s: 1.0, o: 1.0 }),
+            card: None,
+        };
+        remember_input(&shapes);
+        assert_eq!(input_hit((100.0, 100.0)), Some(true), "the drawn rail is the panel's");
+        assert_eq!(input_hit((10.0, 10.0)), Some(false), "the rectangle's transparent corner is not");
+
+        if !interactive_desktop() {
+            eprintln!("skipping the WindowFromPoint half: no interactive desktop");
+            return;
+        }
+        // A session that advertises a desktop must be able to make this window; a failure here is a
+        // real failure, not a silent pass.
+        let overlay = a_window(RECT { left: 40, top: 40, right: 240, bottom: 240 })
+            .expect("interactive desktop, but CreateWindowExW failed");
+        let _ = unsafe { SetLayeredWindowAttributes(overlay.0, COLORREF(0), 255, LWA_ALPHA) };
+        let _ = unsafe { SetWindowPos(overlay.0, HWND_TOPMOST, 40, 40, 200, 200, SWP_NOACTIVATE) };
+
+        // Pointer on the shape: the window is interactive, so it owns the point.
+        set_click_through_hwnd(overlay.0, false);
+        assert_eq!(unsafe { WindowFromPoint(POINT { x: 40 + 100, y: 40 + 100 }) }, overlay.0);
+
+        // Pointer in the window's transparent corner: it goes click-through, and the point belongs to
+        // whatever is behind (its identity is not asserted: another window may well be there).
+        set_click_through_hwnd(overlay.0, true);
+        assert_ne!(unsafe { WindowFromPoint(POINT { x: 40 + 10, y: 40 + 10 }) }, overlay.0);
+        // `overlay` drops here, destroying the window.
+    }
+
+    #[test]
+    fn the_region_scales_and_moves_with_the_shape() {
+        let _guard = REGION_LOCK.lock().unwrap();
+        // A card outline 100 x 100 in its own space, drawn at 2x (a 200% DPI monitor) at window
+        // DIP (200, 50): its right edge is at 200 + 100 * 2 = 400.
+        let card = |o: f64| Outline { d: "M0 0L100 0L100 100L0 100Z".into(), x: 200.0, y: 50.0, s: 2.0, o };
+        remember_input(&crate::outline::Shapes { epoch: 7, seq: 1, rail: None, card: Some(card(1.0)) });
+        assert_eq!(input_hit((250.0, 100.0)), Some(true), "the middle of the scaled card is the panel's");
+        assert_eq!(input_hit((410.0, 100.0)), Some(false), "past its right edge");
+        assert_eq!(input_hit((150.0, 100.0)), Some(false), "left of it");
+        // A card that has faded out must not take (or keep) a click.
+        remember_input(&crate::outline::Shapes { epoch: 7, seq: 2, rail: None, card: Some(card(0.0)) });
+        assert_eq!(input_hit((250.0, 100.0)), Some(false), "a faded card is not interactive");
+        // Once the UI has reported, an empty region is authoritative: a miss, not the older rectangles.
+        remember_input(&crate::outline::Shapes { epoch: 7, seq: 3, rail: None, card: None });
+        assert_eq!(input_hit((250.0, 100.0)), Some(false), "an empty report stays click-through");
+    }
 }

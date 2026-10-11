@@ -3,10 +3,11 @@
 //! The floating panel window: transparent, always on top, never activated.
 //!
 //! Input model (same as upstream, re-expressed for Win32):
-//! - The window is click-through (`WS_EX_TRANSPARENT`) everywhere except the
-//!   hit rects the UI reports (rail, open card). A sampler on its own thread
-//!   reads the cursor and flips the style, so the desktop behind the
-//!   transparent margin keeps working.
+//! - The window is click-through (`WS_EX_TRANSPARENT`) everywhere except the visible shapes the UI
+//!   reports (the rail's berth outline, the open card's bubble). A sampler on its own thread reads the
+//!   cursor and flips the style, so the desktop behind the transparent margin keeps working. The test is
+//!   the outline itself (`win::input_hit`, from `crate::outline`), not a bounding rect: a card's
+//!   full-width hover band and a rail's rectangular corners must not take clicks.
 //! - Hover enter *and* leave come from that sampler, never from DOM events:
 //!   a non-activated WebView does not reliably deliver mouseleave.
 //! - A press on the rail starts a drag that the sampler carries until the
@@ -372,7 +373,12 @@ fn tick(app: &AppHandle, shared: &SharedPanel) -> bool {
         }
     }
 
-    let over_hit = inside_window && state.hit_rects.iter().any(|r| r.contains(local.0, local.1));
+    // Windows difference: the interactive region is the drawn outline, not the window rectangle.
+    // Before the UI has reported any shapes, fall back to the rects it also sends (`set_hit_rects`):
+    // coarse, but never leaving the rail unclickable. Once it has reported — even with no shapes —
+    // the outlines decide, so an empty report stays click-through instead of blocking the desktop.
+    let over_hit = inside_window
+        && win::input_hit(local).unwrap_or_else(|| state.hit_rects.iter().any(|r| r.contains(local.0, local.1)));
     let pressed = state.press.is_some();
     let dragging = state.press.as_ref().is_some_and(|p| p.dragging);
     let wants_input = over_hit || pressed;
