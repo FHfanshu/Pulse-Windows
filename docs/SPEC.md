@@ -64,8 +64,14 @@ out 0.10 s on collapse; refresh mark sweep 0.16 / 0.85 s; busy mark sweep 0.22 /
   the rail's berth or the open card — the same SVG paths the UI sends for the acrylic (`Shapes`, parsed
   by `outline::parse`/`contains`, tested per point at the monitor's DPI). Not their bounding rectangles: a
   card's full-width hover band and a rail's rectangular corners must not take clicks meant for the app
-  behind. A Rust pointer sampler (60 Hz while near, 4 Hz idle) toggles the style and drives hover
-  enter/leave — mirroring upstream's "enter from tracking, leave from sampling". `WM_NCHITTEST`'s
+  behind. A Rust pointer sampler (60 Hz while near, ~8 Hz idle) toggles the style and drives hover
+  enter/leave — mirroring upstream's "enter from tracking, leave from sampling". The style is also
+  re-asserted from the UI thread, because Tao owns `GWL_EXSTYLE` too: when it shows the window it
+  recomputes the extended styles from its own cached flags, and `skip_taskbar` only removes the taskbar
+  tab rather than clearing `WS_EX_APPWINDOW`, so `WS_EX_TOOLWINDOW`, `WS_EX_LAYERED` and the pointer's
+  `WS_EX_TRANSPARENT` are lost and `WS_EX_APPWINDOW` returns. (`WS_EX_NOACTIVATE` survives: the window is
+  built `focusable(false)`, which makes Tao emit it.) A pass queued after each `show`, and the sampler's
+  per-tick check, repair the styles whenever Win32 has drifted from the desired state. `WM_NCHITTEST`'s
   `HTTRANSPARENT` is deliberately not used (it only skips windows on the same thread, so it cannot pass a
   click to another process); `WS_EX_TRANSPARENT` does, whatever the stacking. Until the UI reports its
   shapes the first time the sampler falls back to the rail/card rects it is also sent; after that first
