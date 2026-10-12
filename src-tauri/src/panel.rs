@@ -57,7 +57,6 @@ pub struct PanelState {
     pub monitor: Option<win::MonitorInfo>,
     press: Option<Press>,
     last_pointer: Option<(i32, i32)>,
-    click_through: Option<bool>,
     last_buttons: (bool, bool),
     pointer_dirty: bool,
     /// Windows difference: local canvas dimensions held until both springs settle.
@@ -224,6 +223,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .skip_taskbar(true)
         .resizable(false)
         .focused(false)
+        .focusable(false)
         .visible(false)
         .inner_size(400.0, 600.0)
         .build()?;
@@ -382,18 +382,17 @@ fn tick(app: &AppHandle, shared: &SharedPanel) -> bool {
     let pressed = state.press.is_some();
     let dragging = state.press.as_ref().is_some_and(|p| p.dragging);
     let wants_input = over_hit || pressed;
-    // Windows pitfall: the style change sends messages to the UI thread, so not under the panel lock.
-    let click_through = (state.click_through != Some(!wants_input)).then(|| !wants_input);
-    state.click_through = click_through.or(state.click_through);
+    let through = !wants_input;
 
     let rounded = inside_window.then(|| ((local.0 * 4.0) as i32, (local.1 * 4.0) as i32));
     // A stationary release must clear dragging in React too; otherwise the
     // hover card remains suppressed until a later pointer movement.
     let changed = state.record_pointer(rounded, pressed, dragging);
     drop(state);
-    if let Some(through) = click_through {
-        win::set_click_through(&window, through);
-    }
+    // Windows pitfall: the style write sends messages to the UI thread, so not under the panel lock.
+    // The helper records the desired state every pass but only queues UI-thread work when Win32 has
+    // drifted from it (Tao rewrites `GWL_EXSTYLE` on `show`), so a stationary pointer is cheap.
+    win::set_click_through(&window, through);
 
     if changed || click.is_some() {
         let _ = app.emit_to(

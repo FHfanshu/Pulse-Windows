@@ -1,6 +1,7 @@
 //! Thin Win32 helpers for the panel window. Everything geometric is converted
 //! to DIPs here and nowhere else.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use tauri::WebviewWindow;
@@ -68,15 +69,99 @@ pub fn is_visible(window: &WebviewWindow) -> bool {
     hwnd(window).is_some_and(|h| unsafe { IsWindowVisible(h).as_bool() })
 }
 
-pub fn make_panel_window(window: &WebviewWindow) {
-    let Some(hwnd) = hwnd(window) else { return };
+/// The click-through state the panel *wants* (`WS_EX_TRANSPARENT` or not). The sampler sets it as
+/// the pointer enters and leaves the drawn shapes; the UI-thread restore below reads it when it
+/// runs, so an old queued pass always applies the newest state and cannot undo a newer one. Starts
+/// `true`: before the UI reports shapes, the transparent window margins must pass clicks on.
+static DESIRED_THROUGH: AtomicBool = AtomicBool::new(true);
+
+/// A restore pass is queued on the UI thread and re-reads the desired state when it runs. At most
+/// one pass is in flight, so a stationary pointer does not queue work on every sampler tick.
+static INPUT_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// The panel's extended styles for an existing `ex`: drop the taskbar entry (`WS_EX_APPWINDOW`),
+/// force the non-activating / tool-window / layered base, then set or clear `WS_EX_TRANSPARENT`
+/// from the desired click-through state. Unrelated flags (e.g. `WS_EX_TOPMOST`) are preserved.
+/// Pure, so the mapping is testable without a window.
+fn panel_ex_style(ex: u32, through: bool) -> u32 {
+    let base = (ex & !WS_EX_APPWINDOW.0) | WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0 | WS_EX_LAYERED.0;
+    if through { base | WS_EX_TRANSPARENT.0 } else { base & !WS_EX_TRANSPARENT.0 }
+}
+
+/// Whether Win32 already holds the styles the panel wants. A plain `GetWindowLongPtrW` read; sends
+/// no message, so it is safe off the UI thread and cheap enough for every sampler tick.
+fn panel_style_matches(hwnd: HWND) -> bool {
+    let ex = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 };
+    ex == panel_ex_style(ex, DESIRED_THROUGH.load(Ordering::Acquire))
+}
+
+/// Writes `panel_ex_style` onto `hwnd`; returns whether it changed. Adding `WS_EX_LAYERED` for the
+/// first time also initializes its attributes (a layered window is invisible until it has them),
+/// keeping the global alpha opaque — the transparent WebView supplies the per-pixel alpha. A window
+/// that was already layered is left with its attributes (and its acrylic) untouched.
+fn apply_panel_style(hwnd: HWND, through: bool) -> bool {
     unsafe {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-        let ex = (ex & !WS_EX_APPWINDOW.0) | WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0 | WS_EX_LAYERED.0;
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
-        // Windows difference: a layered window is invisible until its attributes are initialized.
-        // Keep global alpha opaque; the transparent WebView supplies the panel's per-pixel alpha.
-        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+        let want = panel_ex_style(ex, through);
+        if want == ex {
+            return false;
+        }
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, want as isize);
+        if want & WS_EX_LAYERED.0 != 0 && ex & WS_EX_LAYERED.0 == 0 {
+            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+        }
+        true
+    }
+}
+
+/// Apply the latest desired click-through state. UI thread only; the queued pass and the native
+/// tests use it. Returns whether anything changed.
+fn apply_panel_input(hwnd: HWND) -> bool {
+    apply_panel_style(hwnd, DESIRED_THROUGH.load(Ordering::Acquire))
+}
+
+/// Claim the panel's native input styles, from the UI thread, after whatever Tao did.
+///
+/// Windows pitfall: Tao owns `GWL_EXSTYLE` as well. Every time it changes the window's flags it
+/// recomputes the extended styles from its *own* cached flags and calls `SetWindowLong(GWL_EXSTYLE)`.
+/// `show` does this (`WindowMessage::Show` → `set_visible`), and `skip_taskbar` only removes the
+/// taskbar tab — it does not clear `WS_EX_APPWINDOW`. Tao does not know `WS_EX_TOOLWINDOW`, and
+/// neither `WS_EX_TRANSPARENT` nor the static `WS_EX_LAYERED` comes from a builder flag, so a shown
+/// panel comes back with `WS_EX_APPWINDOW` re-added and `WS_EX_TOOLWINDOW` / `WS_EX_LAYERED` /
+/// `WS_EX_TRANSPARENT` gone. (The non-activating `WS_EX_NOACTIVATE` now survives because `create`
+/// builds the window `focusable(false)`, which makes Tao's own `to_window_styles` emit it.) Posting
+/// the work to the UI thread makes it run after Tao's rewrite when the caller is off the UI thread
+/// (both go through the same `show`/task queue), and inline when the caller is already there (having
+/// shown first).
+///
+/// `force` is for after a `show`, where Tao's rewrite is ahead; the sampler leaves it false so a
+/// stationary pointer only reads the styles and queues nothing. If the desired state changes while a
+/// pass waits or runs, or the write itself fails, the next sampler tick sees the mismatch and queues
+/// another pass — so the pass itself stays a single attempt.
+pub fn make_panel_window(window: &WebviewWindow) {
+    claim_panel_input(window, true);
+}
+
+/// Set the pointer-driven click-through state and bring the window in line. Cheap when nothing
+/// changed.
+fn claim_panel_input(window: &WebviewWindow, force: bool) {
+    let Some(hwnd) = hwnd(window) else { return };
+    if !force && (INPUT_PENDING.load(Ordering::Acquire) || panel_style_matches(hwnd)) {
+        return;
+    }
+    // A forced call (after a show) queues its own pass even if another is pending: it has to run
+    // after the show, which the pending pass may have been queued before. `HWND` is not `Send`;
+    // carry its address into the pass.
+    if INPUT_PENDING.swap(true, Ordering::AcqRel) && !force {
+        return;
+    }
+    let address = hwnd.0 as isize;
+    let queued = window.run_on_main_thread(move || {
+        apply_panel_input(HWND(address as *mut _));
+        INPUT_PENDING.store(false, Ordering::Release);
+    });
+    if queued.is_err() {
+        INPUT_PENDING.store(false, Ordering::Release);
     }
 }
 
@@ -173,16 +258,8 @@ pub fn input_hit(local: (f64, f64)) -> Option<bool> {
 }
 
 pub fn set_click_through(window: &WebviewWindow, through: bool) {
-    let Some(hwnd) = hwnd(window) else { return };
-    set_click_through_hwnd(hwnd, through);
-}
-
-fn set_click_through_hwnd(hwnd: HWND, through: bool) {
-    unsafe {
-        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-        let ex = if through { ex | WS_EX_TRANSPARENT.0 } else { ex & !WS_EX_TRANSPARENT.0 };
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
-    }
+    DESIRED_THROUGH.store(through, Ordering::Release);
+    claim_panel_input(window, false);
 }
 
 /// Places the window at `frame` (DIPs on a monitor of `scale`), rounding size up.
@@ -640,7 +717,8 @@ mod input_tests {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, HMENU, RegisterClassW, SetWindowPos, WindowFromPoint,
-        WNDCLASSW, WSF_VISIBLE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+        WNDCLASSW, WSF_VISIBLE, WS_EX_ACCEPTFILES, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_WINDOWEDGE, WS_POPUP,
+        WS_VISIBLE,
     };
 
     /// Windows difference, being tested: the panel is a rectangle whose visible shapes fill only part of
@@ -739,13 +817,87 @@ mod input_tests {
         let _ = unsafe { SetWindowPos(overlay.0, HWND_TOPMOST, 40, 40, 200, 200, SWP_NOACTIVATE) };
 
         // Pointer on the shape: the window is interactive, so it owns the point.
-        set_click_through_hwnd(overlay.0, false);
+        apply_panel_style(overlay.0, false);
         assert_eq!(unsafe { WindowFromPoint(POINT { x: 40 + 100, y: 40 + 100 }) }, overlay.0);
 
         // Pointer in the window's transparent corner: it goes click-through, and the point belongs to
         // whatever is behind (its identity is not asserted: another window may well be there).
-        set_click_through_hwnd(overlay.0, true);
+        apply_panel_style(overlay.0, true);
         assert_ne!(unsafe { WindowFromPoint(POINT { x: 40 + 10, y: 40 + 10 }) }, overlay.0);
+        // `overlay` drops here, destroying the window.
+    }
+
+    /// The style mapping is pure: it forces the panel's base bits, clears `WS_EX_APPWINDOW`, toggles
+    /// `WS_EX_TRANSPARENT` from the desired state, and leaves unrelated flags alone.
+    #[test]
+    fn panel_style_sets_the_base_and_preserves_unrelated_flags() {
+        // Tao's styles after a show: WINDOWEDGE | ACCEPTFILES | APPWINDOW | TOPMOST.
+        let shown = WS_EX_APPWINDOW.0 | WS_EX_WINDOWEDGE.0 | WS_EX_ACCEPTFILES.0 | WS_EX_TOPMOST.0;
+        let unrelated = WS_EX_WINDOWEDGE.0 | WS_EX_ACCEPTFILES.0 | WS_EX_TOPMOST.0;
+
+        let through = panel_ex_style(shown, true);
+        assert_eq!(through & WS_EX_APPWINDOW.0, 0, "the taskbar entry is dropped");
+        assert_ne!(through & WS_EX_TRANSPARENT.0, 0, "click-through is set");
+        for bit in [WS_EX_NOACTIVATE.0, WS_EX_TOOLWINDOW.0, WS_EX_LAYERED.0] {
+            assert_ne!(through & bit, 0, "the non-activating layered base is forced");
+        }
+        assert_eq!(through & unrelated, unrelated, "unrelated flags survive");
+        assert_eq!(panel_ex_style(through, true), through, "the mapping is idempotent");
+
+        let interactive = panel_ex_style(shown, false);
+        assert_eq!(interactive & WS_EX_TRANSPARENT.0, 0, "click-through is cleared");
+        assert_eq!(interactive & unrelated, unrelated);
+        // The desired state only ever differs in the transparent bit.
+        assert_eq!(interactive & !WS_EX_TRANSPARENT.0, through & !WS_EX_TRANSPARENT.0);
+    }
+
+    /// Windows regression for issue #30: when Tao shows the window it rewrites `GWL_EXSTYLE` from its
+    /// cached flags, and `skip_taskbar` does not clear `WS_EX_APPWINDOW`, so the panel's base bits and
+    /// `WS_EX_TRANSPARENT` are wiped. The production restore must put them back from the desired state
+    /// alone, with no pointer movement to trigger it, in both directions.
+    #[test]
+    fn a_tao_show_style_rewrite_is_recovered_without_moving_the_pointer() {
+        let _guard = REGION_LOCK.lock().unwrap();
+        if !interactive_desktop() {
+            eprintln!("skipping the restore half: no interactive desktop");
+            return;
+        }
+        let overlay = a_window(RECT { left: 40, top: 40, right: 240, bottom: 240 })
+            .expect("interactive desktop, but CreateWindowExW failed");
+        let _ = unsafe { SetLayeredWindowAttributes(overlay.0, COLORREF(0), 255, LWA_ALPHA) };
+        let _ = unsafe { SetWindowPos(overlay.0, HWND_TOPMOST, 40, 40, 200, 200, SWP_NOACTIVATE) };
+
+        // The exact value observed from a Tao show on the installed 0.1.4 panel.
+        const TAO_SHOWN: u32 = WS_EX_APPWINDOW.0 | WS_EX_WINDOWEDGE.0 | WS_EX_ACCEPTFILES.0 | WS_EX_TOPMOST.0;
+        let write = |ex: u32| unsafe { SetWindowLongPtrW(overlay.0, GWL_EXSTYLE, ex as isize) };
+        let current = || unsafe { GetWindowLongPtrW(overlay.0, GWL_EXSTYLE) as u32 };
+
+        // The pointer is not over the panel: click-through is wanted, and it was already wanted, so
+        // nothing but the rewrite happened. The restore still has to repair it.
+        DESIRED_THROUGH.store(true, Ordering::Release);
+        write(TAO_SHOWN);
+        assert!(apply_panel_input(overlay.0), "the rewrite is detected and repaired");
+        let fixed = current();
+        assert_eq!(fixed & WS_EX_APPWINDOW.0, 0, "the taskbar entry is gone");
+        for (bit, name) in [
+            (WS_EX_NOACTIVATE.0, "WS_EX_NOACTIVATE"),
+            (WS_EX_TOOLWINDOW.0, "WS_EX_TOOLWINDOW"),
+            (WS_EX_LAYERED.0, "WS_EX_LAYERED"),
+            (WS_EX_TRANSPARENT.0, "WS_EX_TRANSPARENT"),
+        ] {
+            assert_ne!(fixed & bit, 0, "{name} is back");
+        }
+        assert_ne!(fixed & WS_EX_TOPMOST.0, 0, "unrelated flags are preserved");
+        // Click-through: no point of the rectangle is the panel's anymore.
+        assert_ne!(unsafe { WindowFromPoint(POINT { x: 40 + 100, y: 40 + 100 }) }, overlay.0);
+
+        // The other direction: input is wanted, the same rewrite happens, and the recovered window
+        // must take clicks again.
+        DESIRED_THROUGH.store(false, Ordering::Release);
+        write(TAO_SHOWN);
+        assert!(apply_panel_input(overlay.0));
+        assert_eq!(current() & WS_EX_TRANSPARENT.0, 0, "click-through is cleared");
+        assert_eq!(unsafe { WindowFromPoint(POINT { x: 40 + 100, y: 40 + 100 }) }, overlay.0);
         // `overlay` drops here, destroying the window.
     }
 
