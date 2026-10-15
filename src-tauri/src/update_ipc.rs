@@ -1,5 +1,6 @@
 // Ported from upstream App/AppUpdate.swift.
-//! Pulse's own updates: the checks (at launch and every two hours, and when About opens or asks),
+//! Pulse's own updates: the checks (at launch and every two hours, and when About opens or asks;
+//! a scheduled check that finds a release posts a toast once per version),
 //! and the install the user starts with the "Update to X" button.
 //!
 //! Windows difference: upstream's Sparkle puts up its own windows; here the About pane draws the
@@ -25,6 +26,11 @@ use crate::state::AppState;
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 /// After launch, once the app has settled (upstream waits for its first network probe).
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(20);
+/// Windows difference: a scheduled check that could not reach the feed (Pulse often starts with
+/// Windows, before the network is up) tries again this soon instead of two hours later.
+const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(10 * 60);
+/// The toast's identifier; clicking it opens Settings on About.
+pub const NOTICE_IDENTIFIER: &str = "pulse-update";
 /// Development builds read this feed instead, so the About pane can be tried against a local file.
 const FEED_OVERRIDE_VARIABLE: &str = "PULSE_UPDATE_FEED";
 
@@ -32,12 +38,14 @@ pub struct UpdateHandle {
     state: Mutex<UpdateState>,
     /// What the last check found, kept for the install.
     pending: tokio::sync::Mutex<Option<Update>>,
+    /// The version a toast has already announced this run, so the two-hourly checks say it once.
+    announced: Mutex<Option<String>>,
 }
 
 impl UpdateHandle {
     pub fn new(version: &str) -> Self {
         let can_check = update::can_check(cfg!(debug_assertions), feed_override().as_deref());
-        Self { state: Mutex::new(UpdateState::new(version, can_check)), pending: tokio::sync::Mutex::new(None) }
+        Self { state: Mutex::new(UpdateState::new(version, can_check)), pending: tokio::sync::Mutex::new(None), announced: Mutex::new(None) }
     }
 
     fn snapshot(&self) -> UpdateState {
@@ -75,10 +83,12 @@ pub fn update_state(handle: State<UpdateHandle>) -> UpdateState {
 /// subtitle either way, and a check already under way answers for both.
 #[tauri::command]
 pub async fn update_check(app: AppHandle) {
-    check(&app).await;
+    check(&app, false).await;
 }
 
-async fn check(app: &AppHandle) {
+/// `scheduled`: the launch and two-hourly checks. Only those post a toast; a check asked for from
+/// About answers on the pane the user is looking at.
+async fn check(app: &AppHandle, scheduled: bool) {
     if !with_state(app, |s| s.begin_check()) {
         return;
     }
@@ -92,8 +102,32 @@ async fn check(app: &AppHandle) {
     };
     let version = found.as_ref().map(|u| u.version.clone());
     *app.state::<UpdateHandle>().pending.lock().await = found;
-    with_state(app, |s| s.finish_check(Ok(version)));
+    with_state(app, |s| s.finish_check(Ok(version.clone())));
     crate::shell::rebuild_menu(app);
+    if let Some(version) = version {
+        let handle = app.state::<UpdateHandle>();
+        let mut announced = handle.announced.lock().unwrap();
+        // A version the user already saw in About is not announced again.
+        let fresh = announced.as_deref() != Some(version.as_str());
+        *announced = Some(version.clone());
+        if scheduled && fresh {
+            announce(app, &version);
+        }
+    }
+}
+
+/// Windows difference: upstream's Sparkle puts up its own window when a scheduled check finds a
+/// release. Here a toast says so; clicking it opens Settings on About, where the install starts.
+fn announce(app: &AppHandle, version: &str) {
+    use pulse_core::alerts::{Notification, Text};
+    let note = Notification {
+        identifier: NOTICE_IDENTIFIER.to_string(),
+        account: String::new(),
+        title: Text::key_with("Pulse %@ is available", vec![Text::Plain(version.to_string())]),
+        subtitle: None,
+        body: Text::key("Click to open Settings › About and update."),
+    };
+    crate::notify::post(app, &app.state::<AppState>().settings(), &note);
 }
 
 async fn find(app: &AppHandle) -> tauri_plugin_updater::Result<Option<Update>> {
@@ -168,10 +202,14 @@ pub fn start(app: &AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(FIRST_CHECK_DELAY).await;
         loop {
+            let mut wait = CHECK_INTERVAL;
             if app.state::<AppState>().settings().checks_updates_automatically {
-                check(&app).await;
+                check(&app, true).await;
+                if app.state::<UpdateHandle>().snapshot().failed {
+                    wait = RETRY_AFTER_FAILURE;
+                }
             }
-            tokio::time::sleep(CHECK_INTERVAL).await;
+            tokio::time::sleep(wait).await;
         }
     });
 }

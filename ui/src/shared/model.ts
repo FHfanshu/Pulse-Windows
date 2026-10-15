@@ -80,12 +80,15 @@ function maxByUsed(ws: UsageWindow[]): UsageWindow | null {
   return best;
 }
 
+/** A pinned limit, else the five-hour one (account-wide first), else the fullest. Mirrors
+ *  `ProviderUsage::headline_window`; the five-hour preference is an owner-approved Windows difference. */
 export function headlineWindow(u: ProviderUsage, preferring?: string | null): UsageWindow | null {
   if (preferring) {
     const pinned = u.windows.find((w) => w.id === preferring);
     if (pinned) return pinned;
   }
-  return maxByUsed(u.windows);
+  const fiveHour = u.windows.filter((w) => w.kind.type === "fiveHour");
+  return maxByUsed(fiveHour.filter((w) => w.scope === null)) ?? maxByUsed(fiveHour) ?? maxByUsed(u.windows);
 }
 
 export function secondWindow(u: ProviderUsage, preferring?: string | null): UsageWindow | null {

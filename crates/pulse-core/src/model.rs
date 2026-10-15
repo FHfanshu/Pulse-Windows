@@ -382,14 +382,22 @@ impl ProviderUsage {
         Some(copy)
     }
 
-    /// The window the rail ring shows: a pinned one, else the fullest.
+    /// The window the rail ring shows: a pinned one, else the five-hour limit, else the fullest.
+    ///
+    /// Windows difference (owner-approved): upstream shows the fullest limit. The five-hour
+    /// window is the one that moves while working, so it comes first; among several, the
+    /// account-wide (unscoped) one, then the fullest. The second ring still carries the fullest
+    /// of the rest, so a weekly limit stays in sight.
     pub fn headline_window(&self, preferring: Option<&str>) -> Option<&UsageWindow> {
         if let Some(id) = preferring {
             if let Some(pinned) = self.windows.iter().find(|w| w.id == id) {
                 return Some(pinned);
             }
         }
-        max_by_used(self.windows.iter())
+        let five_hour = |w: &&UsageWindow| w.kind == WindowKind::FiveHour;
+        max_by_used(self.windows.iter().filter(five_hour).filter(|w| w.scope.is_none()))
+            .or_else(|| max_by_used(self.windows.iter().filter(five_hour)))
+            .or_else(|| max_by_used(self.windows.iter()))
     }
 
     /// The fullest limit in the headline's own model group, else the fullest of the rest.
@@ -482,6 +490,22 @@ mod tests {
         );
         assert_eq!(usage.headline_window(None).unwrap().id, "five");
         assert_eq!(usage.second_window(None).unwrap().id, "week");
+    }
+
+    #[test]
+    fn headline_prefers_the_five_hour_limit() {
+        let mut week = UsageWindow::new("week", WindowKind::Weekly, 0.8, 604_800);
+        let usage = |windows| ProviderUsage::live(AccountKey::primary(Provider::Codex), windows, Utc::now());
+        let mut scoped = UsageWindow::new("spark.five", WindowKind::FiveHour, 0.9, 18_000);
+        scoped.scope = Some("spark".into());
+        let u = usage(vec![week.clone(), scoped.clone(), UsageWindow::new("five", WindowKind::FiveHour, 0.1, 18_000)]);
+        assert_eq!(u.headline_window(None).unwrap().id, "five", "the account-wide five-hour limit first");
+        assert_eq!(u.second_window(None).unwrap().id, "week", "the weekly limit stays on the second ring");
+        assert_eq!(u.headline_window(Some("week")).unwrap().id, "week", "a pin still wins");
+        assert_eq!(usage(vec![week.clone(), scoped]).headline_window(None).unwrap().id, "spark.five");
+        week.used_fraction = 0.2;
+        let u = usage(vec![week, UsageWindow::new("day", WindowKind::Daily, 0.5, 86_400)]);
+        assert_eq!(u.headline_window(None).unwrap().id, "day", "without one, the fullest");
     }
 
     #[test]
