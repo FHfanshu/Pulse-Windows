@@ -124,6 +124,88 @@ pub fn parse(d: &str) -> Option<Vec<Seg>> {
     (!out.is_empty()).then_some(out)
 }
 
+/// How finely a cubic is flattened for `contains`. The paths the UI sends are a few hundred DIPs at
+/// most and their curves are corner arcs, where 16 chords sample the true curve to well under a pixel.
+/// It is still an approximation: a sharper curve could read a hair wide or narrow between samples.
+const CUBIC_STEPS: usize = 16;
+
+fn cubic_point(a: [f32; 2], b: [f32; 2], c: [f32; 2], d: [f32; 2], t: f32) -> [f32; 2] {
+    let u = 1.0 - t;
+    let (u2, t2) = (u * u, t * t);
+    [
+        u2 * u * a[0] + 3.0 * u2 * t * b[0] + 3.0 * u * t2 * c[0] + t2 * t * d[0],
+        u2 * u * a[1] + 3.0 * u2 * t * b[1] + 3.0 * u * t2 * c[1] + t2 * t * d[1],
+    ]
+}
+
+/// Whether `(x, y)` is inside the path, in the path's own space. Cubics are flattened (`CUBIC_STEPS`),
+/// an open figure is closed with a straight line, and crossings are counted even-odd. That is not
+/// SVG's default `nonzero` fill rule, and the two disagree on a path that overlaps itself, but each
+/// shape the UI sends is a single simple outline, where they agree.
+///
+/// Windows difference: this is what makes the panel's *input* region the drawn shape rather than its
+/// bounding rectangle. Windows does not route mouse input through a layered window's transparent
+/// pixels the way macOS does, so `win` tests the pointer against these paths before letting the
+/// window take a click.
+pub fn contains(segs: &[Seg], x: f32, y: f32) -> bool {
+    // A crossing is a half-open vertical test, so a ray through a shared vertex counts once.
+    fn crosses(a: [f32; 2], b: [f32; 2], x: f32, y: f32) -> bool {
+        (a[1] > y) != (b[1] > y) && x < a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0])
+    }
+    let mut crossings = 0u32;
+    let mut start: Option<[f32; 2]> = None;
+    let mut from: Option<[f32; 2]> = None;
+    for seg in segs {
+        match *seg {
+            Seg::Move(p) => {
+                if let (Some(a), Some(s)) = (from, start) {
+                    if crosses(a, s, x, y) {
+                        crossings += 1;
+                    }
+                }
+                from = Some(p);
+                start = Some(p);
+            }
+            Seg::Line(p) => {
+                if let Some(a) = from {
+                    if crosses(a, p, x, y) {
+                        crossings += 1;
+                    }
+                }
+                from = Some(p);
+            }
+            Seg::Cubic(b, c, d) => {
+                if let Some(a) = from {
+                    let mut prev = a;
+                    for step in 1..=CUBIC_STEPS {
+                        let next = cubic_point(a, b, c, d, step as f32 / CUBIC_STEPS as f32);
+                        if crosses(prev, next, x, y) {
+                            crossings += 1;
+                        }
+                        prev = next;
+                    }
+                    from = Some(prev);
+                }
+            }
+            Seg::Close => {
+                if let (Some(a), Some(s)) = (from, start) {
+                    if crosses(a, s, x, y) {
+                        crossings += 1;
+                    }
+                }
+                from = None;
+                start = None;
+            }
+        }
+    }
+    if let (Some(a), Some(s)) = (from, start) {
+        if crosses(a, s, x, y) {
+            crossings += 1;
+        }
+    }
+    crossings % 2 == 1
+}
+
 /// `p * scale + offset`, then times `px` (the monitor's scale): the path in physical pixels.
 pub fn place(segs: &[Seg], outline: &Outline, px: f64) -> Vec<Seg> {
     let k = outline.s * px;
@@ -240,6 +322,40 @@ mod tests {
         let segs = parse("M10 20L30 40Z").unwrap();
         let outline = Outline { d: String::new(), x: 100.0, y: 50.0, s: 0.5, o: 1.0 };
         assert_eq!(place(&segs, &outline, 2.0), vec![Seg::Move([210.0, 120.0]), Seg::Line([230.0, 140.0]), Seg::Close]);
+    }
+
+    #[test]
+    fn contains_tests_inside_the_outline_not_its_bounding_box() {
+        // The card bubble is a rounded rectangle drawn with cubics (control factor 0.5523): a point in
+        // the corner's bounding box but outside the arc must miss, and the centre must hit.
+        let rounded = parse("M5 0L15 0C17.76 0 20 2.24 20 5L20 15C20 17.76 17.76 20 15 20L5 20C2.24 20 0 17.76 0 15L0 5C0 2.24 2.24 0 5 0Z").unwrap();
+        assert!(contains(&rounded, 10.0, 10.0));
+        assert!(contains(&rounded, 5.0, 0.5)); // on the straight top edge
+        assert!(contains(&rounded, 0.5, 10.0)); // on the straight left edge
+        assert!(!contains(&rounded, 0.4, 0.4)); // cut off by the top-left corner arc
+        assert!(!contains(&rounded, 19.6, 19.6)); // cut off by the bottom-right corner arc
+        assert!(!contains(&rounded, 10.0, -0.5));
+        assert!(!contains(&rounded, 10.0, 20.5));
+    }
+
+    #[test]
+    fn contains_follows_a_curve_and_closes_an_open_figure() {
+        // One cubic bulging to x = 7.5 at its midpoint, closed by the Z.
+        let segs = parse("M0 0C10 0 10 10 0 10Z").unwrap();
+        assert!(contains(&segs, 2.0, 5.0));
+        assert!(!contains(&segs, 9.0, 5.0));
+        // No Z: the trailing segment is closed implicitly, so the same rule holds.
+        let open = parse("M0 0C10 0 10 10 0 10").unwrap();
+        assert!(contains(&open, 2.0, 5.0));
+        assert!(!contains(&open, 9.0, 5.0));
+    }
+
+    #[test]
+    fn contains_reads_several_figures_even_odd() {
+        let segs = parse("M0 0L10 0L10 10L0 10ZM20 20L30 20L30 30L20 30Z").unwrap();
+        assert!(contains(&segs, 5.0, 5.0));
+        assert!(!contains(&segs, 15.0, 15.0));
+        assert!(contains(&segs, 25.0, 25.0));
     }
 
     #[test]

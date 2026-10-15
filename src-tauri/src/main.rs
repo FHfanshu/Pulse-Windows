@@ -13,6 +13,7 @@ mod panel;
 mod placement;
 mod recap_ipc;
 mod shell;
+mod session;
 mod signin_ipc;
 mod spend_ipc;
 mod state;
@@ -121,7 +122,6 @@ async fn refresh(app: AppHandle, account: Option<String>) -> Result<(), String> 
         Some(id) => {
             let store = state.store.clone();
             let settings = state.settings();
-            state::emit_usage(&app);
             let app2 = app.clone();
             tauri::async_runtime::spawn(async move {
                 store.refresh(settings, &id).await;
@@ -396,6 +396,9 @@ fn main() {
             let handle = app.handle().clone();
             let state = AppState::load();
             let needs_choice = state.settings().needs_provider_selection() && !state.mock;
+            // Every refresh, whoever starts it, tells the windows as each account starts and ends.
+            let notify = handle.clone();
+            state.store.set_on_change(move || state::emit_usage(&notify));
             app.manage(state);
             app.manage(update_ipc::UpdateHandle::new(&handle.package_info().version.to_string()));
 

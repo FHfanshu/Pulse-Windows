@@ -86,7 +86,7 @@ pub fn start(app: AppHandle) {
 /// is against the display's left edge), averaged into bands.
 fn sample(window: &tauri::WebviewWindow) -> Option<Vec<[u8; 3]>> {
     let (l, t, r, b) = win::window_rect_px(window)?;
-    let display = win::monitor_at(((l + r) / 2, (t + b) / 2)).bounds;
+    let display = win::monitor_at(((l + r) / 2, (t + b) / 2))?.bounds;
     let x = if l - GAP - STRIP >= display.left { l - GAP - STRIP } else { (r + GAP).min(display.right - STRIP) };
     let top = t.max(display.top);
     let bottom = b.min(display.bottom);

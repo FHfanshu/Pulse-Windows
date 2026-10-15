@@ -203,7 +203,7 @@ fn place(window: &WebviewWindow) {
         let Some(anchor) = popup.anchor else { return };
         (anchor, popup.size)
     };
-    let monitor = win::monitor_at(((anchor.0 + anchor.2) / 2, (anchor.1 + anchor.3) / 2));
+    let Some(monitor) = win::monitor_at(((anchor.0 + anchor.2) / 2, (anchor.1 + anchor.3) / 2)) else { return };
     let scale = monitor.scale;
     let icon = Rect {
         x: anchor.0 as f64 / scale,

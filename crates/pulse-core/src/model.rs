@@ -163,6 +163,28 @@ impl UsageWindow {
         self.is_exhausted || self.used_fraction >= 1.0
     }
 
+    /// How full a surface draws this limit's arc, with the reader's exhausted-ring choice.
+    ///
+    /// `spent_fills` is the surface's upstream default for a spent limit that is being kept
+    /// filled: the panel ring draws it full (`true`), the tray ring and the dashboard bar keep
+    /// the used figure instead (`false`). Windows difference (owner-approved #29): with
+    /// `keeps_filled` off, a countdown fraction is the true remainder, including 0% — the red
+    /// track, not a full arc, carries the warning. Consumed mode is unchanged either way.
+    pub fn drawn_fraction(&self, remaining: bool, keeps_filled: bool, spent_fills: bool) -> f64 {
+        let used = if self.used_fraction.is_finite() { self.used_fraction.clamp(0.0, 1.0) } else { 0.0 };
+        if remaining && !keeps_filled && self.is_spent() {
+            return 1.0 - used;
+        }
+        if self.is_spent() {
+            return if spent_fills { 1.0 } else { used };
+        }
+        if remaining {
+            1.0 - used
+        } else {
+            used
+        }
+    }
+
     /// How much of the window has elapsed; None unless both reset and a stated length are known.
     pub fn elapsed_fraction(&self, now: DateTime<Utc>) -> Option<f64> {
         let resets_at = self.resets_at?;
@@ -366,14 +388,22 @@ impl ProviderUsage {
         Some(copy)
     }
 
-    /// The window the rail ring shows: a pinned one, else the fullest.
+    /// The window the rail ring shows: a pinned one, else the five-hour limit, else the fullest.
+    ///
+    /// Windows difference (owner-approved): upstream shows the fullest limit. The five-hour
+    /// window is the one that moves while working, so it comes first; among several, the
+    /// account-wide (unscoped) one, then the fullest. The second ring still carries the fullest
+    /// of the rest, so a weekly limit stays in sight.
     pub fn headline_window(&self, preferring: Option<&str>) -> Option<&UsageWindow> {
         if let Some(id) = preferring {
             if let Some(pinned) = self.windows.iter().find(|w| w.id == id) {
                 return Some(pinned);
             }
         }
-        max_by_used(self.windows.iter())
+        let five_hour = |w: &&UsageWindow| w.kind == WindowKind::FiveHour;
+        max_by_used(self.windows.iter().filter(five_hour).filter(|w| w.scope.is_none()))
+            .or_else(|| max_by_used(self.windows.iter().filter(five_hour)))
+            .or_else(|| max_by_used(self.windows.iter()))
     }
 
     /// The fullest limit in the headline's own model group, else the fullest of the rest.
@@ -412,6 +442,49 @@ mod tests {
     }
 
     #[test]
+    fn exhausted_ring_fill_choice_shows_the_true_remainder() {
+        let w = |f: f64, exhausted: bool| UsageWindow::new("a", WindowKind::Weekly, f, 604_800).exhausted(exhausted);
+
+        // Kept filled (the default): the panel ring fills a spent limit, the tray ring and
+        // dashboard bar keep the used figure. Consumed mode is the same either way.
+        assert_eq!(w(0.5, true).drawn_fraction(true, true, true), 1.0);
+        assert_eq!(w(0.5, true).drawn_fraction(true, true, false), 0.5);
+        assert_eq!(w(0.5, true).drawn_fraction(false, true, true), 1.0);
+        assert_eq!(w(0.5, true).drawn_fraction(false, true, false), 0.5);
+
+        // Opted out: a countdown fraction is the true remainder, including 0%. Both surfaces
+        // agree, and consumed mode does not change.
+        assert_eq!(w(0.5, true).drawn_fraction(true, false, true), 0.5);
+        assert_eq!(w(0.5, true).drawn_fraction(true, false, false), 0.5);
+        assert_eq!(w(0.5, true).drawn_fraction(false, false, true), 1.0);
+        assert_eq!(w(0.5, true).drawn_fraction(false, false, false), 0.5);
+    }
+
+    #[test]
+    fn drawn_fraction_clamps_and_counts_down_to_zero() {
+        let spent = |f: f64| UsageWindow::new("a", WindowKind::FiveHour, f, 18_000).exhausted(true);
+        let plain = |f: f64| UsageWindow::new("a", WindowKind::FiveHour, f, 18_000);
+
+        // At 100% and over: nothing is left, so an opted-out countdown arc is empty.
+        assert_eq!(spent(1.0).drawn_fraction(true, false, true), 0.0);
+        assert_eq!(spent(1.4).drawn_fraction(true, false, true), 0.0);
+        assert_eq!(plain(1.4).drawn_fraction(true, false, false), 0.0);
+        // Negative clamps: empty used, full while counting down.
+        assert_eq!(plain(-0.2).drawn_fraction(false, false, false), 0.0);
+        assert_eq!(plain(-0.2).drawn_fraction(true, false, false), 1.0);
+        // Near zero keeps the sliver.
+        assert!((plain(0.004).drawn_fraction(true, false, false) - 0.996).abs() < 1e-9);
+        // Near 100% used, the actual remainder is near zero and is what both surfaces draw;
+        // kept filled, the same limit still draws full.
+        assert!((plain(0.996).drawn_fraction(true, false, false) - 0.004).abs() < 1e-9);
+        assert!((spent(0.996).drawn_fraction(true, false, true) - 0.004).abs() < 1e-9);
+        assert!((spent(0.996).drawn_fraction(true, false, false) - 0.004).abs() < 1e-9);
+        assert_eq!(spent(0.996).drawn_fraction(true, true, true), 1.0);
+        // A plain 0% is not spent, so it stays full while counting down even opted out.
+        assert_eq!(plain(0.0).drawn_fraction(true, false, true), 1.0);
+    }
+
+    #[test]
     fn headline_keeps_first_of_equals() {
         let usage = ProviderUsage::live(
             AccountKey::primary(Provider::ClaudeCode),
@@ -423,6 +496,22 @@ mod tests {
         );
         assert_eq!(usage.headline_window(None).unwrap().id, "five");
         assert_eq!(usage.second_window(None).unwrap().id, "week");
+    }
+
+    #[test]
+    fn headline_prefers_the_five_hour_limit() {
+        let mut week = UsageWindow::new("week", WindowKind::Weekly, 0.8, 604_800);
+        let usage = |windows| ProviderUsage::live(AccountKey::primary(Provider::Codex), windows, Utc::now());
+        let mut scoped = UsageWindow::new("spark.five", WindowKind::FiveHour, 0.9, 18_000);
+        scoped.scope = Some("spark".into());
+        let u = usage(vec![week.clone(), scoped.clone(), UsageWindow::new("five", WindowKind::FiveHour, 0.1, 18_000)]);
+        assert_eq!(u.headline_window(None).unwrap().id, "five", "the account-wide five-hour limit first");
+        assert_eq!(u.second_window(None).unwrap().id, "week", "the weekly limit stays on the second ring");
+        assert_eq!(u.headline_window(Some("week")).unwrap().id, "week", "a pin still wins");
+        assert_eq!(usage(vec![week.clone(), scoped]).headline_window(None).unwrap().id, "spark.five");
+        week.used_fraction = 0.2;
+        let u = usage(vec![week, UsageWindow::new("day", WindowKind::Daily, 0.5, 86_400)]);
+        assert_eq!(u.headline_window(None).unwrap().id, "day", "without one, the fullest");
     }
 
     #[test]

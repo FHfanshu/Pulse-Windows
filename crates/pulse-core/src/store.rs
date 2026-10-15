@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 
@@ -34,6 +35,11 @@ struct Entry {
     raw_unseen: bool,
 }
 
+/// Windows difference: the longest one account's whole fetch may take. The shared HTTP client
+/// times out single requests, but a provider may chain several requests or wait on a local CLI;
+/// past this the pass ends as unreachable (the last good figures stay, marked stale).
+pub const FETCH_TIMEOUT: Duration = Duration::from_secs(60);
+
 pub struct UsageStore {
     registry: Registry,
     secrets: Arc<dyn SecretStore>,
@@ -41,6 +47,30 @@ pub struct UsageStore {
     inner: Mutex<Inner>,
     /// Limits seen being spent where this PC's logs cannot see (`used-elsewhere.json`).
     elsewhere: Arc<ElsewhereWatch>,
+    /// Told whenever an account starts or stops refreshing, so the windows follow each account.
+    on_change: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    fetch_timeout: Duration,
+}
+
+/// Ends an account's refresh however the fetch ends: answered, timed out, cancelled or panicked.
+struct Refreshing<'a> {
+    store: &'a UsageStore,
+    account_id: &'a str,
+    generation: u64,
+}
+
+impl Drop for Refreshing<'_> {
+    fn drop(&mut self) {
+        {
+            let mut inner = self.store.inner.lock().unwrap_or_else(|e| e.into_inner());
+            match inner.entries.get_mut(self.account_id) {
+                // A newer pass owns the flag now.
+                Some(entry) if entry.generation == self.generation => entry.refreshing = false,
+                _ => return,
+            }
+        }
+        self.store.changed();
+    }
 }
 
 #[derive(Default)]
@@ -58,9 +88,23 @@ impl UsageStore {
             cache_path,
             inner: Mutex::new(Inner::default()),
             elsewhere: Arc::new(ElsewhereWatch::new(None)),
+            on_change: Mutex::new(None),
+            fetch_timeout: FETCH_TIMEOUT,
         };
         store.restore_cache();
         store
+    }
+
+    /// Called (with no lock held) when an account starts refreshing and when it has finished.
+    pub fn set_on_change(&self, on_change: impl Fn() + Send + Sync + 'static) {
+        *self.on_change.lock().unwrap() = Some(Arc::new(on_change));
+    }
+
+    fn changed(&self) {
+        let on_change = self.on_change.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(on_change) = on_change {
+            on_change();
+        }
     }
 
     /// Keeps what the elsewhere watch has seen in `file`, across launches.
@@ -165,11 +209,19 @@ impl UsageStore {
             entry.refreshing = true;
             generation
         };
+        let _refreshing = Refreshing { store: self, account_id, generation };
+        self.changed();
 
         let fetched = match self.registry.get(&key.provider) {
             Some(service) => {
                 let ctx = FetchContext::from_env(settings.clone(), self.secrets.clone());
-                service.fetch(&ctx, &key).await
+                match tokio::time::timeout(self.fetch_timeout, service.fetch(&ctx, &key)).await {
+                    Ok(fetched) => fetched,
+                    Err(_) => {
+                        tracing::warn!(account = account_id, "usage fetch timed out after {:?}", self.fetch_timeout);
+                        ProviderUsage::unavailable(key.clone(), Unavailability::Unreachable)
+                    }
+                }
             }
             None => ProviderUsage::unavailable(key.clone(), Unavailability::NoLimitsReported),
         };
@@ -206,7 +258,6 @@ impl UsageStore {
                 // A newer pass started after this one; its answer wins.
                 return false;
             }
-            entry.refreshing = false;
             entry.raw = Some(fetched.clone());
             entry.raw_unseen = true;
             let shown = merge(fetched, entry.last_good.as_ref(), Utc::now());
@@ -240,7 +291,11 @@ impl UsageStore {
             .collect();
         let mut any = false;
         for t in tasks {
-            any |= t.await.unwrap_or(false);
+            match t.await {
+                Ok(changed) => any |= changed,
+                // The account's own refresh flag was cleared as the task unwound.
+                Err(error) => tracing::error!("usage refresh task failed: {error}"),
+            }
         }
         any
     }
@@ -359,5 +414,62 @@ mod tests {
         assert_eq!(second[0].0.state, UsageState::Stale);
         assert_eq!(second[0].1.state, UsageState::Unavailable(Unavailability::Unreachable));
         assert!(store.live_readings().is_empty());
+    }
+
+    /// Never answers, or panics, as a hung or broken provider would.
+    struct Broken(bool);
+
+    #[async_trait::async_trait]
+    impl crate::service::UsageService for Broken {
+        fn provider(&self) -> Provider {
+            Provider::Codex
+        }
+        async fn fetch(&self, _: &FetchContext, _: &AccountKey) -> ProviderUsage {
+            if self.0 {
+                panic!("provider failed");
+            }
+            std::future::pending().await
+        }
+    }
+
+    /// What `refreshing()` read each time the store said something changed.
+    type Seen = Arc<Mutex<Vec<Vec<String>>>>;
+
+    fn broken_store(panics: bool) -> (Arc<UsageStore>, Arc<AppSettings>, String, Seen) {
+        let key = AccountKey::primary(Provider::Codex);
+        let service: Arc<dyn crate::service::UsageService> = Arc::new(Broken(panics));
+        let registry: Registry = [(Provider::Codex, service)].into();
+        let mut store = UsageStore::new(registry, Arc::new(crate::secrets::MemorySecrets::default()), None);
+        store.fetch_timeout = Duration::from_millis(50);
+        let store = Arc::new(store);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (watch, record) = (Arc::downgrade(&store), seen.clone());
+        store.set_on_change(move || {
+            if let Some(store) = watch.upgrade() {
+                record.lock().unwrap().push(store.refreshing());
+            }
+        });
+        let mut settings = AppSettings::default();
+        settings.enabled_accounts.insert(key.id());
+        (store, Arc::new(settings), key.id(), seen)
+    }
+
+    #[tokio::test]
+    async fn a_hung_fetch_times_out_and_reports_start_and_end() {
+        let (store, settings, id, seen) = broken_store(false);
+        store.refresh_all(settings).await;
+        assert!(store.refreshing().is_empty());
+        assert_eq!(*seen.lock().unwrap(), vec![vec![id.clone()], vec![]], "true, then false");
+        let shown = store.snapshot(&[id]);
+        assert_eq!(shown[0].state, UsageState::Unavailable(Unavailability::Unreachable));
+    }
+
+    #[tokio::test]
+    async fn a_panicking_fetch_still_ends_its_refresh() {
+        let (store, settings, id, seen) = broken_store(true);
+        assert!(!store.refresh_all(settings).await);
+        assert!(store.refreshing().is_empty(), "the flag does not outlive the task");
+        assert_eq!(seen.lock().unwrap().last(), Some(&Vec::new()));
+        assert_eq!(seen.lock().unwrap().first(), Some(&vec![id]));
     }
 }

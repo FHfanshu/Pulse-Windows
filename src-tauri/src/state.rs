@@ -107,7 +107,6 @@ pub fn start_refresh_loop(app: AppHandle) {
             let state = app.state::<AppState>();
             let settings = state.settings();
             if !settings.needs_provider_selection() && !state.mock {
-                emit_usage(&app);
                 state.store.refresh_all(settings.clone()).await;
                 emit_usage(&app);
                 crate::notify::after_refresh(&app);

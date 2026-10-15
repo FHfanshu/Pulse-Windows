@@ -30,10 +30,12 @@ lists the difference under **Deliberate differences**.
 | `NSStatusItem` menu bar | system tray icon + menu; `MenuDashboard` becomes a tray popup | platform |
 | Keychain / `keys.dat` key derived from the Mac | DPAPI (`CryptProtectData`, user scope) | platform |
 | Browser cookie import (Chrome/Edge app-bound encryption) | Firefox cookie DB read directly; Chromium sites signed in through an embedded WebView2 window | Chrome ≥127 cookies cannot be decrypted by other processes |
-| Sparkle | Tauri updater (GitHub Releases) | platform |
+| Sparkle | Tauri updater (GitHub Releases); a scheduled check that finds a release posts one toast per version (click opens About), and a failed one retries after 10 minutes | platform |
 | Raycast integration | not ported | owner decision |
 | Providers | first 20 (§6), others later | owner decision |
 | Estimated value on added accounts | Claude/Codex accounts use billing identity matching rather than a primary-account gate | owner decision; local spend must belong to the account whose percentage is used |
+| A spent limit fills the ring, whichever way it counts | On by default, with a "Keep ring filled when exhausted" switch; off, a countdown fraction on the panel (outer and second), the tray and the dashboard bar is the true remainder, down to 0%. The panel and tray tracks turn red (the panel's dimmed to 0.35, so an empty ring never reads as the full arc it replaced); the dashboard keeps its existing red spent caption (owner-approved #29) | the full arc hid how much was truly left while counting down |
+| The ring shows the fullest limit unless one is pinned | Unpinned, the ring shows the five-hour limit when the account reports one (account-wide first, then the fullest five-hour), else the fullest; the second ring keeps the fullest of the rest, so weekly stays in sight. Applies to the panel, tray and dashboard (owner-approved) | the five-hour window is the one that moves while working |
 
 ## 3. Layout tokens (all multiplied by `scale`)
 
@@ -60,9 +62,23 @@ out 0.10 s on collapse; refresh mark sweep 0.16 / 0.85 s; busy mark sweep 0.22 /
   (`WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_LAYERED`), skip taskbar, sized by `Layout.size(edge)`,
   rounded **up** to whole pixels (DIP). The window never resizes while a card opens; the card is an
   overlay on the rail. Axis change (side ↔ top) may resize.
-- Click-through: the window is `WS_EX_TRANSPARENT` except while the pointer is over the rail's hit
-  rect or the open card. A Rust pointer sampler (60 Hz while near, 4 Hz idle) toggles it and drives
-  hover enter/leave — mirroring upstream's "enter from tracking, leave from sampling".
+- Click-through: the window is `WS_EX_TRANSPARENT` except while the pointer is inside the **outline** of
+  the rail's berth or the open card — the same SVG paths the UI sends for the acrylic (`Shapes`, parsed
+  by `outline::parse`/`contains`, tested per point at the monitor's DPI). Not their bounding rectangles: a
+  card's full-width hover band and a rail's rectangular corners must not take clicks meant for the app
+  behind. A Rust pointer sampler (60 Hz while near, ~8 Hz idle) toggles the style and drives hover
+  enter/leave — mirroring upstream's "enter from tracking, leave from sampling". The style is also
+  re-asserted from the UI thread, because Tao owns `GWL_EXSTYLE` too: when it shows the window it
+  recomputes the extended styles from its own cached flags, and `skip_taskbar` only removes the taskbar
+  tab rather than clearing `WS_EX_APPWINDOW`, so `WS_EX_TOOLWINDOW`, `WS_EX_LAYERED` and the pointer's
+  `WS_EX_TRANSPARENT` are lost and `WS_EX_APPWINDOW` returns. (`WS_EX_NOACTIVATE` survives: the window is
+  built `focusable(false)`, which makes Tao emit it.) A pass queued after each `show`, and the sampler's
+  per-tick check, repair the styles whenever Win32 has drifted from the desired state. `WM_NCHITTEST`'s
+  `HTTRANSPARENT` is deliberately not used (it only skips windows on the same thread, so it cannot pass a
+  click to another process); `WS_EX_TRANSPARENT` does, whatever the stacking. Until the UI reports its
+  shapes the first time the sampler falls back to the rail/card rects it is also sent; after that first
+  report the outlines are authoritative, so a report with no shapes leaves the whole window
+  click-through instead of falling back to a rectangle.
 - Drag: press on the rail starts a native move loop driven from Rust; on release `PanelPlacement`
   snaps to the nearest edge within the snap distance or stays free. Click (no drag) on a ring refreshes it.
   Right-click opens the panel menu.

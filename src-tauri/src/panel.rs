@@ -3,10 +3,11 @@
 //! The floating panel window: transparent, always on top, never activated.
 //!
 //! Input model (same as upstream, re-expressed for Win32):
-//! - The window is click-through (`WS_EX_TRANSPARENT`) everywhere except the
-//!   hit rects the UI reports (rail, open card). A sampler on its own thread
-//!   reads the cursor and flips the style, so the desktop behind the
-//!   transparent margin keeps working.
+//! - The window is click-through (`WS_EX_TRANSPARENT`) everywhere except the visible shapes the UI
+//!   reports (the rail's berth outline, the open card's bubble). A sampler on its own thread reads the
+//!   cursor and flips the style, so the desktop behind the transparent margin keeps working. The test is
+//!   the outline itself (`win::input_hit`, from `crate::outline`), not a bounding rect: a card's
+//!   full-width hover band and a rail's rectangular corners must not take clicks.
 //! - Hover enter *and* leave come from that sampler, never from DOM events:
 //!   a non-activated WebView does not reliably deliver mouseleave.
 //! - A press on the rail starts a drag that the sampler carries until the
@@ -56,7 +57,6 @@ pub struct PanelState {
     pub monitor: Option<win::MonitorInfo>,
     press: Option<Press>,
     last_pointer: Option<(i32, i32)>,
-    click_through: Option<bool>,
     last_buttons: (bool, bool),
     pointer_dirty: bool,
     /// Windows difference: local canvas dimensions held until both springs settle.
@@ -223,6 +223,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .skip_taskbar(true)
         .resizable(false)
         .focused(false)
+        .focusable(false)
         .visible(false)
         .inner_size(400.0, 600.0)
         .build()?;
@@ -235,7 +236,7 @@ pub fn place(app: &AppHandle, shared: &SharedPanel) {
     let Some(window) = app.get_webview_window(LABEL) else { return };
     let mut state = shared.lock().unwrap();
     let Some(geometry) = state.geometry else { return };
-    let monitor = win::monitor_named(state.placement.display.as_deref()).unwrap_or_else(win::primary_monitor);
+    let Some(monitor) = win::monitor_named(state.placement.display.as_deref()).or_else(win::primary_monitor) else { return };
     let natural = state.placement.layout(monitor.work_dip(), &geometry);
     let same_display = state.same_display(&monitor);
     let layout = state.commit(natural, same_display, Instant::now());
@@ -305,7 +306,7 @@ fn publish(app: &AppHandle, window: &WebviewWindow, monitor: &win::MonitorInfo, 
 pub fn reconcile_display(app: &AppHandle, shared: &SharedPanel) {
     let Some(window) = app.get_webview_window(LABEL) else { return };
     let mut state = shared.lock().unwrap();
-    let monitor = win::monitor_named(state.placement.display.as_deref()).unwrap_or_else(win::primary_monitor);
+    let Some(monitor) = win::monitor_named(state.placement.display.as_deref()).or_else(win::primary_monitor) else { return };
     let Some(layout) = state.display_update(monitor.clone(), win::window_rect_px(&window)) else { return };
     drop(state);
     // The sampler reports a fresh pointer even if it has not moved. Emitting a
@@ -372,22 +373,26 @@ fn tick(app: &AppHandle, shared: &SharedPanel) -> bool {
         }
     }
 
-    let over_hit = inside_window && state.hit_rects.iter().any(|r| r.contains(local.0, local.1));
+    // Windows difference: the interactive region is the drawn outline, not the window rectangle.
+    // Before the UI has reported any shapes, fall back to the rects it also sends (`set_hit_rects`):
+    // coarse, but never leaving the rail unclickable. Once it has reported — even with no shapes —
+    // the outlines decide, so an empty report stays click-through instead of blocking the desktop.
+    let over_hit = inside_window
+        && win::input_hit(local).unwrap_or_else(|| state.hit_rects.iter().any(|r| r.contains(local.0, local.1)));
     let pressed = state.press.is_some();
     let dragging = state.press.as_ref().is_some_and(|p| p.dragging);
     let wants_input = over_hit || pressed;
-    // Windows pitfall: the style change sends messages to the UI thread, so not under the panel lock.
-    let click_through = (state.click_through != Some(!wants_input)).then(|| !wants_input);
-    state.click_through = click_through.or(state.click_through);
+    let through = !wants_input;
 
     let rounded = inside_window.then(|| ((local.0 * 4.0) as i32, (local.1 * 4.0) as i32));
     // A stationary release must clear dragging in React too; otherwise the
     // hover card remains suppressed until a later pointer movement.
     let changed = state.record_pointer(rounded, pressed, dragging);
     drop(state);
-    if let Some(through) = click_through {
-        win::set_click_through(&window, through);
-    }
+    // Windows pitfall: the style write sends messages to the UI thread, so not under the panel lock.
+    // The helper records the desired state every pass but only queues UI-thread work when Win32 has
+    // drifted from it (Tao rewrites `GWL_EXSTYLE` on `show`), so a stationary pointer is cheap.
+    win::set_click_through(&window, through);
 
     if changed || click.is_some() {
         let _ = app.emit_to(
@@ -424,7 +429,7 @@ pub fn press(shared: &SharedPanel, local: (f64, f64)) {
 /// Upstream `FloatingPanel.carry()`: choose the landing dock from where the
 /// pointer is, re-centre the grab when the rail changes shape, record, re-place.
 fn carry(app: &AppHandle, shared: &SharedPanel, window: &WebviewWindow, cursor_px: (i32, i32), grab: (f64, f64)) {
-    let monitor = win::monitor_at(cursor_px);
+    let Some(monitor) = win::monitor_at(cursor_px) else { return };
     let visible = monitor.work_dip();
     let pointer = (cursor_px.0 as f64 / monitor.scale, cursor_px.1 as f64 / monitor.scale);
 

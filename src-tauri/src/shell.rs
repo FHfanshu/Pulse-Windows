@@ -6,7 +6,7 @@
 //! the pointer's display, global shortcuts and the tray menu.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use pulse_core::i18n;
 use pulse_core::login_item::{self, Plan};
@@ -137,6 +137,18 @@ pub fn panel_should_show(settings: &AppSettings) -> bool {
 }
 
 pub fn sync_panel_visibility(app: &AppHandle) {
+    sync_panel_presentation(app, false);
+}
+
+fn sync_panel_presentation(app: &AppHandle, restore: bool) {
+    let next = app.clone();
+    let _ = app.run_on_main_thread(move || apply_panel_presentation(&next, restore));
+}
+
+/// Windows difference: all hide/show/style operations run together on the UI thread. After a
+/// session switch, force the same hide/show cycle that manually toggling the panel uses, even if
+/// Win32 still considers the missing window visible. Re-read the policy when queued work runs.
+fn apply_panel_presentation(app: &AppHandle, restore: bool) {
     let Some(window) = app.get_webview_window(panel::LABEL) else { return };
     let settings = app.state::<AppState>().settings();
     // Before the UI has reported its geometry the window has nowhere to go;
@@ -146,7 +158,11 @@ pub fn sync_panel_visibility(app: &AppHandle) {
     }
     let shown = win::is_visible(&window);
     let wanted = panel_should_show(&settings);
-    if wanted && !shown {
+    if wanted && (!shown || restore) {
+        if win::primary_monitor().is_none() { return; }
+        if restore {
+            let _ = window.hide();
+        }
         let _ = window.show();
         win::make_panel_window(&window);
         win::raise_topmost(&window);
@@ -159,24 +175,38 @@ pub fn sync_panel_visibility(app: &AppHandle) {
 /// Full-screen hiding and display following, sampled every quarter second
 /// (upstream `ActiveDisplayFollower.interval`).
 pub fn start_watcher(app: AppHandle) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_millis(250));
-        let settings = app.state::<AppState>().settings();
-        let shared = app.state::<SharedPanel>().inner().clone();
-        let Some(window) = app.get_webview_window(panel::LABEL) else { continue };
+    std::thread::spawn(move || {
+        let mut restore_at = None;
+        loop {
+            std::thread::sleep(Duration::from_millis(250));
+            let settings = app.state::<AppState>().settings();
+            let shared = app.state::<SharedPanel>().inner().clone();
+            let Some(window) = app.get_webview_window(panel::LABEL) else { continue };
 
-        panel::reconcile_display(&app, &shared);
+            crate::session::watch(&window);
+            if crate::session::take_restore_request() {
+                // Windows may send connect, unlock and desktop-ready in a burst. Let the desktop and
+                // display topology settle, then recover once using the latest geometry.
+                restore_at = Some(Instant::now() + Duration::from_millis(750));
+            }
+            let restore = restore_at.is_some_and(|at| Instant::now() >= at)
+                && win::primary_monitor().is_some();
+            if restore { restore_at = None; }
 
-        let panel_display = shared.lock().unwrap().monitor.as_ref().map(|m| m.name.clone());
-        let covered = settings.hides_in_full_screen
-            && panel_display.is_some()
-            && win::fullscreen_monitor(Some(&window)) == panel_display;
-        if COVERED.swap(covered, Ordering::Relaxed) != covered {
-            sync_panel_visibility(&app);
-        }
+            panel::reconcile_display(&app, &shared);
 
-        if settings.follows_active_display && panel_should_show(&settings) && win::monitor_count() > 1 {
-            follow_pointer(&app, &shared);
+            let panel_display = shared.lock().unwrap().monitor.as_ref().map(|m| m.name.clone());
+            let covered = settings.hides_in_full_screen
+                && panel_display.is_some()
+                && win::fullscreen_monitor(Some(&window)) == panel_display;
+            let changed = COVERED.swap(covered, Ordering::Relaxed) != covered;
+            if changed || restore || panel_should_show(&settings) != win::is_visible(&window) {
+                sync_panel_presentation(&app, restore || (changed && !covered));
+            }
+
+            if settings.follows_active_display && panel_should_show(&settings) && win::monitor_count() > 1 {
+                follow_pointer(&app, &shared);
+            }
         }
     });
 }
@@ -186,7 +216,7 @@ pub fn start_watcher(app: AppHandle) {
 /// offered again on the next tick instead.
 fn follow_pointer(app: &AppHandle, shared: &SharedPanel) {
     let Some(cursor) = win::cursor_pos() else { return };
-    let target = win::monitor_at(cursor);
+    let Some(target) = win::monitor_at(cursor) else { return };
     let placement = {
         let mut state = shared.lock().unwrap();
         if state.monitor.as_ref().is_some_and(|m| m.name == target.name) || panel::is_busy(&state) {
