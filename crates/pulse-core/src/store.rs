@@ -235,11 +235,25 @@ impl UsageStore {
         };
         if !checks.is_empty() {
             let watch = self.elsewhere.clone();
+            let identity = fetched.spend_identity.clone();
+            let primary = key.is_primary();
             // Blocking work: the transcripts are read for the span each check names.
             tokio::task::spawn_blocking(move || {
                 let home = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_default();
                 for check in checks {
-                    let Ok(ledger) = crate::spend::read_ledger(check.provider, &home, Utc::now()) else { continue };
+                    let ledger = if primary {
+                        // The default account is the local CLI login itself, as upstream.
+                        let Ok(ledger) = crate::spend::read_ledger(check.provider, &home, Utc::now()) else { continue };
+                        ledger
+                    } else {
+                        // Windows difference: another account's local work is not evidence about
+                        // this account. Unknown ownership must not persist an elsewhere mark either.
+                        let Some((local, ledger)) = crate::spend::account::read_ledger(check.provider, identity.as_ref(), &home, Utc::now()) else { continue };
+                        if !local.covers(check.from, check.to) || !local.unchanged() {
+                            continue;
+                        }
+                        ledger
+                    };
                     watch.resolve(&check, ledger.cost_between(check.from, check.to), ledger.tokens_between(check.from, check.to));
                 }
             });

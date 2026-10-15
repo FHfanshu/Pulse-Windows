@@ -121,7 +121,13 @@ async fn over_http(ctx: &FetchContext, credentials: &Credentials, account: &Acco
             Ok(reply) => {
                 return match reply.status().as_u16() {
                     200 => match reply.json::<Value>().await {
-                        Ok(root) => HttpOutcome::Success(parse_usage_response(&root, account, ctx.now).with_origin(UsageRoute::Endpoint)),
+                        Ok(root) => {
+                            let mut usage = parse_usage_response(&root, account, ctx.now).with_origin(UsageRoute::Endpoint);
+                            // Windows difference: match the account actually used by this request,
+                            // including the workspace header, rather than Pulse's account slot.
+                            usage.spend_identity = crate::spend::account::AccountIdentity::codex_token(&credentials.access_token, &credentials.account_id);
+                            HttpOutcome::Success(usage)
+                        }
                         Err(_) => HttpOutcome::Failed(Unavailability::UnreadableReply),
                     },
                     401 | 403 => HttpOutcome::NeedsFreshCredentials,

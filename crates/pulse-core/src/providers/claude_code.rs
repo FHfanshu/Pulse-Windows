@@ -29,6 +29,7 @@ use crate::auth::{self, StoredLogin};
 use crate::model::{AccountKey, ProviderUsage, Unavailability, UsageRoute, UsageState, UsageWindow, WindowKind};
 use crate::provider::Provider;
 use crate::service::{FetchContext, UsageService};
+use crate::spend::account::AccountIdentity;
 
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
@@ -41,8 +42,15 @@ const RETRY_LIMIT: u32 = 2;
 
 #[derive(Default)]
 pub struct ClaudeCode {
-    /// Plan name per account id, with when it was asked (a failure is cached too).
-    plans: Mutex<HashMap<String, (Option<String>, Instant)>>,
+    /// Windows difference: retain identity from the existing profile request. The credential
+    /// fingerprint prevents signing in again under the same Pulse slot from reusing a profile.
+    plans: Mutex<HashMap<String, (String, Profile, Instant)>>,
+}
+
+#[derive(Clone, Default)]
+struct Profile {
+    plan: Option<String>,
+    identity: Option<AccountIdentity>,
 }
 
 enum HttpOutcome {
@@ -127,9 +135,10 @@ impl ClaudeCode {
                     return match reply.status().as_u16() {
                         200 => match reply.json::<Value>().await {
                             Ok(root) => {
-                                let plan = self.plan(ctx, account, token).await;
+                                let profile = self.profile(ctx, account, token).await;
                                 let mut usage = parse(&root, account, ctx.now);
-                                usage.plan = plan;
+                                usage.plan = profile.plan;
+                                usage.spend_identity = profile.identity;
                                 HttpOutcome::Success(usage.with_origin(UsageRoute::Endpoint))
                             }
                             Err(_) => HttpOutcome::Failed(Unavailability::UnreadableReply),
@@ -148,12 +157,17 @@ impl ClaudeCode {
         HttpOutcome::Failed(Unavailability::Unreachable)
     }
 
-    /// The plan name, asked at most every six hours per account.
-    async fn plan(&self, ctx: &FetchContext, account: &AccountKey, token: &str) -> Option<String> {
-        if let Some((name, at)) = self.plans.lock().unwrap().get(&account.id()) {
-            if at.elapsed() < PLAN_FRESH_FOR {
-                return name.clone();
-            }
+    fn cached_profile(&self, account: &AccountKey, fingerprint: &str) -> Option<Profile> {
+        let plans = self.plans.lock().unwrap();
+        let (held, profile, at) = plans.get(&account.id())?;
+        (held == fingerprint && at.elapsed() < PLAN_FRESH_FOR).then(|| profile.clone())
+    }
+
+    /// The plan and billing identity, asked at most every six hours per unchanged login.
+    async fn profile(&self, ctx: &FetchContext, account: &AccountKey, token: &str) -> Profile {
+        let fingerprint = crate::auth::util::challenge(token);
+        if let Some(profile) = self.cached_profile(account, &fingerprint) {
+            return profile;
         }
         let fetched = async {
             let reply = ctx
@@ -169,10 +183,11 @@ impl ClaudeCode {
             if reply.status().as_u16() != 200 {
                 return None;
             }
-            plan_name(&reply.json::<Value>().await.ok()?)
+            let root = reply.json::<Value>().await.ok()?;
+            Some(Profile { plan: plan_name(&root), identity: AccountIdentity::claude_profile(&root) })
         }
-        .await;
-        self.plans.lock().unwrap().insert(account.id(), (fetched.clone(), Instant::now()));
+        .await.unwrap_or_default();
+        self.plans.lock().unwrap().insert(account.id(), (fingerprint, fetched.clone(), Instant::now()));
         fetched
     }
 }
@@ -519,6 +534,16 @@ mod tests {
         assert_eq!(plan_name(&typed).as_deref(), Some("Max"));
         assert_eq!(plan_name(&json!({"organization": {"rate_limit_tier": "default_claude_ai"}})).as_deref(), Some("Pro"));
         assert_eq!(plan_name(&json!({"organization": {"rate_limit_tier": "some_new_tier"}})).as_deref(), Some("Some New Tier"));
+    }
+
+    #[test]
+    fn signing_in_again_in_the_same_slot_cannot_reuse_the_previous_identity() {
+        let service = ClaudeCode::default();
+        let fingerprint = crate::auth::util::challenge("fixture-login-a");
+        let identity = AccountIdentity::claude_profile(&json!({"account": {"uuid": "a"}, "organization": {"uuid": "o"}}));
+        service.plans.lock().unwrap().insert(account().id(), (fingerprint.clone(), Profile { plan: Some("Pro".into()), identity: identity.clone() }, Instant::now()));
+        assert_eq!(service.cached_profile(&account(), &fingerprint).unwrap().identity, identity);
+        assert!(service.cached_profile(&account(), &crate::auth::util::challenge("fixture-login-b")).is_none());
     }
 
     #[test]

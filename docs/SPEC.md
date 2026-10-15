@@ -33,6 +33,7 @@ lists the difference under **Deliberate differences**.
 | Sparkle | Tauri updater (GitHub Releases); a scheduled check that finds a release posts one toast per version (click opens About), and a failed one retries after 10 minutes | platform |
 | Raycast integration | not ported | owner decision |
 | Providers | first 20 (§6), others later | owner decision |
+| Estimated value on added accounts | Claude/Codex added accounts are estimated when their billing identity is the local CLI login, and has been since the window opened; the default account keeps upstream's estimate | owner decision; local spend must belong to the account whose percentage is used |
 | A spent limit fills the ring, whichever way it counts | On by default, with a "Keep ring filled when exhausted" switch; off, a countdown fraction on the panel (outer and second), the tray and the dashboard bar is the true remainder, down to 0%. The panel and tray tracks turn red (the panel's dimmed to 0.35, so an empty ring never reads as the full arc it replaced); the dashboard keeps its existing red spent caption (owner-approved #29) | the full arc hid how much was truly left while counting down |
 | The ring shows the fullest limit unless one is pinned | Unpinned, the ring shows the five-hour limit when the account reports one (account-wide first, then the fullest five-hour), else the fullest; the second ring keeps the fullest of the rest, so weekly stays in sight. Applies to the panel, tray and dashboard (owner-approved) | the five-hour window is the one that moves while working |
 
@@ -93,6 +94,29 @@ observedAt, state, plan, creditBalance, creditRemaining, origin, isCached }`, `U
 same case names; messages are localized in the UI from the same English keys).
 Rules ported verbatim: `percentValue` (never 0 when used, never 100 when not all), `headlineWindow`,
 `secondWindow`, `current(at)`, `hasTurnedOver`, `elapsedFraction`.
+
+Estimated value keeps upstream's formula and thresholds: this PC's API-equivalent spend during
+the window, up to the usage observation, divided by the account's used fraction (at least 5%
+used and $0.20 spent). The default account is the local CLI login and keeps upstream's estimate
+unchanged. Estimates on added accounts are a Windows difference approved by the owner: Claude
+uses both user and organization UUIDs from the existing OAuth profile request; Codex uses both
+user and workspace IDs from the token used for the existing usage request. Names, emails and
+account order are not matching evidence. The IDs stay in memory and are omitted from IPC JSON
+and persisted usage caches.
+
+Local transcripts do not reliably record billing identity. An added account is estimated only
+for windows opened after its identity became the local login. Pulse records that moment in
+`local-logins.json` (a SHA-256 of the identity, never the IDs): the login file's time when first
+seen, and on a switch the later of the login file's time and when the previous login was last
+seen. Token renewals and metadata rewrites (Claude Code writes `.claude.json` every session) do
+not move it. The identity is read again after the scan; a switch during it gives no estimate.
+Switching away and back while Pulse is not running cannot be detected. Missing identity, helper-only
+readings without identity, stale readings, incomplete logs and unpriced tokens in the window
+also suppress estimates. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are honored; Claude's new metadata
+path remains `WINDOWS-PATH: unverified` until validated on a real installation. This does not
+reconstruct historical account ownership or distinguish simultaneous clients using different
+credentials while sharing one transcript directory. The provider's "this PC" activity section
+retains its existing first-account placement, independently of account-specific estimates.
 
 Provider trait:
 

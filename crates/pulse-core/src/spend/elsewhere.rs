@@ -39,11 +39,12 @@ const LAG_SECONDS: i64 = 15 * 60;
 /// the same cycle within this.
 const SAME_CYCLE_SECONDS: i64 = 120;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Point {
     fraction: f64,
     at: DateTime<Utc>,
     resets_at: DateTime<Utc>,
+    identity: Option<super::account::AccountIdentity>,
 }
 
 /// A rise worth looking into: what this PC spent between `from` and `to` decides whether it was
@@ -106,10 +107,13 @@ impl ElsewhereWatch {
         for window in reading.windows.iter().filter(|w| w.scope.is_none()) {
             let Some(resets_at) = window.resets_at.filter(|r| *r > now) else { continue };
             let key = key(account, &window.id);
-            let point = Point { fraction: window.used_fraction, at: observed_at, resets_at };
-            let previous = inner.last.insert(key.clone(), point);
+            let point = Point { fraction: window.used_fraction, at: observed_at, resets_at, identity: reading.spend_identity.clone() };
+            let previous = inner.last.insert(key.clone(), point.clone());
             let Some(previous) = previous else { continue };
-            if (previous.resets_at - resets_at).num_seconds().abs() >= SAME_CYCLE_SECONDS
+            // Windows difference: signing in again can retain a Pulse slot and reset time;
+            // the percentages of two billing identities are still not a rise in one account.
+            if previous.identity != point.identity
+                || (previous.resets_at - resets_at).num_seconds().abs() >= SAME_CYCLE_SECONDS
                 || observed_at <= previous.at
                 || point.fraction - previous.fraction < MINIMUM_RISE - 1e-9
                 || is_marked(&inner, &key, resets_at)
@@ -231,6 +235,18 @@ mod tests {
         assert!(watch.observe(&reading(0.11, 600, 100_000), &account(), now).is_empty());
         // A reset that moved by a whole cycle is another window.
         assert!(watch.observe(&reading(0.40, 1200, 100_000 + 7 * 86_400), &account(), now).is_empty());
+    }
+
+    #[test]
+    fn signing_in_again_with_the_same_reset_does_not_look_like_spending_elsewhere() {
+        let watch = ElsewhereWatch::new(None);
+        let identity = |id| super::super::account::AccountIdentity::claude_profile(&serde_json::json!({"account": {"uuid": id}, "organization": {"uuid": "o"}}));
+        let mut first = reading(0.1, 0, 100_000);
+        first.spend_identity = identity("a");
+        watch.observe(&first, &account(), at(0));
+        let mut second = reading(0.5, 600, 100_000);
+        second.spend_identity = identity("b");
+        assert!(watch.observe(&second, &account(), at(600)).is_empty());
     }
 
     #[test]
