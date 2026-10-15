@@ -13,6 +13,7 @@ mod panel;
 mod placement;
 mod recap_ipc;
 mod shell;
+mod session;
 mod signin_ipc;
 mod spend_ipc;
 mod state;

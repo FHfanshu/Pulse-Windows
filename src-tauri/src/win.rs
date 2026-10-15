@@ -52,7 +52,7 @@ impl MonitorInfo {
 /// sampler while a command on the main thread waits for the panel lock deadlocks.
 static PANEL_HWND: OnceLock<isize> = OnceLock::new();
 
-fn hwnd(window: &WebviewWindow) -> Option<HWND> {
+pub(crate) fn hwnd(window: &WebviewWindow) -> Option<HWND> {
     if window.label() == crate::panel::LABEL {
         if let Some(h) = PANEL_HWND.get() {
             return Some(HWND(*h as _));
@@ -343,13 +343,15 @@ fn info(monitor: HMONITOR) -> Option<MonitorInfo> {
     }
 }
 
-pub fn primary_monitor() -> MonitorInfo {
-    unsafe { info(MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY)) }.expect("primary monitor")
+// Windows difference: remote/virtual display switches can temporarily leave no usable monitor.
+// Callers skip that pass and retry, keeping the placement and background watchers alive.
+pub fn primary_monitor() -> Option<MonitorInfo> {
+    unsafe { info(MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY)) }
 }
 
-pub fn monitor_at(px: (i32, i32)) -> MonitorInfo {
+pub fn monitor_at(px: (i32, i32)) -> Option<MonitorInfo> {
     unsafe { info(MonitorFromPoint(POINT { x: px.0, y: px.1 }, MONITOR_DEFAULTTONEAREST)) }
-        .unwrap_or_else(primary_monitor)
+        .or_else(primary_monitor)
 }
 
 pub fn all_monitors() -> Vec<MonitorInfo> {

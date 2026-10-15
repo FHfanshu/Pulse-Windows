@@ -236,7 +236,7 @@ pub fn place(app: &AppHandle, shared: &SharedPanel) {
     let Some(window) = app.get_webview_window(LABEL) else { return };
     let mut state = shared.lock().unwrap();
     let Some(geometry) = state.geometry else { return };
-    let monitor = win::monitor_named(state.placement.display.as_deref()).unwrap_or_else(win::primary_monitor);
+    let Some(monitor) = win::monitor_named(state.placement.display.as_deref()).or_else(win::primary_monitor) else { return };
     let natural = state.placement.layout(monitor.work_dip(), &geometry);
     let same_display = state.same_display(&monitor);
     let layout = state.commit(natural, same_display, Instant::now());
@@ -306,7 +306,7 @@ fn publish(app: &AppHandle, window: &WebviewWindow, monitor: &win::MonitorInfo, 
 pub fn reconcile_display(app: &AppHandle, shared: &SharedPanel) {
     let Some(window) = app.get_webview_window(LABEL) else { return };
     let mut state = shared.lock().unwrap();
-    let monitor = win::monitor_named(state.placement.display.as_deref()).unwrap_or_else(win::primary_monitor);
+    let Some(monitor) = win::monitor_named(state.placement.display.as_deref()).or_else(win::primary_monitor) else { return };
     let Some(layout) = state.display_update(monitor.clone(), win::window_rect_px(&window)) else { return };
     drop(state);
     // The sampler reports a fresh pointer even if it has not moved. Emitting a
@@ -429,7 +429,7 @@ pub fn press(shared: &SharedPanel, local: (f64, f64)) {
 /// Upstream `FloatingPanel.carry()`: choose the landing dock from where the
 /// pointer is, re-centre the grab when the rail changes shape, record, re-place.
 fn carry(app: &AppHandle, shared: &SharedPanel, window: &WebviewWindow, cursor_px: (i32, i32), grab: (f64, f64)) {
-    let monitor = win::monitor_at(cursor_px);
+    let Some(monitor) = win::monitor_at(cursor_px) else { return };
     let visible = monitor.work_dip();
     let pointer = (cursor_px.0 as f64 / monitor.scale, cursor_px.1 as f64 / monitor.scale);
 
