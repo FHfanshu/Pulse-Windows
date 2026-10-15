@@ -30,7 +30,8 @@ fn home() -> PathBuf {
 }
 
 /// The estimated value of each of an account's windows, from the local transcripts. Empty while
-/// Token spend is off, or the local login cannot be matched to this account for the whole window.
+/// Token spend is off, for a provider that keeps no transcripts, and for an added account whose
+/// billing identity is not the local login's for the whole window.
 ///
 /// `card` is the detailed card's asking: it leaves out a provider that states its limits in money
 /// (`budget::estimates_value`) and the windows seen spent elsewhere, which only the settings pane lists.
@@ -44,13 +45,34 @@ pub async fn estimated_value(state: State<'_, AppState>, account: String, card: 
         return Ok(Vec::new());
     };
     let provider = usage.account.provider;
-    if usage.state != pulse_core::model::UsageState::Live || !spend::supports(provider) || (card && !budget::estimates_value(provider)) {
+    let primary = usage.account.is_primary();
+    if (!primary && usage.state != pulse_core::model::UsageState::Live) || !spend::supports(provider) || (card && !budget::estimates_value(provider)) {
         return Ok(Vec::new());
     }
     let elsewhere: Vec<bool> = usage.windows.iter().map(|w| state.store.used_elsewhere(w, &usage.account)).collect();
     tauri::async_runtime::spawn_blocking(move || {
         let now = Utc::now();
-        // Windows difference: default and added accounts use the same identity/coverage checks.
+        if primary {
+            // The default account is the local CLI login itself: upstream's estimate, unchanged.
+            let ledger = spend::read_ledger(provider, &home(), now).ok()?;
+            return Some(
+                usage
+                    .windows
+                    .iter()
+                    .zip(elsewhere)
+                    .filter_map(|(w, elsewhere)| {
+                        // A window seen spent off this PC keeps its row, saying why there is no figure.
+                        if elsewhere {
+                            return (!card).then(|| WindowEstimate { window: w.id.clone(), spent: 0.0, full: 0.0, elsewhere });
+                        }
+                        budget::estimate(w, &ledger, usage.observed_at, now)
+                            .map(|e| WindowEstimate { window: w.id.clone(), spent: e.spent, full: e.full, elsewhere })
+                    })
+                    .collect::<Vec<_>>(),
+            );
+        }
+        // Windows difference: an added account is estimated only when the local CLI login is the
+        // same billing identity and has been the local one since the window opened.
         let (local, ledger) = spend::account::read_ledger(provider, usage.spend_identity.as_ref(), &home(), now)?;
         let values = usage
                 .windows

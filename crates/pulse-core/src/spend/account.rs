@@ -1,15 +1,18 @@
 // Windows difference: match estimates to the login behind the local transcript store, rather
 // than assuming that only Pulse's default account can own it.
 //! Transcripts do not reliably name their billing account. A current login therefore cannot
-//! assign old history: only windows opened after both the login and its identity metadata were
-//! last written are eligible. A renewal may temporarily withhold an estimate too; guessing an
-//! older boundary would also accept an account switch. Tokens are never retained or exposed;
-//! billing identities are used only in memory, never sent to the UI or saved in usage caches.
+//! assign old history: only windows opened after Pulse knows that login became the local one are
+//! eligible (see [`LocalAccount::read`]). Tokens are never retained or exposed; billing identities
+//! are used only in memory, never sent to the UI or saved in usage caches, and Pulse's own record
+//! of local logins keeps only their SHA-256.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::model::UsageWindow;
 use crate::provider::Provider;
@@ -34,6 +37,11 @@ impl AccountIdentity {
         Self::new(root.get("account")?.get("uuid")?.as_str()?, root.get("organization")?.get("uuid")?.as_str()?)
     }
 
+    fn digest(&self) -> String {
+        let hash = Sha256::digest(format!("{}\n{}", self.user, self.organization).as_bytes());
+        hash.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
     pub fn codex_token(token: &str, account: &str) -> Option<Self> {
         let claims = crate::auth::util::jwt_claims(token)?;
         let auth = claims.get("https://api.openai.com/auth")?;
@@ -46,48 +54,53 @@ impl AccountIdentity {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Stamp {
-    path: PathBuf,
-    modified: DateTime<Utc>,
-    length: u64,
-}
+/// Pulse's own record of the local CLI login it has seen per provider, so a window can be
+/// attributed to the login that held it from its start. Only a SHA-256 of the identity is kept.
+const RECORD: &str = "local-logins.json";
+/// How often the "still the same login" time is written back while nothing changes.
+const SEEN_REFRESH_MINUTES: i64 = 10;
 
-impl Stamp {
-    fn read(path: PathBuf) -> Option<Self> {
-        let metadata = std::fs::metadata(&path).ok()?;
-        Some(Self { path, modified: metadata.modified().ok()?.into(), length: metadata.len() })
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Seen {
+    identity: String,
+    /// The earliest time this login is known to have been the local one.
+    since: DateTime<Utc>,
+    /// The latest time it was still seen. A different login cannot have started before this.
+    seen: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalAccount {
+    provider: Provider,
     identity: AccountIdentity,
-    stamps: Vec<Stamp>,
+    identity_path: PathBuf,
+    since: DateTime<Utc>,
 }
 
 impl LocalAccount {
-    pub fn read(provider: Provider, sources: &Sources) -> Option<Self> {
-        let (identity_path, login_path) = match provider {
+    fn paths(provider: Provider, sources: &Sources) -> Option<(PathBuf, PathBuf)> {
+        match provider {
             Provider::ClaudeCode => {
                 let dir = sources.claude_config_dir.clone().unwrap_or_else(|| sources.home.join(".claude"));
                 // WINDOWS-PATH: unverified; CLI identity metadata, tested with fixtures only.
                 let config = sources.claude_config_dir.as_ref().map(|d| d.join(".claude.json"))
                     .unwrap_or_else(|| sources.home.join(".claude.json"));
-                (config, dir.join(".credentials.json"))
+                Some((config, dir.join(".credentials.json")))
             }
             Provider::Codex => {
                 let path = sources.codex_home.clone().unwrap_or_else(|| sources.home.join(".codex")).join("auth.json");
-                (path.clone(), path)
+                Some((path.clone(), path))
             }
-            _ => return None,
-        };
-        let stamps = vec![Stamp::read(identity_path.clone())?, Stamp::read(login_path)?];
-        let root: Value = serde_json::from_slice(&std::fs::read(&identity_path).ok()?).ok()?;
-        let identity = match provider {
+            _ => None,
+        }
+    }
+
+    fn identity_at(provider: Provider, path: &Path) -> Option<AccountIdentity> {
+        let root: Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+        match provider {
             Provider::ClaudeCode => {
                 let account = root.get("oauthAccount")?;
-                AccountIdentity::new(account.get("accountUuid")?.as_str()?, account.get("organizationUuid")?.as_str()?)?
+                AccountIdentity::new(account.get("accountUuid")?.as_str()?, account.get("organizationUuid")?.as_str()?)
             }
             Provider::Codex => {
                 // API-key stores and external token modes are not subscription histories.
@@ -96,12 +109,46 @@ impl LocalAccount {
                     return None;
                 }
                 let tokens = root.get("tokens")?;
-                AccountIdentity::codex_token(tokens.get("access_token")?.as_str()?, tokens.get("account_id")?.as_str()?)?
+                AccountIdentity::codex_token(tokens.get("access_token")?.as_str()?, tokens.get("account_id")?.as_str()?)
             }
-            _ => return None,
+            _ => None,
+        }
+    }
+
+    /// The current local login, and since when it has been the local one. The CLI rewrites its
+    /// metadata constantly (Claude Code's `.claude.json` on every session) and renews tokens, so
+    /// file times alone would withhold nearly every estimate. Instead the boundary moves only when
+    /// the identity changes: then it is the later of the login file's time and the last time the
+    /// previous login was seen. The first sighting uses the login file's time.
+    pub fn read(provider: Provider, sources: &Sources, record_dir: &Path, now: DateTime<Utc>) -> Option<Self> {
+        let (identity_path, login_path) = Self::paths(provider, sources)?;
+        let login: DateTime<Utc> = std::fs::metadata(&login_path).ok()?.modified().ok()?.into();
+        let identity = Self::identity_at(provider, &identity_path)?;
+        let digest = identity.digest();
+        let record_path = record_dir.join(RECORD);
+        let mut records: BTreeMap<String, Seen> =
+            std::fs::read(&record_path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        let key = format!("{provider:?}");
+        let previous = records.get(&key).cloned();
+        let next = match &previous {
+            Some(r) if r.identity == digest => Seen { identity: digest, since: r.since.min(login), seen: r.seen.max(now) },
+            Some(r) => Seen { identity: digest, since: login.max(r.seen), seen: now },
+            None => Seen { identity: digest, since: login, seen: now },
         };
-        let local = Self { identity, stamps };
-        local.unchanged().then_some(local)
+        let since = next.since;
+        let stale = previous.as_ref().is_none_or(|r| {
+            r.identity != next.identity || r.since != next.since || now - r.seen >= Duration::minutes(SEEN_REFRESH_MINUTES)
+        });
+        if stale {
+            records.insert(key, next);
+            if let Ok(bytes) = serde_json::to_vec_pretty(&records) {
+                let tmp = record_path.with_extension("tmp");
+                if std::fs::write(&tmp, bytes).is_ok() {
+                    let _ = std::fs::rename(&tmp, &record_path);
+                }
+            }
+        }
+        Some(Self { provider, identity, identity_path, since })
     }
 
     pub fn matches(&self, identity: Option<&AccountIdentity>) -> bool {
@@ -109,7 +156,7 @@ impl LocalAccount {
     }
 
     pub fn covers(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> bool {
-        from < to && self.stamps.iter().all(|s| s.modified <= from)
+        from < to && self.since <= from
     }
 
     pub fn covers_window(&self, window: &UsageWindow, read: DateTime<Utc>) -> bool {
@@ -120,8 +167,10 @@ impl LocalAccount {
             })
     }
 
+    /// The same login is still the local one: a switch during a scan must not pair the ledger
+    /// with the previous login's percentages.
     pub fn unchanged(&self) -> bool {
-        self.stamps.iter().all(|stamp| Stamp::read(stamp.path.clone()).as_ref() == Some(stamp))
+        Self::identity_at(self.provider, &self.identity_path).as_ref() == Some(&self.identity)
     }
 
     pub fn estimate(&self, window: &UsageWindow, ledger: &super::Ledger, observed_at: Option<DateTime<Utc>>, now: DateTime<Utc>) -> Option<super::budget::BudgetEstimate> {
@@ -137,15 +186,14 @@ impl LocalAccount {
     }
 }
 
-/// Read and check the same store before and after scanning it. Switching logins during a scan
-/// must not return a ledger paired with the previous login's percentages.
+/// Read and check the same store before and after scanning it.
 pub fn read_ledger(provider: Provider, identity: Option<&AccountIdentity>, home: &Path, now: DateTime<Utc>) -> Option<(LocalAccount, super::Ledger)> {
     let sources = Sources::from_env(home);
-    let local = LocalAccount::read(provider, &sources)?;
+    let dir = crate::paths::data_dir();
+    let local = LocalAccount::read(provider, &sources, &dir, now)?;
     if !local.matches(identity) {
         return None;
     }
-    let dir = crate::paths::data_dir();
     let prices = super::ModelPrices::cached(&dir);
     let ledger = super::read_ledger_with(provider, &sources, &dir, &super::Calendar::local(), &prices, now).ok()?;
     if ledger.has_read_limitations || ledger.has_partial_counts || !local.unchanged() {
@@ -178,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn added_and_default_accounts_use_identity_not_slot_and_switches_invalidate_history() {
+    fn added_and_default_accounts_use_identity_not_slot_and_switches_move_the_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let codex = dir.path().join("custom-codex");
         std::fs::create_dir_all(&codex).unwrap();
@@ -187,47 +235,59 @@ mod tests {
         write("user-a", "account-a");
         let mut sources = Sources::new(dir.path());
         sources.codex_home = Some(codex);
-        let local = LocalAccount::read(Provider::Codex, &sources).unwrap();
+        let now = Utc::now();
+        let local = LocalAccount::read(Provider::Codex, &sources, dir.path(), now).unwrap();
         assert!(local.matches(AccountIdentity::codex_token(&token("user-a", "account-a"), "account-a").as_ref()));
         assert!(!local.matches(None));
         assert!(!local.matches(AccountIdentity::codex_token(&token("user-b", "account-b"), "account-b").as_ref()));
-        let now = Utc::now();
-        assert!(!local.covers(now - Duration::days(7), now));
+        assert!(!local.covers(now - Duration::days(7), now), "nothing before the login file is attributed");
         let window = UsageWindow::new("five", WindowKind::FiveHour, 0.5, 5 * 3600)
             .with_reset(Some(now + Duration::hours(6)));
         assert!(local.covers_window(&window, now + Duration::hours(2)));
-        write("user-b", "account-b-longer");
+        // A switch is caught mid-scan, and the next read starts the new login no earlier than
+        // the last time the previous one was seen.
+        let later = now + Duration::hours(3);
+        write("user-b", "account-b");
         assert!(!local.unchanged());
-        assert!(!LocalAccount::read(Provider::Codex, &sources).unwrap().matches(Some(&local.identity)));
+        let switched = LocalAccount::read(Provider::Codex, &sources, dir.path(), later).unwrap();
+        assert!(!switched.matches(Some(&local.identity)));
+        assert!(switched.since >= now);
+        let record = std::fs::read_to_string(dir.path().join(RECORD)).unwrap();
+        assert!(!record.contains("user-") && !record.contains("account-"), "only a digest is recorded");
     }
 
     #[test]
-    fn claude_overrides_require_identity_and_login_metadata_and_changes_abort() {
+    fn metadata_rewrites_and_renewals_keep_the_boundary() {
         let dir = tempfile::tempdir().unwrap();
         let config = dir.path().join("custom-claude");
         std::fs::create_dir_all(&config).unwrap();
-        std::fs::write(config.join(".claude.json"), json!({"oauthAccount": {"accountUuid": "u", "organizationUuid": "o"}}).to_string()).unwrap();
+        let profile = |starts: u32| json!({"oauthAccount": {"accountUuid": "u", "organizationUuid": "o"}, "numStartups": starts}).to_string();
+        std::fs::write(config.join(".claude.json"), profile(1)).unwrap();
         let mut sources = Sources::new(dir.path());
         sources.claude_config_dir = Some(config.clone());
-        assert!(LocalAccount::read(Provider::ClaudeCode, &sources).is_none());
-        std::fs::write(config.join(".credentials.json"), b"fixture").unwrap();
-        let local = LocalAccount::read(Provider::ClaudeCode, &sources).unwrap();
-        assert!(local.matches(AccountIdentity::claude_profile(&json!({"account": {"uuid": "u"}, "organization": {"uuid": "o"}})).as_ref()));
-        std::fs::remove_file(config.join(".credentials.json")).unwrap();
-        assert!(!local.unchanged());
+        let now = Utc::now();
+        assert!(LocalAccount::read(Provider::ClaudeCode, &sources, dir.path(), now).is_none(), "a login file is required");
+        let credentials = config.join(".credentials.json");
+        std::fs::write(&credentials, b"fixture").unwrap();
+        let first = LocalAccount::read(Provider::ClaudeCode, &sources, dir.path(), now).unwrap();
+        assert!(first.matches(AccountIdentity::claude_profile(&json!({"account": {"uuid": "u"}, "organization": {"uuid": "o"}})).as_ref()));
+        // Claude Code rewrites its metadata every session, and token renewals rewrite the login.
+        std::fs::write(config.join(".claude.json"), profile(2)).unwrap();
+        std::fs::write(&credentials, b"renewed").unwrap();
+        assert!(first.unchanged());
+        let again = LocalAccount::read(Provider::ClaudeCode, &sources, dir.path(), now + Duration::hours(1)).unwrap();
+        assert_eq!(again.since, first.since);
     }
 
     #[test]
-    fn matched_accounts_use_their_own_percentage_and_incomplete_or_pre_switch_windows_are_withheld() {
+    fn matched_accounts_use_their_own_percentage_and_incomplete_or_pre_login_windows_are_withheld() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("login-fixture");
-        std::fs::write(&path, b"fixture").unwrap();
+        let path = dir.path().join("login-fixture.json");
+        std::fs::write(&path, json!({"tokens": {"access_token": token("u", "o"), "account_id": "o"}}).to_string()).unwrap();
         let now = Utc::now();
         let from = now - Duration::hours(2);
-        std::fs::File::options().write(true).open(&path).unwrap().set_times(
-            std::fs::FileTimes::new().set_modified((from - Duration::hours(1)).into()),
-        ).unwrap();
-        let local = LocalAccount { identity: AccountIdentity::new("u", "o").unwrap(), stamps: vec![Stamp::read(path.clone()).unwrap()] };
+        let identity = AccountIdentity::new("u", "o").unwrap();
+        let local = LocalAccount { provider: Provider::Codex, identity, identity_path: path.clone(), since: from - Duration::hours(1) };
         let ledger = super::super::Ledger {
             slots: vec![super::super::Slot::new(from - Duration::minutes(15), 0, 0.0), super::super::Slot::new(from + Duration::minutes(15), 1_000, 5.0)],
             ..super::super::Ledger::empty()
@@ -242,12 +302,12 @@ mod tests {
         incomplete.has_read_limitations = false;
         incomplete.slots[1].unpriced_tokens = 100;
         assert!(local.estimate(&window(0.1), &incomplete, Some(now), now).is_none());
-        // Renewals and account switches both change the proof boundary. Neither can lend
-        // pre-change history to the new reading, even if the file still exists.
-        std::fs::write(&path, b"new-login-fixture").unwrap();
+        // A login that began inside the window cannot take its earlier history.
+        let late = LocalAccount { since: from + Duration::minutes(1), ..local.clone() };
+        assert!(late.estimate(&window(0.1), &ledger, Some(now), now).is_none());
+        // Nor can a switch during the scan.
+        std::fs::write(&path, json!({"tokens": {"access_token": token("other", "o"), "account_id": "o"}}).to_string()).unwrap();
         assert!(local.estimate(&window(0.1), &ledger, Some(now), now).is_none());
-        let renewed = LocalAccount { identity: local.identity, stamps: vec![Stamp::read(path).unwrap()] };
-        assert!(renewed.estimate(&window(0.1), &ledger, Some(now), now).is_none());
     }
 
     #[test]
