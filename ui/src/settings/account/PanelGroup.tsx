@@ -96,7 +96,7 @@ function RingWindowRow({ id, settings, usage }: { id: string; settings: AppSetti
         value={shown}
         disabled={windows.length === 0}
         options={[
-          { value: "", label: t("Highest usage") },
+          { value: "", label: t("5-hour limit first") },
           ...windows.map((w) => ({ value: w.id, label: windowName(w) })),
         ]}
         onChange={(v) => void setPinnedWindow(settings, id, v || null)}

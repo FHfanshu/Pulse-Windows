@@ -30,10 +30,11 @@ lists the difference under **Deliberate differences**.
 | `NSStatusItem` menu bar | system tray icon + menu; `MenuDashboard` becomes a tray popup | platform |
 | Keychain / `keys.dat` key derived from the Mac | DPAPI (`CryptProtectData`, user scope) | platform |
 | Browser cookie import (Chrome/Edge app-bound encryption) | Firefox cookie DB read directly; Chromium sites signed in through an embedded WebView2 window | Chrome ≥127 cookies cannot be decrypted by other processes |
-| Sparkle | Tauri updater (GitHub Releases) | platform |
+| Sparkle | Tauri updater (GitHub Releases); a scheduled check that finds a release posts one toast per version (click opens About), and a failed one retries after 10 minutes | platform |
 | Raycast integration | not ported | owner decision |
 | Providers | first 20 (§6), others later | owner decision |
 | A spent limit fills the ring, whichever way it counts | On by default, with a "Keep ring filled when exhausted" switch; off, a countdown fraction on the panel (outer and second), the tray and the dashboard bar is the true remainder, down to 0%. The panel and tray tracks turn red (the panel's dimmed to 0.35, so an empty ring never reads as the full arc it replaced); the dashboard keeps its existing red spent caption (owner-approved #29) | the full arc hid how much was truly left while counting down |
+| The ring shows the fullest limit unless one is pinned | Unpinned, the ring shows the five-hour limit when the account reports one (account-wide first, then the fullest five-hour), else the fullest; the second ring keeps the fullest of the rest, so weekly stays in sight. Applies to the panel, tray and dashboard (owner-approved) | the five-hour window is the one that moves while working |
 
 ## 3. Layout tokens (all multiplied by `scale`)
 

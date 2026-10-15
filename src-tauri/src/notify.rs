@@ -112,7 +112,8 @@ pub fn post(app: &AppHandle, settings: &AppSettings, note: &Notification) {
 }
 
 /// What clicking a toast opens: the recap window on that month for a recap toast (upstream's
-/// `NotificationTapHandler` reads the month out of the identifier), Settings for every other.
+/// `NotificationTapHandler` reads the month out of the identifier), About for an update toast,
+/// Settings for every other.
 #[cfg(windows)]
 fn activated(app: &AppHandle, identifier: &str) {
     let app = app.clone();
@@ -120,6 +121,7 @@ fn activated(app: &AppHandle, identifier: &str) {
     tauri::async_runtime::spawn(async move {
         match pulse_core::recap::periods::notice::period_from_identifier(&identifier) {
             Some(period) => crate::recap_ipc::show_recap(&app, Some(period.key())),
+            None if identifier == crate::update_ipc::NOTICE_IDENTIFIER => crate::show_settings(&app, Some("about".into())),
             // Upstream opens Settings where it was last left, not on a particular pane.
             None => crate::show_settings(&app, None),
         }
