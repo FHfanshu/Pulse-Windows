@@ -191,18 +191,34 @@ fn tooltip(reading: Option<&TrayReading>, settings: &AppSettings) -> String {
     format!("{}\n{figure}", reading.account.provider.display_name())
 }
 
-/// Redraw the tray icon from the current readings.
+/// Runs `f` with the tray icon on the UI thread. Every tray access goes through here: Tauri's
+/// `TrayIcon` is marked Send but wraps tray-icon's `Rc`, so looking it up, calling it (each call
+/// clones it first) or dropping it on another thread races the count. Refresh tasks did so
+/// concurrently and corrupted the heap (the v0.1.5-0.1.6 crashes).
+pub fn with_tray(app: &AppHandle, f: impl FnOnce(&tauri::tray::TrayIcon) + Send + 'static) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(tray) = handle.tray_by_id("main") {
+            f(&tray);
+        }
+    });
+}
+
+/// Redraw the tray icon from the current readings. Drawn on the calling thread; applied on the UI thread.
 pub fn update(app: &AppHandle, usages: &[ProviderUsage], settings: &AppSettings) {
-    let Some(tray) = app.tray_by_id("main") else { return };
-    let _ = tray.set_visible(!settings.hides_tray_icon);
+    let visible = !settings.hides_tray_icon;
     let reading = if settings.shows_usage_in_tray {
         tray::choose(usages, settings.tray_account.as_deref(), |a| settings.pinned_windows.get(&a.id()).cloned(), settings.warning_threshold as f64 / 100.0)
     } else {
         None
     };
-    let icon = reading.as_ref().and_then(|r| render(r, settings)).or_else(|| app.default_window_icon().cloned());
-    let _ = tray.set_icon(icon);
-    let _ = tray.set_tooltip(Some(tooltip(reading.as_ref(), settings)));
+    let icon = reading.as_ref().and_then(|r| render(r, settings)).or_else(|| app.default_window_icon().cloned().map(Image::to_owned));
+    let tip = tooltip(reading.as_ref(), settings);
+    with_tray(app, move |tray| {
+        let _ = tray.set_visible(visible);
+        let _ = tray.set_icon(icon);
+        let _ = tray.set_tooltip(Some(tip));
+    });
 }
 
 #[cfg(test)]

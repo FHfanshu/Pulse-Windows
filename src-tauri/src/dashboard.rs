@@ -68,9 +68,9 @@ pub fn sync(app: &AppHandle, previous: Option<&AppSettings>) {
     if previous.is_some_and(|p| is_active(p) == active) {
         return;
     }
-    if let Some(tray) = app.tray_by_id("main") {
+    crate::tray_icon::with_tray(app, move |tray| {
         let _ = tray.set_show_menu_on_left_click(!active);
-    }
+    });
     if active {
         // Building a webview from a command or the event loop's own thread can stall WebView2 on Windows.
         let app = app.clone();
