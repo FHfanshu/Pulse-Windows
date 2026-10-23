@@ -276,10 +276,13 @@ pub fn toggle_panel_setting(app: &AppHandle) {
 
 /// Rebuilt whenever settings change (upstream rebuilds on every open).
 pub fn rebuild_menu(app: &AppHandle) {
-    let Some(tray) = app.tray_by_id("main") else { return };
-    if let Ok(menu) = build_menu(app) {
-        let _ = tray.set_menu(Some(menu));
-    }
+    // Built there too: menus wrap muda's `Rc` the same way.
+    let handle = app.clone();
+    crate::tray_icon::with_tray(app, move |tray| {
+        if let Ok(menu) = build_menu(&handle) {
+            let _ = tray.set_menu(Some(menu));
+        }
+    });
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
