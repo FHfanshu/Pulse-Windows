@@ -302,6 +302,20 @@ pub fn raise_topmost(window: &WebviewWindow) {
     let _ = SWP_NOZORDER;
 }
 
+/// Windows difference: hiding the window does not tell WebView2 its content is hidden, so after a
+/// session switch its compositor can stay stopped although the window is shown again. Setting the
+/// controller's own visibility (and re-sending the window position) restarts it, as a manual
+/// toggle of the panel does. Queued to the UI thread after any show or hide already queued.
+pub fn set_webview_visible(window: &WebviewWindow, visible: bool) {
+    let _ = window.with_webview(move |webview| unsafe {
+        let controller = webview.controller();
+        let _ = controller.SetIsVisible(visible);
+        if visible {
+            let _ = controller.NotifyParentWindowPositionChanged();
+        }
+    });
+}
+
 pub fn window_rect_px(window: &WebviewWindow) -> Option<(i32, i32, i32, i32)> {
     let hwnd = hwnd(window)?;
     let mut r = RECT::default();
