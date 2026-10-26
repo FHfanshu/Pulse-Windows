@@ -24,6 +24,9 @@ use crate::state::AppState;
 
 /// A check that has not answered by now has not reached the feed.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long the exit before an install waits for the UI thread to take the tray icon away. Bounded:
+/// if the UI thread is the caller or busy, the install goes ahead and the icon lingers.
+const TRAY_REMOVAL_WAIT: Duration = Duration::from_secs(2);
 /// After launch, once the app has settled (upstream waits for its first network probe).
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(20);
 /// Windows difference: a scheduled check that could not reach the feed (Pulse often starts with
@@ -146,10 +149,20 @@ async fn find(app: &AppHandle) -> tauri_plugin_updater::Result<Option<Update>> {
         }
     }
     // The process exits as the installer starts; take the tray icon away first so it does not
-    // linger in the notification area until the pointer passes over it.
+    // linger in the notification area until the pointer passes over it. The updater calls this on
+    // its own thread, and the tray must only be touched on the UI thread (`tray_icon::with_tray`),
+    // so the removal is posted there and waited for, briefly, before the process goes.
     let handle = app.clone();
     builder = builder.on_before_exit(move || {
-        let _ = handle.remove_tray_by_id("main");
+        let (done, removed) = std::sync::mpsc::channel();
+        let remover = handle.clone();
+        let queued = handle.run_on_main_thread(move || {
+            let _ = remover.remove_tray_by_id("main");
+            let _ = done.send(());
+        });
+        if queued.is_ok() {
+            let _ = removed.recv_timeout(TRAY_REMOVAL_WAIT);
+        }
     });
     builder.build()?.check().await
 }
