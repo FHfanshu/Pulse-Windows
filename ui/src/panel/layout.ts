@@ -153,6 +153,9 @@ export function dockLayout(m: PanelMetrics) {
     collapsedHitWidth,
     collapsedSize: (axis: Axis) =>
       axis === "vertical" ? { w: collapsedWidth, h: collapsedHeight } : { w: collapsedHeight, h: collapsedWidth },
+    /** The same for the hover target, which is wider than the drawing. */
+    collapsedHitSize: (axis: Axis) =>
+      axis === "vertical" ? { w: collapsedHitWidth, h: collapsedHeight } : { w: collapsedHeight, h: collapsedHitWidth },
   };
 }
 

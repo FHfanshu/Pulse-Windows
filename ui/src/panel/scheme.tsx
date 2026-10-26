@@ -42,13 +42,22 @@ export function Surface(p: {
   light: boolean;
   screenEdge?: Edge | null;
   nativeBackdrop?: boolean;
+  /** Upstream `PanelSurface.tint`: the collapsed sliver's alert colour, in place of the surface's own. */
+  tint?: string | null;
 }) {
   const clip = useId();
   if (p.usesGlass) {
-    return <FrostedGlass d={p.d} width={p.width} height={p.height} transparency={p.glassTransparency} nativeBackdrop={p.nativeBackdrop} />;
+    // Windows difference: no system glass to tint, so the tint lies over the glass at upstream's
+    // pre-macOS 26 strength (`tint.opacity(0.28)` over the material).
+    return (
+      <>
+        <FrostedGlass d={p.d} width={p.width} height={p.height} transparency={p.glassTransparency} nativeBackdrop={p.nativeBackdrop} />
+        {p.tint && <path d={p.d} fill={p.tint} fillOpacity={0.28} />}
+      </>
+    );
   }
   if (!p.light) {
-    return <path d={p.d} fill="#000" />;
+    return <path d={p.d} fill={p.tint ?? "#000"} />;
   }
   const w = PanelLight.edgeWidth;
   const keep = {
@@ -67,7 +76,7 @@ export function Surface(p: {
           <rect {...keep} />
         </clipPath>
       </defs>
-      <path d={p.d} fill={PanelLight.fill} />
+      <path d={p.d} fill={p.tint ?? PanelLight.fill} />
       <g clipPath={`url(#${clip}-edge)`}>
         <path d={p.d} fill="none" stroke={PanelLight.edge} strokeWidth={w * 2} clipPath={`url(#${clip}-shape)`} />
       </g>
