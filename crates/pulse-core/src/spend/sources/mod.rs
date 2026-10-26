@@ -192,6 +192,8 @@ registry! {
     Hindsight => hindsight::Hindsight,
     Mcode => mcode::Mcode,
     Copilot => copilot::Copilot,
+    // Windows difference: not an upstream source, added at the owner's request
+    KohakuTerrarium => kohakuterrarium::KohakuTerrarium,
 }
 
 /// A count out of a JSON value the way the Swift readers took one: a number, whole or not,
