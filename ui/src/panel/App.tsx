@@ -357,10 +357,15 @@ export function App() {
             const second = e.second;
             const clock = settings.showsWindowClock && e.headline ? elapsedFraction(e.headline) : null;
             const isSel = selected === e.id;
+            // Upstream `labelBeside`: a floating horizontal rail with "Figures beside the rings" puts the figure right of
+            // its ring, at exactly its budgeted width, so a short "0%" does not slide the ring (the hit testing steps in
+            // budgeted units). Beside, it always follows the ring, whatever "Label above ring" says (upstream #73).
+            const beside = D.labelsBeside(axis, docked);
             const label = D.showsPercentages(axis) ? (
               <div
                 className="percent"
                 style={{
+                  ...(beside ? { width: D.percentTextWidth, textAlign: "left" as const } : null),
                   fontSize: D.percentFontSize,
                   height: D.percentTextHeight,
                   lineHeight: `${D.percentTextHeight}px`,
@@ -380,12 +385,12 @@ export function App() {
                   left: shown.w / 2 + shown.items[index][0],
                   top: shown.h / 2 + shown.items[index][1],
                   transform: "translate(-50%, -50%)",
-                  flexDirection: "column",
+                  flexDirection: beside ? "row" : "column",
                   gap: D.ringToTextSpacing,
                   [vertical ? "height" : "width"]: D.itemLength(axis, docked),
                 }}
               >
-                {D.labelLeads && label}
+                {D.labelLeads && !beside && label}
                 <motion.div animate={{ scale: isSel ? 1.06 : 1 }} transition={spring(0.28, 0.84)}>
                   <Ring
                     provider={e.usage.account.provider}
@@ -409,7 +414,7 @@ export function App() {
                     warningAt={settings.warningAt}
                   />
                 </motion.div>
-                {!D.labelLeads && label}
+                {(!D.labelLeads || beside) && label}
               </div>
             );
           })}
