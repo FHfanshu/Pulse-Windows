@@ -30,6 +30,8 @@ pub const QUIT: &str = "quit";
 static COVERED: AtomicBool = AtomicBool::new(false);
 /// At least one global shortcut was accepted by the system.
 static SHORTCUT_REGISTERED: AtomicBool = AtomicBool::new(false);
+/// A restore has hidden the panel and will show it after `RESTORE_GAP`; the watcher leaves it hidden.
+static RESTORING: AtomicBool = AtomicBool::new(false);
 
 /// Bring the app in line with `settings`; `previous` is None at launch.
 pub fn apply(app: &AppHandle, previous: Option<&AppSettings>) {
@@ -145,6 +147,11 @@ fn sync_panel_presentation(app: &AppHandle, restore: bool) {
     let _ = app.run_on_main_thread(move || apply_panel_presentation(&next, restore));
 }
 
+/// How long a restore keeps the panel hidden before showing it again. A hide and a show in the same
+/// UI-thread pass can be coalesced by DWM and WebView2 after a session switch, leaving the window
+/// "visible" but undrawn; switching the panel off and on by hand always has a gap between them.
+const RESTORE_GAP: Duration = Duration::from_millis(150);
+
 /// Windows difference: all hide/show/style operations run together on the UI thread. After a
 /// session switch, force the same hide/show cycle that manually toggling the panel uses, even if
 /// Win32 still considers the missing window visible. Re-read the policy when queued work runs.
@@ -158,12 +165,22 @@ fn apply_panel_presentation(app: &AppHandle, restore: bool) {
     }
     let shown = win::is_visible(&window);
     let wanted = panel_should_show(&settings);
-    if wanted && (!shown || restore) {
+    if wanted && restore {
         if win::primary_monitor().is_none() { return; }
-        if restore {
-            let _ = window.hide();
-        }
+        // Hide now (the window and WebView2's own visibility), show on a later pass, as the switch does.
+        let _ = window.hide();
+        win::set_webview_visible(&window, false);
+        RESTORING.store(true, Ordering::Release);
+        let next = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(RESTORE_GAP);
+            RESTORING.store(false, Ordering::Release);
+            sync_panel_presentation(&next, false);
+        });
+    } else if wanted && !shown {
+        if win::primary_monitor().is_none() { return; }
         let _ = window.show();
+        win::set_webview_visible(&window, true);
         win::make_panel_window(&window);
         win::raise_topmost(&window);
         panel::place(app, &app.state::<SharedPanel>());
@@ -172,11 +189,28 @@ fn apply_panel_presentation(app: &AppHandle, restore: bool) {
     }
 }
 
+/// After a session or display event: when to restore (`RESTORE_AFTER` from the latest event). The
+/// first pass lets a burst of connect / unlock / desktop-ready settle; the second catches desktops
+/// (RDP reconnects, streaming tools' virtual displays) that are not drawing yet at the first.
+const RESTORE_AFTER: [Duration; 2] = [Duration::from_millis(750), Duration::from_millis(3000)];
+
+/// The restore passes still due, earliest first. A new event replaces them.
+fn schedule_restores(event: Instant) -> Vec<Instant> {
+    RESTORE_AFTER.iter().map(|d| event + *d).collect()
+}
+
+/// Whether a pass is due at `now`; drops every pass that is (several due at once run as one).
+fn take_due_restore(pending: &mut Vec<Instant>, now: Instant) -> bool {
+    let before = pending.len();
+    pending.retain(|at| *at > now);
+    pending.len() != before
+}
+
 /// Full-screen hiding and display following, sampled every quarter second
 /// (upstream `ActiveDisplayFollower.interval`).
 pub fn start_watcher(app: AppHandle) {
     std::thread::spawn(move || {
-        let mut restore_at = None;
+        let mut restores = Vec::new();
         loop {
             std::thread::sleep(Duration::from_millis(250));
             let settings = app.state::<AppState>().settings();
@@ -186,12 +220,11 @@ pub fn start_watcher(app: AppHandle) {
             crate::session::watch(&window);
             if crate::session::take_restore_request() {
                 // Windows may send connect, unlock and desktop-ready in a burst. Let the desktop and
-                // display topology settle, then recover once using the latest geometry.
-                restore_at = Some(Instant::now() + Duration::from_millis(750));
+                // display topology settle, then recover using the latest geometry.
+                restores = schedule_restores(Instant::now());
             }
-            let restore = restore_at.is_some_and(|at| Instant::now() >= at)
-                && win::primary_monitor().is_some();
-            if restore { restore_at = None; }
+            // With no usable monitor yet, a due pass waits for one.
+            let restore = win::primary_monitor().is_some() && take_due_restore(&mut restores, Instant::now());
 
             panel::reconcile_display(&app, &shared);
 
@@ -200,7 +233,8 @@ pub fn start_watcher(app: AppHandle) {
                 && panel_display.is_some()
                 && win::fullscreen_monitor(Some(&window)) == panel_display;
             let changed = COVERED.swap(covered, Ordering::Relaxed) != covered;
-            if changed || restore || panel_should_show(&settings) != win::is_visible(&window) {
+            let mismatch = !RESTORING.load(Ordering::Acquire) && panel_should_show(&settings) != win::is_visible(&window);
+            if changed || restore || mismatch {
                 sync_panel_presentation(&app, restore || (changed && !covered));
             }
 
@@ -327,5 +361,39 @@ pub fn on_menu_event(app: &AppHandle, id: &str) {
         TOGGLE_PANEL => toggle_panel_setting(app),
         QUIT => app.exit(0),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_session_event_restores_twice_then_stops() {
+        let event = Instant::now();
+        let mut pending = schedule_restores(event);
+        assert!(!take_due_restore(&mut pending, event + Duration::from_millis(500)), "the burst settles first");
+        assert!(take_due_restore(&mut pending, event + Duration::from_millis(800)));
+        assert!(!take_due_restore(&mut pending, event + Duration::from_millis(1000)), "each pass runs once");
+        assert!(take_due_restore(&mut pending, event + Duration::from_millis(3100)), "a late desktop is caught");
+        assert!(pending.is_empty());
+        assert!(!take_due_restore(&mut pending, event + Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn passes_due_together_run_as_one_and_a_new_event_restarts() {
+        let event = Instant::now();
+        let mut pending = schedule_restores(event);
+        // The watcher was held up (no monitor): both passes are due, and one restore covers them.
+        assert!(take_due_restore(&mut pending, event + Duration::from_secs(5)));
+        assert!(pending.is_empty());
+        let mut pending = schedule_restores(event);
+        assert!(take_due_restore(&mut pending, event + Duration::from_millis(800)));
+        // Another connect / display change before the late pass replaces it with a full schedule.
+        let again = event + Duration::from_millis(2000);
+        pending = schedule_restores(again);
+        assert!(!take_due_restore(&mut pending, again + Duration::from_millis(500)), "it settles again");
+        assert!(take_due_restore(&mut pending, again + Duration::from_millis(800)));
+        assert!(take_due_restore(&mut pending, again + Duration::from_millis(3100)));
     }
 }
