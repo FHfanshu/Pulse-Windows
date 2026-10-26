@@ -46,6 +46,11 @@ export function App() {
   const [pointer, setPointer] = useState<[number, number] | null>(null);
   const [dragging, setDragging] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  // Upstream `isHovered` / `hideAfterDelay`: whether the pointer is on the panel, which is what draws a
+  // collapsed rail out, and a moment's grace before it goes, so clipping a corner does not make it flinch.
+  const [hovered, setHovered] = useState(false);
+  const hideTimer = useRef<number | null>(null);
+  const draggingRef = useRef(false);
   const cardOpacity = useMotionValue(0);
   const [cardHeight, setCardHeight] = useState<number | null>(null);
   const refreshing = useMemo(() => new Set(refreshingIds), [refreshingIds]);
@@ -81,6 +86,7 @@ export function App() {
       listen<PointerEvent>("pointer", (e) => {
         setPointer(e.payload.point);
         setDragging(e.payload.dragging);
+        draggingRef.current = e.payload.dragging;
       }),
       listen<[number, number]>("rail-click", (e) => clickAt(e.payload[0], e.payload[1])),
     ];
@@ -147,6 +153,19 @@ export function App() {
   });
   const shown = useRailMorph(layout, railSize, itemOffsets, () => void invoke("morph_settled"));
   const morphing = shown?.morphing ?? false;
+  // Upstream `isExpanded`: hiding is only for the docked panel (out on the desktop the rail is where the user
+  // put it, and a pill in the middle of the screen is neither out of the way nor easy to find again). Derived,
+  // so switching auto-hide off takes effect at once rather than at the pointer's next visit.
+  const expanded = !settings.autoCollapse || !docked || hovered;
+  // The berth growing out of the sliver and back (upstream `.spring(response: 0.32, dampingFraction: 0.86)`
+  // on `isExpanded`): 1 is the full rail, 0 the sliver.
+  const openness = useSpring(expanded ? 1 : 0, spring(0.32, 0.86));
+  const [shownOpenness, setShownOpenness] = useState(expanded ? 1 : 0);
+  useMotionValueEvent(openness, "change", setShownOpenness);
+  useEffect(() => {
+    openness.set(expanded ? 1 : 0);
+    wakeNativeShapes();
+  }, [expanded, openness]);
   // The card's spring runs outside React; make sure its outline keeps being sent while it opens and closes.
   useEffect(() => wakeNativeShapes(), [selected]);
   const selectedIndex = entries.findIndex((e) => e.id === selected);
@@ -238,6 +257,33 @@ export function App() {
       : { x: start, y: 0, w: length, h: layout.frame.h };
   };
 
+  /** Upstream `PanelHitArea.strip`: the collapsed sliver's target, hard against the screen edge and centred
+   *  along the rail's band, with the card band's forgiveness along the run so it is not a trip wire. */
+  const strip = (): Rect => {
+    const hit = D.collapsedHitSize(axis);
+    switch (edge) {
+      case "left": return { x: rail.x, y: rail.y + rail.h / 2 - hit.h / 2 - SLACK, w: hit.w, h: hit.h + SLACK * 2 };
+      case "right": return { x: rail.x + rail.w - hit.w, y: rail.y + rail.h / 2 - hit.h / 2 - SLACK, w: hit.w, h: hit.h + SLACK * 2 };
+      case "top": return { x: rail.x + rail.w / 2 - hit.w / 2 - SLACK, y: rail.y, w: hit.w + SLACK * 2, h: hit.h };
+      case "bottom": return { x: rail.x + rail.w / 2 - hit.w / 2 - SLACK, y: rail.y + rail.h - hit.h, w: hit.w + SLACK * 2, h: hit.h };
+    }
+  };
+
+  // Upstream `scheduleHide`: 320 ms after the pointer leaves, never mid-drag (the pointer is far from the panel
+  // by design while it is carried); the end of a drag reports the pointer again, which re-arms it.
+  const scheduleHide = () => {
+    if (!hovered || hideTimer.current != null) return;
+    hideTimer.current = window.setTimeout(() => {
+      hideTimer.current = null;
+      if (!draggingRef.current) setHovered(false);
+    }, 320);
+  };
+  const cancelHide = () => {
+    if (hideTimer.current != null) window.clearTimeout(hideTimer.current);
+    hideTimer.current = null;
+  };
+  useEffect(() => cancelHide, []);
+
   // Pointer → hover selection and deselection (upstream pointerMoved / isOverContent).
   useEffect(() => {
     // Windows difference: no hover card while the rail is still morphing (the window is oversize for it).
@@ -248,28 +294,43 @@ export function App() {
     if (!pointer) {
       hoveredItem.current = null;
       setSelected(null);
+      scheduleHide();
       return;
     }
     const [x, y] = pointer;
     const band = cardBand();
-    const over = contains(rail, x, y) || (band ? contains(band, x, y) : false);
+    // Collapsed, only the sliver's own target counts: the rail's full extent would hold the panel open across
+    // the empty space it is not drawing in.
+    const over = expanded ? contains(rail, x, y) || (band ? contains(band, x, y) : false) : contains(strip(), x, y);
     if (!over) {
       hoveredItem.current = null;
       setSelected(null);
+      scheduleHide();
       return;
     }
+    // The pointer being on the panel is what "hovered" means, however it got there (a floating panel dragged to
+    // an edge docks with the pointer already on it). Hiding only happens when this same test says it is off.
+    cancelHide();
+    if (!hovered) setHovered(true);
+    // The rings are invisible while collapsed, and an invisible ring must not open a card.
+    if (!expanded) return;
     const hit = entries.findIndex((_, i) => contains(itemRect(i), x, y));
     const id = hit >= 0 ? entries[hit].id : null;
     if (id && id !== hoveredItem.current) setSelected(id);
     hoveredItem.current = id;
-  }, [pointer, dragging, layout, morphing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pointer, dragging, layout, morphing, expanded]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tell Rust where input belongs; everything else stays click-through.
+  // Tell Rust where input belongs; everything else stays click-through. Collapsed, that is the sliver's target
+  // alone (upstream: how much of the panel can be grabbed depends on whether the rail is drawn out).
   useEffect(() => {
     if (!layout) return;
+    if (!expanded) {
+      invoke("set_hit_rects", { rects: [strip()], grab: strip() });
+      return;
+    }
     const band = cardBand();
     invoke("set_hit_rects", { rects: band ? [rail, band] : [rail], grab: rail });
-  }, [layout, selected, cardHeight, shownAnchor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layout, selected, cardHeight, shownAnchor, expanded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clickAt = useCallback((x: number, y: number) => {
     setLayout((current) => {
@@ -300,11 +361,18 @@ export function App() {
     if (!worst || !(worst.isExhausted || worst.usedFraction >= settings.warningAt)) return null;
     return usageColor(worst.usedFraction, worst.isExhausted, settings.warningAt, settings.light);
   }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
-  void alert; // used by the collapsed sliver (auto-collapse), phase 1b
 
   if (!layout || !slots.length || !shown) return null;
 
-  const berth = berthPath(shown.w, shown.h, shown.edge, shown.d, 1, {
+  // Upstream `currentSize` inside a frame pinned to the rail's full size: the berth is the sliver collapsed and
+  // the rail open, laid against the screen edge and centred along it, so nothing around it moves.
+  const sliver = D.collapsedSize(axisOf(shown.edge));
+  const open = Math.min(Math.max(shownOpenness, 0), 1);
+  const berthW = sliver.w + (shown.w - sliver.w) * open;
+  const berthH = sliver.h + (shown.h - sliver.h) * open;
+  const berthX = shown.edge === "right" ? shown.w - berthW : shown.edge === "left" ? 0 : (shown.w - berthW) / 2;
+  const berthY = shown.edge === "bottom" ? shown.h - berthH : shown.edge === "top" ? 0 : (shown.h - berthH) / 2;
+  const berth = berthPath(berthW, berthH, shown.edge, shown.d, shownOpenness, {
     flareHeight: D.flareHeight, flareWidth: D.flareWidth, cornerRadius: D.cornerRadius,
     collapsedWidth: D.collapsedWidth, usesRoundEnds: metrics.usesRoundEnds,
   });
@@ -339,20 +407,30 @@ export function App() {
         style={{ left: shown.x, top: shown.y, width: shown.w, height: shown.h }}
         onPointerDown={(e) => { if (e.button === 0) invoke("rail_press", { x: e.clientX, y: e.clientY }); }}
       >
-        <RailOutline d={berth} x={shown.x} y={shown.y} />
-        <svg className="berth" width={shown.w} height={shown.h}>
+        <RailOutline d={berth} x={shown.x + berthX} y={shown.y + berthY} />
+        <svg className="berth" width={berthW} height={berthH} style={{ left: berthX, top: berthY }}>
           <Surface
             d={berth}
-            width={shown.w}
-            height={shown.h}
+            width={berthW}
+            height={berthH}
             usesGlass={settings.usesGlass}
             glassTransparency={settings.glassTransparency}
             light={settings.light}
             nativeBackdrop={nativeBackdrop}
             screenEdge={shown.d > 0.5 ? shown.edge : null}
+            // Only the sliver carries the alert colour: open, the rings already say which limit is where.
+            tint={expanded ? null : alert}
           />
         </svg>
-        <div className="rings">
+        {/* Upstream: the rings stay laid out while collapsed, only invisible, on their own timing: they appear
+            once the berth has opened enough to hold them, and are gone before it closes. */}
+        <motion.div
+          className="rings"
+          initial={false}
+          animate={{ opacity: expanded ? 1 : 0 }}
+          transition={{ duration: expanded ? 0.18 : 0.1, delay: expanded ? 0.12 : 0, ease: "easeOut" }}
+          style={{ pointerEvents: expanded ? undefined : "none" }}
+        >
           {entries.map((e, index) => {
             const second = e.second;
             const clock = settings.showsWindowClock && e.headline ? elapsedFraction(e.headline) : null;
@@ -413,7 +491,7 @@ export function App() {
               </div>
             );
           })}
-        </div>
+        </motion.div>
       </div>
 
       <AnimatePresence>
