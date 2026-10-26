@@ -2,6 +2,7 @@
 // activity section (Activity.tsx).
 import { animate, AnimatePresence, motion, type AnimationPlaybackControls } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { approximateDuration, burnReading, type BurnReading } from "../shared/burn";
 import { relativeTime, resetText, unavailableMessage, windowName } from "../shared/copy";
 import { t } from "../shared/i18n";
 import { accountId, isSpent, percentText, remainingFraction, type ProviderUsage, type UsageWindow } from "../shared/model";
@@ -233,7 +234,7 @@ export function Card(p: CardProps) {
           <AnimatePresence initial={false}>
             {u.windows.map((w) => (
               <motion.div key={`${u.account.provider}|${w.id}`} {...rowTransition}>
-                <MetricRow window={w} L={L} showsRemaining={p.showsRemaining} warningAt={p.warningAt} value={valueText(w)} />
+                <MetricRow window={w} L={L} showsRemaining={p.showsRemaining} warningAt={p.warningAt} value={valueText(w)} burn={p.metrics.showsForecast ? burnReading(w) : null} />
               </motion.div>
             ))}
           </AnimatePresence>
@@ -269,7 +270,7 @@ function Message({ text, size }: { text: string; size: number }) {
   return <div style={{ fontSize: size, lineHeight: 1.25, opacity: 0.55 }}>{text}</div>;
 }
 
-function MetricRow({ window: w, L, showsRemaining, warningAt, value }: { window: UsageWindow; L: ReturnType<typeof detailCardLayout>; showsRemaining: boolean; warningAt: number; value: string | null }) {
+function MetricRow({ window: w, L, showsRemaining, warningAt, value, burn }: { window: UsageWindow; L: ReturnType<typeof detailCardLayout>; showsRemaining: boolean; warningAt: number; value: string | null; burn: BurnReading | null }) {
   const progress = showsRemaining ? remainingFraction(w) : Math.min(Math.max(w.usedFraction, 0), 1);
   const spent = isSpent(w);
   const light = useLightPanel();
@@ -294,6 +295,17 @@ function MetricRow({ window: w, L, showsRemaining, warningAt, value }: { window:
       </div>
       {/* Dimmer than the reported figures above it: it is the one number here the provider did not say. */}
       {value && <div className="ellipsis" style={{ ...line, opacity: 0.45 }}>{value}</div>}
+      {/* Upstream `burnLine`: how it is going and, only when the evidence carries it, when it runs out. The
+          verdict without the time is still said: a weekly window's exhaustion is nearly always past the horizon. */}
+      {burn && !spent && (
+        burn.timeToExhaustion != null ? (
+          <div className="ellipsis" style={{ ...line, color: pulseColors(light).warning, opacity: 0.9 }}>{t("Runs out in %@", approximateDuration(burn.timeToExhaustion))}</div>
+        ) : burn.exhaustsBeforeReset ? (
+          <div className="ellipsis" style={{ ...line, color: pulseColors(light).warning, opacity: 0.9 }}>{t("Won't last the window")}</div>
+        ) : (
+          <div className="ellipsis" style={{ ...line, opacity: 0.45 }}>{t("Expected to last the window")}</div>
+        )
+      )}
     </div>
   );
 }
